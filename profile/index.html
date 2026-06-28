@@ -92,13 +92,17 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
+    import { getFollowers } from '../js/firebase.js';
     try {
-      const { profile } = await requireAuth();
+      const { user, profile } = await requireAuth();
       if (profile) {
-        document.getElementById('profile-avatar').textContent   = profile.username[0].toUpperCase();
-        document.getElementById('profile-name').textContent     = profile.username;
-        document.getElementById('following-count').textContent  = (profile.following || profile.friends || []).length;
-        document.getElementById('followers-count').textContent  = (profile.followers || []).length;
+        document.getElementById('profile-avatar').textContent  = profile.username[0].toUpperCase();
+        document.getElementById('profile-name').textContent    = profile.username;
+        document.getElementById('following-count').textContent = (profile.following || profile.friends || []).length;
+        // Load follower count async — doesn't block page display
+        getFollowers(user.uid).then(f => {
+          document.getElementById('followers-count').textContent = f.length;
+        });
       }
     } finally {
       document.body.classList.remove('auth-loading');

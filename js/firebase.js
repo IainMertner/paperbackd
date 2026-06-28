@@ -19,7 +19,8 @@ import {
   addDoc,
   getDocs,
   query,
-  orderBy
+  orderBy,
+  where
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -58,7 +59,7 @@ export async function signUp(username, password) {
   const uid  = cred.user.uid;
 
   await Promise.all([
-    setDoc(doc(db, 'users', uid),          { username, createdAt: serverTimestamp(), following: [], followers: [] }),
+    setDoc(doc(db, 'users', uid),          { username, createdAt: serverTimestamp(), following: [] }),
     setDoc(doc(db, 'usernames', username), { uid })
   ]);
 
@@ -112,10 +113,11 @@ export async function getFollowing(uid) {
 }
 
 export async function getFollowers(uid) {
-  const snap = await getDoc(doc(db, 'users', uid));
-  if (!snap.exists()) return [];
-  const uids = snap.data().followers || [];
-  return getProfilesByUids(uids);
+  // Compute followers by querying who has this uid in their following array.
+  // This avoids cross-user writes entirely — no special Firestore rules needed.
+  const q    = query(collection(db, 'users'), where('following', 'array-contains', uid));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ uid: d.id, ...d.data() }));
 }
 
 export async function followUser(currentUid, targetUsername) {
@@ -130,20 +132,14 @@ export async function followUser(currentUid, targetUsername) {
   const alreadyFollowing = (mySnap.data()?.following || mySnap.data()?.friends || []).includes(targetUid);
   if (alreadyFollowing) throw new Error('You already follow this person.');
 
-  await Promise.all([
-    updateDoc(doc(db, 'users', currentUid), { following: arrayUnion(targetUid) }),
-    updateDoc(doc(db, 'users', targetUid),  { followers: arrayUnion(currentUid) })
-  ]);
+  await updateDoc(doc(db, 'users', currentUid), { following: arrayUnion(targetUid) });
 
   const targetSnap = await getDoc(doc(db, 'users', targetUid));
   return { uid: targetUid, ...targetSnap.data() };
 }
 
 export async function unfollowUser(currentUid, targetUid) {
-  await Promise.all([
-    updateDoc(doc(db, 'users', currentUid), { following: arrayRemove(targetUid) }),
-    updateDoc(doc(db, 'users', targetUid),  { followers: arrayRemove(currentUid) })
-  ]);
+  await updateDoc(doc(db, 'users', currentUid), { following: arrayRemove(targetUid) });
 }
 
 // ── Books ─────────────────────────────────────────────────────────────────────

@@ -7,9 +7,7 @@ service cloud.firestore {
     match /users/{uid} {
       allow read:   if request.auth != null;
       allow create: if request.auth.uid == uid;
-      allow update: if request.auth.uid == uid ||
-        (request.auth != null &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followers']));
+      allow update: if request.auth.uid == uid;
       allow delete: if request.auth.uid == uid;
 
       // Books subcollection — private to the owner only.
