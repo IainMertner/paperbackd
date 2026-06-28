@@ -44,8 +44,8 @@
         </div>
         <div class="add-book-actions">
           <button class="btn-update" id="cancel-btn">Cancel</button>
-          <button class="btn-update" id="finished-btn">Already read</button>
-          <button class="join-club-btn" id="save-btn">Start reading</button>
+          <button class="btn-update" id="finished-btn" disabled>Already read</button>
+          <button class="join-club-btn" id="save-btn" disabled>Start reading</button>
         </div>
       </div>
     </div>
@@ -124,10 +124,13 @@
       const card = document.createElement('div');
       card.className  = 'card';
       card.dataset.id = book.id;
+      const titleHtml = book.gbid
+        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
+        : `<span class="book-title">${esc(book.title)}</span>`;
       card.innerHTML = `<div class="book-entry">
         <div class="book-cover">📖</div>
         <div class="book-info">
-          <div class="book-title">${esc(book.title)}</div>
+          ${titleHtml}
           ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
           <div class="progress-bar-track">
             <div class="progress-bar-fill" style="width:${pct}%"></div>
@@ -161,7 +164,7 @@
       });
 
       card.querySelector('.btn-finished').addEventListener('click', async () => {
-        await finishBook(user.uid, book.id, { title: book.title, author: book.author }, profile.username);
+        await finishBook(user.uid, book.id, { title: book.title, author: book.author, gbid: book.gbid }, profile.username);
         card.remove();
         if (!readingList.querySelector('.card')) {
           showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
@@ -190,10 +193,13 @@
       const card = document.createElement('div');
       card.className  = 'card';
       card.dataset.id = book.id;
+      const titleHtml = book.gbid
+        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
+        : `<span class="book-title">${esc(book.title)}</span>`;
       card.innerHTML = `<div class="book-entry">
         <div class="book-cover">📖</div>
         <div class="book-info">
-          <div class="book-title">${esc(book.title)}</div>
+          ${titleHtml}
           ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
           <div class="book-finished-meta">Finished ${when}</div>
           <div class="progress-controls" style="margin-top:.5rem">
@@ -212,7 +218,7 @@
         document.getElementById('reading-empty')?.remove();
         book.status     = 'reading';
         book.finishedAt = null;
-        readingList.appendChild(renderReading(book));
+        readingList.prepend(renderReading(book));
       });
 
       card.querySelector('.btn-remove').addEventListener('click', async () => {
@@ -252,11 +258,17 @@
     let searchTimer;
     let retryTimer;
 
+    function setAddEnabled(on) {
+      saveBtn.disabled     = !on;
+      finishedBtn.disabled = !on;
+    }
+
     function resetForm() {
       searchInput.value        = '';
       suggestBox.innerHTML     = '';
       suggestBox.style.display = 'none';
       selectedBook = null;
+      setAddEnabled(false);
     }
 
     toggle.addEventListener('click', () => { form.hidden = false; toggle.hidden = true; searchInput.focus(); });
@@ -319,10 +331,11 @@
 
         el.addEventListener('mousedown', e => {
           e.preventDefault();
-          selectedBook             = { title, author, pages };
+          selectedBook             = { title, author, pages, gbid: item.id || '' };
           searchInput.value        = title;
           suggestBox.innerHTML     = '';
           suggestBox.style.display = 'none';
+          setAddEnabled(true);
         });
 
         suggestBox.appendChild(el);
@@ -334,19 +347,17 @@
     const finishedBtn = document.getElementById('finished-btn');
 
     saveBtn.addEventListener('click', async () => {
-      const title  = selectedBook?.title || searchInput.value.trim();
-      const author = selectedBook?.author || '';
-      const pages  = selectedBook?.pages  || 0;
-      if (!title) { searchInput.focus(); return; }
+      if (!selectedBook) return;
+      const { title, author, pages, gbid } = selectedBook;
 
       saveBtn.disabled    = true;
       saveBtn.textContent = 'Adding…';
 
-      const id   = await addBook(user.uid, { title, author, totalPages: pages }, profile.username);
-      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading' };
+      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid }, profile.username);
+      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid };
 
       document.getElementById('reading-empty')?.remove();
-      readingList.appendChild(renderReading(book));
+      readingList.prepend(renderReading(book));
 
       saveBtn.disabled    = false;
       saveBtn.textContent = 'Start reading';
@@ -354,16 +365,14 @@
     });
 
     finishedBtn.addEventListener('click', async () => {
-      const title  = selectedBook?.title || searchInput.value.trim();
-      const author = selectedBook?.author || '';
-      const pages  = selectedBook?.pages  || 0;
-      if (!title) { searchInput.focus(); return; }
+      if (!selectedBook) return;
+      const { title, author, pages, gbid } = selectedBook;
 
       finishedBtn.disabled    = true;
       finishedBtn.textContent = 'Adding…';
 
-      const id   = await addFinishedBook(user.uid, { title, author, totalPages: pages });
-      const book = { id, title, author, totalPages: pages, currentPage: pages, status: 'finished', finishedAt: { toDate: () => new Date() } };
+      const id   = await addFinishedBook(user.uid, { title, author, totalPages: pages, gbid });
+      const book = { id, title, author, totalPages: pages, currentPage: pages, status: 'finished', finishedAt: { toDate: () => new Date() }, gbid };
 
       document.getElementById('finished-empty')?.remove();
       finishedList.prepend(renderFinished(book));

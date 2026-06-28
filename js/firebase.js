@@ -155,25 +155,26 @@ export async function unfollowUser(currentUid, targetUid) {
 // ── Books ─────────────────────────────────────────────────────────────────────
 
 export async function getBooks(uid) {
-  const q    = query(collection(db, 'users', uid, 'books'), orderBy('addedAt', 'asc'));
+  const q    = query(collection(db, 'users', uid, 'books'), orderBy('addedAt', 'desc'));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-export async function addFinishedBook(uid, { title, author, totalPages }) {
+export async function addFinishedBook(uid, { title, author, totalPages, gbid }) {
   const bookRef = await addDoc(collection(db, 'users', uid, 'books'), {
     title,
     author:      author || '',
     totalPages:  totalPages || 0,
     currentPage: totalPages || 0,
     status:      'finished',
+    gbid:        gbid || '',
     addedAt:     serverTimestamp(),
     finishedAt:  serverTimestamp()
   });
   return bookRef.id;
 }
 
-export async function addBook(uid, { title, author, totalPages }, username) {
+export async function addBook(uid, { title, author, totalPages, gbid }, username) {
   const [bookRef] = await Promise.all([
     addDoc(collection(db, 'users', uid, 'books'), {
       title,
@@ -181,6 +182,7 @@ export async function addBook(uid, { title, author, totalPages }, username) {
       totalPages:  totalPages || 0,
       currentPage: 0,
       status:      'reading',
+      gbid:        gbid || '',
       addedAt:     serverTimestamp()
     }),
     addDoc(collection(db, 'activity'), {
@@ -189,6 +191,7 @@ export async function addBook(uid, { title, author, totalPages }, username) {
       type:       'started',
       bookTitle:  title,
       bookAuthor: author || '',
+      gbid:       gbid || '',
       timestamp:  serverTimestamp()
     })
   ]);
@@ -199,7 +202,7 @@ export function updateBookProgress(uid, bookId, currentPage) {
   return updateDoc(doc(db, 'users', uid, 'books', bookId), { currentPage });
 }
 
-export function finishBook(uid, bookId, { title, author } = {}, username) {
+export function finishBook(uid, bookId, { title, author, gbid } = {}, username) {
   return Promise.all([
     updateDoc(doc(db, 'users', uid, 'books', bookId), {
       status:     'finished',
@@ -211,9 +214,33 @@ export function finishBook(uid, bookId, { title, author } = {}, username) {
       type:       'finished',
       bookTitle:  title || '',
       bookAuthor: author || '',
+      gbid:       gbid || '',
       timestamp:  serverTimestamp()
     })
   ]);
+}
+
+export async function getBookByGbid(uid, gbid) {
+  if (!gbid) return null;
+  const q    = query(collection(db, 'users', uid, 'books'), where('gbid', '==', gbid));
+  const snap = await getDocs(q);
+  return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+}
+
+export async function getFriendBookStatus(followingUids, gbid) {
+  if (!gbid || !followingUids.length) return [];
+  const results = await Promise.all(
+    followingUids.map(async uid => {
+      const q    = query(collection(db, 'users', uid, 'books'), where('gbid', '==', gbid));
+      const snap = await getDocs(q);
+      if (snap.empty) return null;
+      const userSnap = await getDoc(doc(db, 'users', uid));
+      return userSnap.exists()
+        ? { uid, username: userSnap.data().username, book: { id: snap.docs[0].id, ...snap.docs[0].data() } }
+        : null;
+    })
+  );
+  return results.filter(Boolean);
 }
 
 async function deleteActivityForBook(uid, bookTitle, type) {

@@ -99,10 +99,13 @@
     function renderEvent(event) {
       const card   = document.createElement('div');
       card.className = 'card';
-      const initial = (event.username?.[0] || '?').toUpperCase();
+      const initial  = (event.username?.[0] || '?').toUpperCase();
+      const bookLink = event.gbid
+        ? `<a href="book/?gbid=${esc(event.gbid)}" style="font-style:italic;color:inherit;text-decoration:none">${esc(event.bookTitle)}</a>`
+        : `<em>${esc(event.bookTitle)}</em>`;
       const action  = event.type === 'started'
-        ? `started reading <em>${esc(event.bookTitle)}</em>`
-        : `finished <em>${esc(event.bookTitle)}</em>`;
+        ? `started reading ${bookLink}`
+        : `finished ${bookLink}`;
       const author  = event.bookAuthor
         ? `<span style="color:var(--text-muted)"> by ${esc(event.bookAuthor)}</span>`
         : '';
