@@ -12,6 +12,8 @@ import {
   setDoc,
   getDoc,
   updateDoc,
+  deleteDoc,
+  deleteField,
   arrayUnion,
   arrayRemove,
   serverTimestamp,
@@ -158,6 +160,19 @@ export async function getBooks(uid) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+export async function addFinishedBook(uid, { title, author, totalPages }) {
+  const bookRef = await addDoc(collection(db, 'users', uid, 'books'), {
+    title,
+    author:      author || '',
+    totalPages:  totalPages || 0,
+    currentPage: totalPages || 0,
+    status:      'finished',
+    addedAt:     serverTimestamp(),
+    finishedAt:  serverTimestamp()
+  });
+  return bookRef.id;
+}
+
 export async function addBook(uid, { title, author, totalPages }, username) {
   const [bookRef] = await Promise.all([
     addDoc(collection(db, 'users', uid, 'books'), {
@@ -198,6 +213,29 @@ export function finishBook(uid, bookId, { title, author } = {}, username) {
       bookAuthor: author || '',
       timestamp:  serverTimestamp()
     })
+  ]);
+}
+
+async function deleteActivityForBook(uid, bookTitle, type) {
+  const snap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
+  await Promise.all(
+    snap.docs
+      .filter(d => d.data().bookTitle === bookTitle && (type == null || d.data().type === type))
+      .map(d => deleteDoc(d.ref))
+  );
+}
+
+export async function deleteBook(uid, bookId, { title }) {
+  await Promise.all([
+    deleteDoc(doc(db, 'users', uid, 'books', bookId)),
+    deleteActivityForBook(uid, title, null)
+  ]);
+}
+
+export async function unfinishBook(uid, bookId, { title }) {
+  await Promise.all([
+    updateDoc(doc(db, 'users', uid, 'books', bookId), { status: 'reading', finishedAt: deleteField() }),
+    deleteActivityForBook(uid, title, 'finished')
   ]);
 }
 
