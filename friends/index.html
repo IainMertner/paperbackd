@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Friends — Reading Log</title>
+  <title>Following — Reading Log</title>
   <link rel="stylesheet" href="../css/main.css">
   <script>
     (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
@@ -16,8 +16,8 @@
       <a class="logo" href="../">Reading Log</a>
       <nav class="desktop-nav">
         <a href="../"          data-nav="home">Home</a>
-        <a href="../clubs/"    data-nav="clubs">Book Clubs</a>
-        <a href="../log/"      data-nav="log">My Log</a>
+        <a href="../clubs/"    data-nav="clubs">Clubs</a>
+        <a href="../library/"  data-nav="library">Library</a>
         <a href="../profile/"  data-nav="profile">Profile</a>
         <a href="../settings/" data-nav="settings">Settings</a>
       </nav>
@@ -27,22 +27,24 @@
 
   <main class="page-content">
     <a class="back-link" href="../profile/">← Profile</a>
-    <h1 class="page-title">Friends</h1>
-
-    <div id="friends-list">
-      <!-- populated by script -->
-    </div>
+    <h1 class="page-title">Following</h1>
 
     <div class="add-friend card">
-      <div class="add-friend-label">Add a friend</div>
+      <div class="add-friend-label">Follow someone</div>
       <div class="join-club-row">
-        <input class="join-club-input" id="friend-input" type="text"
+        <input class="join-club-input" id="follow-input" type="text"
           placeholder="Their username" autocomplete="off" autocapitalize="none" spellcheck="false">
-        <button class="join-club-btn" id="friend-btn">Add</button>
+        <button class="join-club-btn" id="follow-btn">Follow</button>
       </div>
-      <p class="auth-error" id="friend-error" hidden style="margin-top:.6rem;margin-bottom:0"></p>
-      <p class="auth-hint" id="friend-ok"    hidden style="margin-top:.4rem;color:var(--accent)"></p>
+      <p class="auth-error" id="follow-error" hidden style="margin-top:.6rem;margin-bottom:0"></p>
+      <p class="auth-hint"  id="follow-ok"    hidden style="margin-top:.4rem;color:var(--accent)"></p>
     </div>
+
+    <p class="section-title">Following</p>
+    <div id="following-list"></div>
+
+    <p class="section-title" style="margin-top:1.5rem">Followers</p>
+    <div id="followers-list"></div>
 
   </main>
 
@@ -62,12 +64,12 @@
       </svg>
       Clubs
     </a>
-    <a class="mobile-nav-item" href="../log/" data-nav="log">
+    <a class="mobile-nav-item" href="../library/" data-nav="library">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
         <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
       </svg>
-      My Log
+      Library
     </a>
     <a class="mobile-nav-item" href="../profile/" data-nav="profile">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -89,61 +91,91 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getFriends, addFriend } from '../js/firebase.js';
+    import { getFollowing, getFollowers, followUser, unfollowUser } from '../js/firebase.js';
 
     const { user } = await requireAuth();
-    const list = document.getElementById('friends-list');
+    const followingList = document.getElementById('following-list');
+    const followersList = document.getElementById('followers-list');
 
-    function renderFriend(profile) {
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function showEmpty(container, id, msg) {
+      const p = document.createElement('p');
+      p.id = id;
+      p.style.cssText = 'color:var(--text-muted);font-size:.875rem;margin-bottom:.625rem';
+      p.textContent = msg;
+      container.appendChild(p);
+    }
+
+    function renderFollowing(profile) {
       const card = document.createElement('div');
-      card.className = 'card';
+      card.className   = 'card';
       card.dataset.uid = profile.uid;
       card.innerHTML = `<div class="friend-item">
-        <div class="friend-avatar">${profile.username[0].toUpperCase()}</div>
-        <div class="friend-name">${profile.username}</div>
+        <div class="friend-avatar">${esc(profile.username[0].toUpperCase())}</div>
+        <div class="friend-name">${esc(profile.username)}</div>
+        <button class="btn-danger btn-unfollow" style="margin-left:auto;font-size:.75rem;padding:.3rem .75rem">Unfollow</button>
+      </div>`;
+      card.querySelector('.btn-unfollow').addEventListener('click', async () => {
+        await unfollowUser(user.uid, profile.uid);
+        card.remove();
+        if (!followingList.querySelector('.card')) {
+          showEmpty(followingList, 'following-empty', 'Not following anyone yet.');
+        }
+      });
+      return card;
+    }
+
+    function renderFollower(profile) {
+      const card = document.createElement('div');
+      card.className   = 'card';
+      card.dataset.uid = profile.uid;
+      card.innerHTML = `<div class="friend-item">
+        <div class="friend-avatar">${esc(profile.username[0].toUpperCase())}</div>
+        <div class="friend-name">${esc(profile.username)}</div>
       </div>`;
       return card;
     }
 
-    function showEmpty() {
-      const msg = document.createElement('p');
-      msg.id = 'friends-empty';
-      msg.style.cssText = 'color:var(--text-muted);font-size:.875rem;margin-bottom:.625rem';
-      msg.textContent = 'No friends yet. Add someone below!';
-      list.appendChild(msg);
+    try {
+      const [following, followers] = await Promise.all([
+        getFollowing(user.uid),
+        getFollowers(user.uid)
+      ]);
+
+      if (following.length === 0) showEmpty(followingList, 'following-empty', 'Not following anyone yet.');
+      else following.forEach(f => followingList.appendChild(renderFollowing(f)));
+
+      if (followers.length === 0) showEmpty(followersList, 'followers-empty', 'No followers yet.');
+      else followers.forEach(f => followersList.appendChild(renderFollower(f)));
+    } finally {
+      document.body.classList.remove('auth-loading');
     }
 
-    const friends = await getFriends(user.uid);
-    if (friends.length === 0) {
-      showEmpty();
-    } else {
-      friends.forEach(f => list.appendChild(renderFriend(f)));
-    }
-
-    document.body.classList.remove('auth-loading');
-
-    // ── Add friend ──────────────────────────────────────────────────────────
-    const input    = document.getElementById('friend-input');
-    const btn      = document.getElementById('friend-btn');
-    const errorEl  = document.getElementById('friend-error');
-    const okEl     = document.getElementById('friend-ok');
+    // ── Follow form ────────────────────────────────────────────────────────────
+    const input   = document.getElementById('follow-input');
+    const btn     = document.getElementById('follow-btn');
+    const errorEl = document.getElementById('follow-error');
+    const okEl    = document.getElementById('follow-ok');
 
     btn.addEventListener('click', async () => {
       const username = input.value.trim().toLowerCase();
       if (!username) return;
 
-      errorEl.hidden = true;
-      okEl.hidden    = true;
-      btn.disabled   = true;
-      btn.textContent = 'Adding…';
+      errorEl.hidden  = true;
+      okEl.hidden     = true;
+      btn.disabled    = true;
+      btn.textContent = 'Following…';
 
       try {
-        const friend = await addFriend(user.uid, username);
+        const followed = await followUser(user.uid, username);
 
-        document.getElementById('friends-empty')?.remove();
-        list.appendChild(renderFriend(friend));
+        document.getElementById('following-empty')?.remove();
+        followingList.appendChild(renderFollowing(followed));
 
-        okEl.textContent = `${friend.username} added!`;
+        okEl.textContent = `Now following ${followed.username}!`;
         okEl.hidden      = false;
         input.value      = '';
       } catch (err) {
@@ -151,7 +183,7 @@
         errorEl.hidden      = false;
       } finally {
         btn.disabled    = false;
-        btn.textContent = 'Add';
+        btn.textContent = 'Follow';
       }
     });
 

@@ -13,6 +13,7 @@ import {
   getDoc,
   updateDoc,
   arrayUnion,
+  arrayRemove,
   serverTimestamp,
   collection,
   addDoc,
@@ -22,8 +23,6 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 // ── Config ───────────────────────────────────────────────────────────────────
-// Replace these with the values from your Firebase project:
-// Firebase console → Project settings → Your apps → Web → SDK setup → Config
 const firebaseConfig = {
   apiKey:            "AIzaSyBExnP_07GT_hP8olJbHhlWKvNMIxG75r0",
   authDomain:        "reading-log-ba9a5.firebaseapp.com",
@@ -59,7 +58,7 @@ export async function signUp(username, password) {
   const uid  = cred.user.uid;
 
   await Promise.all([
-    setDoc(doc(db, 'users', uid),          { username, createdAt: serverTimestamp(), friends: [] }),
+    setDoc(doc(db, 'users', uid),          { username, createdAt: serverTimestamp(), following: [], followers: [] }),
     setDoc(doc(db, 'usernames', username), { uid })
   ]);
 
@@ -98,32 +97,53 @@ export async function repairProfile(user) {
   return { uid, ...snap.data() };
 }
 
-export async function getFriends(uid) {
-  const snap = await getDoc(doc(db, 'users', uid));
-  if (!snap.exists()) return [];
-  const uids = snap.data().friends || [];
+async function getProfilesByUids(uids) {
   if (!uids.length) return [];
   const snaps = await Promise.all(uids.map(id => getDoc(doc(db, 'users', id))));
   return snaps.filter(s => s.exists()).map(s => ({ uid: s.id, ...s.data() }));
 }
 
-export async function addFriend(currentUid, friendUsername) {
-  const lower       = friendUsername.toLowerCase();
-  const usernameRef = await getDoc(doc(db, 'usernames', lower));
-  if (!usernameRef.exists()) throw new Error('No user found with that username.');
+export async function getFollowing(uid) {
+  const snap = await getDoc(doc(db, 'users', uid));
+  if (!snap.exists()) return [];
+  // fall back to old 'friends' field for accounts created before the migration
+  const uids = snap.data().following || snap.data().friends || [];
+  return getProfilesByUids(uids);
+}
 
-  const friendUid = usernameRef.data().uid;
-  if (friendUid === currentUid) throw new Error('You cannot add yourself.');
+export async function getFollowers(uid) {
+  const snap = await getDoc(doc(db, 'users', uid));
+  if (!snap.exists()) return [];
+  const uids = snap.data().followers || [];
+  return getProfilesByUids(uids);
+}
+
+export async function followUser(currentUid, targetUsername) {
+  const lower = targetUsername.toLowerCase();
+  const usernameSnap = await getDoc(doc(db, 'usernames', lower));
+  if (!usernameSnap.exists()) throw new Error('No user found with that username.');
+
+  const targetUid = usernameSnap.data().uid;
+  if (targetUid === currentUid) throw new Error('You cannot follow yourself.');
 
   const mySnap = await getDoc(doc(db, 'users', currentUid));
-  if (mySnap.exists() && (mySnap.data().friends || []).includes(friendUid)) {
-    throw new Error('Already in your friends list.');
-  }
+  const alreadyFollowing = (mySnap.data()?.following || mySnap.data()?.friends || []).includes(targetUid);
+  if (alreadyFollowing) throw new Error('You already follow this person.');
 
-  await updateDoc(doc(db, 'users', currentUid), { friends: arrayUnion(friendUid) });
+  await Promise.all([
+    updateDoc(doc(db, 'users', currentUid), { following: arrayUnion(targetUid) }),
+    updateDoc(doc(db, 'users', targetUid),  { followers: arrayUnion(currentUid) })
+  ]);
 
-  const friendSnap = await getDoc(doc(db, 'users', friendUid));
-  return { uid: friendUid, ...friendSnap.data() };
+  const targetSnap = await getDoc(doc(db, 'users', targetUid));
+  return { uid: targetUid, ...targetSnap.data() };
+}
+
+export async function unfollowUser(currentUid, targetUid) {
+  await Promise.all([
+    updateDoc(doc(db, 'users', currentUid), { following: arrayRemove(targetUid) }),
+    updateDoc(doc(db, 'users', targetUid),  { followers: arrayRemove(currentUid) })
+  ]);
 }
 
 // ── Books ─────────────────────────────────────────────────────────────────────

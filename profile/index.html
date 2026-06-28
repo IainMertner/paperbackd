@@ -16,8 +16,8 @@
       <a class="logo" href="../">Reading Log</a>
       <nav class="desktop-nav">
         <a href="../"          data-nav="home">Home</a>
-        <a href="../clubs/"    data-nav="clubs">Book Clubs</a>
-        <a href="../log/"      data-nav="log">My Log</a>
+        <a href="../clubs/"    data-nav="clubs">Clubs</a>
+        <a href="../library/"  data-nav="library">Library</a>
         <a href="../profile/"  data-nav="profile">Profile</a>
         <a href="../settings/" data-nav="settings">Settings</a>
       </nav>
@@ -39,15 +39,8 @@
 
     <div class="profile-links">
       <a class="profile-link-row card" href="../friends/">
-        <span class="profile-link-label">Friends</span>
-        <span class="profile-link-meta">4</span>
-        <svg class="profile-link-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="9 18 15 12 9 6"/>
-        </svg>
-      </a>
-      <a class="profile-link-row card" href="../library/">
-        <span class="profile-link-label">Library</span>
-        <span class="profile-link-meta">23 books</span>
+        <span class="profile-link-label">Following / Followers</span>
+        <span class="profile-link-meta"><span id="following-count">—</span> · <span id="followers-count">—</span></span>
         <svg class="profile-link-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 18 15 12 9 6"/>
         </svg>
@@ -72,12 +65,12 @@
       </svg>
       Clubs
     </a>
-    <a class="mobile-nav-item" href="../log/" data-nav="log">
+    <a class="mobile-nav-item" href="../library/" data-nav="library">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
         <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
       </svg>
-      My Log
+      Library
     </a>
     <a class="mobile-nav-item" href="../profile/" data-nav="profile">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -102,8 +95,10 @@
     try {
       const { profile } = await requireAuth();
       if (profile) {
-        document.getElementById('profile-avatar').textContent = profile.username[0].toUpperCase();
-        document.getElementById('profile-name').textContent   = profile.username;
+        document.getElementById('profile-avatar').textContent   = profile.username[0].toUpperCase();
+        document.getElementById('profile-name').textContent     = profile.username;
+        document.getElementById('following-count').textContent  = (profile.following || profile.friends || []).length;
+        document.getElementById('followers-count').textContent  = (profile.followers || []).length;
       }
     } finally {
       document.body.classList.remove('auth-loading');
