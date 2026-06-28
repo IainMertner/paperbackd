@@ -85,6 +85,14 @@ export async function getProfile(uid) {
   return snap.exists() ? { uid, ...snap.data() } : null;
 }
 
+export async function getProfileByUsername(username) {
+  const snap = await getDoc(doc(db, 'usernames', username.toLowerCase()));
+  if (!snap.exists()) return null;
+  const uid      = snap.data().uid;
+  const userSnap = await getDoc(doc(db, 'users', uid));
+  return userSnap.exists() ? { uid, ...userSnap.data() } : null;
+}
+
 // Reconstructs missing Firestore profile data from the Firebase Auth email.
 // Safe to run on healthy accounts — merge: true never overwrites existing fields.
 export async function repairProfile(user) {

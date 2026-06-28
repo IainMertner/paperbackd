@@ -107,9 +107,9 @@
         ? `<span style="color:var(--text-muted)"> by ${esc(event.bookAuthor)}</span>`
         : '';
       card.innerHTML = `<div class="friend-item">
-        <div class="friend-avatar">${esc(initial)}</div>
+        <a class="friend-avatar" href="profile/?u=${esc(event.username)}" style="text-decoration:none;color:inherit">${esc(initial)}</a>
         <div style="flex:1;min-width:0">
-          <div style="font-size:.9rem;line-height:1.4">${esc(event.username)} ${action}${author}</div>
+          <div style="font-size:.9rem;line-height:1.4"><a href="profile/?u=${esc(event.username)}" style="font-weight:600;color:inherit;text-decoration:none">${esc(event.username)}</a> ${action}${author}</div>
           <div class="book-finished-meta">${timeAgo(event.timestamp)}</div>
         </div>
       </div>`;

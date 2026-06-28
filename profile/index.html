@@ -26,6 +26,7 @@
   </header>
 
   <main class="page-content">
+    <a class="back-link" id="back-link" href="#" style="display:none">← Back</a>
     <h1 class="page-title">Profile</h1>
 
     <div class="profile-card card">
@@ -37,10 +38,24 @@
       </div>
     </div>
 
-    <div class="profile-links">
+    <div id="follow-action" hidden style="margin-bottom:.625rem">
+      <button id="follow-btn" class="join-club-btn" style="width:100%">Follow</button>
+    </div>
+
+    <div class="profile-links" id="own-links" style="display:none">
       <a class="profile-link-row card" href="../friends/">
         <span class="profile-link-label">Following / Followers</span>
         <span class="profile-link-meta"><span id="following-count">—</span> · <span id="followers-count">—</span></span>
+        <svg class="profile-link-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </a>
+    </div>
+
+    <div class="profile-links" id="other-counts" style="display:none">
+      <a class="profile-link-row card" id="other-counts-link" href="#">
+        <span class="profile-link-label">Following / Followers</span>
+        <span class="profile-link-meta"><span id="other-following-count">—</span> · <span id="other-followers-count">—</span></span>
         <svg class="profile-link-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 18 15 12 9 6"/>
         </svg>
@@ -92,17 +107,65 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getFollowers } from '../js/firebase.js';
+    import { getProfileByUsername, getFollowers, followUser, unfollowUser } from '../js/firebase.js';
+
+    const { user, profile: myProfile } = await requireAuth();
+    const params      = new URLSearchParams(location.search);
+    const targetParam = params.get('u')?.toLowerCase();
+    const isOwn       = !targetParam || targetParam === myProfile.username;
+
     try {
-      const { user, profile } = await requireAuth();
-      if (profile) {
-        document.getElementById('profile-avatar').textContent  = profile.username[0].toUpperCase();
-        document.getElementById('profile-name').textContent    = profile.username;
-        document.getElementById('following-count').textContent = (profile.following || profile.friends || []).length;
-        // Load follower count async — doesn't block page display
+      if (isOwn) {
+        document.getElementById('profile-avatar').textContent  = myProfile.username[0].toUpperCase();
+        document.getElementById('profile-name').textContent    = myProfile.username;
+        document.getElementById('following-count').textContent = (myProfile.following || myProfile.friends || []).length;
+        document.getElementById('own-links').style.display = '';
         getFollowers(user.uid).then(f => {
           document.getElementById('followers-count').textContent = f.length;
         });
+      } else {
+        const backLink = document.getElementById('back-link');
+        backLink.style.display = '';
+        backLink.addEventListener('click', e => { e.preventDefault(); history.back(); });
+
+        const target = await getProfileByUsername(targetParam);
+        if (!target) {
+          document.getElementById('profile-name').textContent = 'User not found.';
+        } else {
+          document.getElementById('profile-avatar').textContent = target.username[0].toUpperCase();
+          document.getElementById('profile-name').textContent   = target.username;
+
+          document.getElementById('other-following-count').textContent = (target.following || []).length;
+          document.getElementById('other-counts-link').href = `../friends/?u=${encodeURIComponent(target.username)}`;
+          document.getElementById('other-counts').style.display = '';
+          getFollowers(target.uid).then(f => {
+            document.getElementById('other-followers-count').textContent = f.length;
+          });
+
+          const myFollowing = myProfile.following || myProfile.friends || [];
+          let isFollowing   = myFollowing.includes(target.uid);
+
+          const followAction = document.getElementById('follow-action');
+          const followBtn    = document.getElementById('follow-btn');
+          followAction.hidden   = false;
+          followBtn.textContent = isFollowing ? 'Unfollow' : 'Follow';
+
+          followBtn.addEventListener('click', async () => {
+            followBtn.disabled = true;
+            try {
+              if (isFollowing) {
+                await unfollowUser(user.uid, target.uid);
+                isFollowing = false;
+              } else {
+                await followUser(user.uid, target.username);
+                isFollowing = true;
+              }
+              followBtn.textContent = isFollowing ? 'Unfollow' : 'Follow';
+            } finally {
+              followBtn.disabled = false;
+            }
+          });
+        }
       }
     } finally {
       document.body.classList.remove('auth-loading');
