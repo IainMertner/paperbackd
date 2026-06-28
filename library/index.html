@@ -101,7 +101,7 @@
     import { requireAuth } from '../js/auth.js';
     import { getBooks, addBook, updateBookProgress, finishBook } from '../js/firebase.js';
 
-    const { user } = await requireAuth();
+    const { user, profile } = await requireAuth();
     const readingList  = document.getElementById('reading-list');
     const finishedList = document.getElementById('finished-list');
 
@@ -158,7 +158,7 @@
       });
 
       card.querySelector('.btn-finished').addEventListener('click', async () => {
-        await finishBook(user.uid, book.id);
+        await finishBook(user.uid, book.id, { title: book.title, author: book.author }, profile.username);
         card.remove();
         if (!readingList.querySelector('.card')) {
           showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
@@ -227,7 +227,7 @@
       saveBtn.disabled    = true;
       saveBtn.textContent = 'Adding…';
 
-      const id   = await addBook(user.uid, { title, author, totalPages: pages });
+      const id   = await addBook(user.uid, { title, author, totalPages: pages }, profile.username);
       const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading' };
 
       document.getElementById('reading-empty')?.remove();

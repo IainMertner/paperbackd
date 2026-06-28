@@ -16,6 +16,13 @@ service cloud.firestore {
       }
     }
 
+    // Activity feed — readable by any signed-in user, writable only by the event owner.
+    match /activity/{activityId} {
+      allow read:   if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.uid;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.uid;
+    }
+
     // Username index — publicly readable so signup can check availability
     // before the account exists, and so add-friend lookups work.
     // Writable only at account creation, deletable only by the username owner.

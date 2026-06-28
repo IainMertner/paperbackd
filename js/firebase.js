@@ -20,7 +20,8 @@ import {
   getDocs,
   query,
   orderBy,
-  where
+  where,
+  limit
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -150,25 +151,57 @@ export async function getBooks(uid) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-export async function addBook(uid, { title, author, totalPages }) {
-  const ref = await addDoc(collection(db, 'users', uid, 'books'), {
-    title,
-    author:      author || '',
-    totalPages:  totalPages || 0,
-    currentPage: 0,
-    status:      'reading',
-    addedAt:     serverTimestamp()
-  });
-  return ref.id;
+export async function addBook(uid, { title, author, totalPages }, username) {
+  const [bookRef] = await Promise.all([
+    addDoc(collection(db, 'users', uid, 'books'), {
+      title,
+      author:      author || '',
+      totalPages:  totalPages || 0,
+      currentPage: 0,
+      status:      'reading',
+      addedAt:     serverTimestamp()
+    }),
+    addDoc(collection(db, 'activity'), {
+      uid,
+      username,
+      type:       'started',
+      bookTitle:  title,
+      bookAuthor: author || '',
+      timestamp:  serverTimestamp()
+    })
+  ]);
+  return bookRef.id;
 }
 
 export function updateBookProgress(uid, bookId, currentPage) {
   return updateDoc(doc(db, 'users', uid, 'books', bookId), { currentPage });
 }
 
-export function finishBook(uid, bookId) {
-  return updateDoc(doc(db, 'users', uid, 'books', bookId), {
-    status:      'finished',
-    finishedAt:  serverTimestamp()
-  });
+export function finishBook(uid, bookId, { title, author } = {}, username) {
+  return Promise.all([
+    updateDoc(doc(db, 'users', uid, 'books', bookId), {
+      status:     'finished',
+      finishedAt: serverTimestamp()
+    }),
+    addDoc(collection(db, 'activity'), {
+      uid,
+      username,
+      type:       'finished',
+      bookTitle:  title || '',
+      bookAuthor: author || '',
+      timestamp:  serverTimestamp()
+    })
+  ]);
+}
+
+export async function getFeed(currentUid, followingUids) {
+  const uids = [...new Set([currentUid, ...followingUids])];
+  if (!uids.length) return [];
+  // 'in' supports up to 30 values; slice just in case
+  const q    = query(collection(db, 'activity'), where('uid', 'in', uids.slice(0, 30)));
+  const snap = await getDocs(q);
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
+    .slice(0, 50);
 }
