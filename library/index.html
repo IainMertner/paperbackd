@@ -40,9 +40,10 @@
       </button>
       <div class="add-book-form" id="add-book-form" hidden>
         <div class="add-book-fields">
-          <input class="add-book-input" type="text" placeholder="Title" id="new-title" autocomplete="off">
-          <input class="add-book-input" type="text" placeholder="Author" id="new-author" autocomplete="off">
-          <input class="add-book-input add-book-input-pages" type="number" placeholder="Total pages" id="new-pages" min="1" max="9999">
+          <div class="book-search-wrap" id="book-search-wrap">
+            <input class="add-book-input" type="text" placeholder="Search for a book…" id="book-search" autocomplete="off" spellcheck="false">
+            <div class="book-suggestions" id="book-suggestions" style="display:none"></div>
+          </div>
         </div>
         <div class="add-book-actions">
           <button class="btn-update" id="cancel-btn">Cancel</button>
@@ -205,24 +206,101 @@
     }
 
     // ── Add book form ──────────────────────────────────────────────────────────
-    const toggle    = document.getElementById('add-book-toggle');
-    const form      = document.getElementById('add-book-form');
-    const cancelBtn = document.getElementById('cancel-btn');
-    const saveBtn   = document.getElementById('save-btn');
+    const toggle      = document.getElementById('add-book-toggle');
+    const form        = document.getElementById('add-book-form');
+    const cancelBtn   = document.getElementById('cancel-btn');
+    const saveBtn     = document.getElementById('save-btn');
+    const searchInput = document.getElementById('book-search');
+    const suggestBox  = document.getElementById('book-suggestions');
 
-    toggle.addEventListener('click', () => { form.hidden = false; toggle.hidden = true; });
-    cancelBtn.addEventListener('click', () => {
-      form.hidden = true; toggle.hidden = false;
-      document.getElementById('new-title').value  = '';
-      document.getElementById('new-author').value = '';
-      document.getElementById('new-pages').value  = '';
+    let selectedBook = null;
+    let searchTimer;
+    let retryTimer;
+
+    function resetForm() {
+      searchInput.value        = '';
+      suggestBox.innerHTML     = '';
+      suggestBox.style.display = 'none';
+      selectedBook = null;
+    }
+
+    toggle.addEventListener('click', () => { form.hidden = false; toggle.hidden = true; searchInput.focus(); });
+    cancelBtn.addEventListener('click', () => { form.hidden = true; toggle.hidden = false; resetForm(); });
+
+    document.addEventListener('click', e => {
+      if (!document.getElementById('book-search-wrap').contains(e.target)) {
+        suggestBox.style.display = 'none';
+      }
     });
 
+    searchInput.addEventListener('input', () => {
+      selectedBook = null;
+      clearTimeout(searchTimer);
+      const q = searchInput.value.trim();
+      clearTimeout(retryTimer);
+      if (q.length < 3) { suggestBox.innerHTML = ''; suggestBox.style.display = 'none'; return; }
+      searchTimer = setTimeout(() => fetchSuggestions(q), 350);
+    });
+
+    async function fetchSuggestions(q) {
+      clearTimeout(retryTimer);
+      try {
+        const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(q)}&maxResults=20&printType=books&key=AIzaSyBj-U331sEcIO__4d0NWEdXx74QjOXae9E`);
+        if (res.status === 429) {
+          retryTimer = setTimeout(() => fetchSuggestions(q), 2500);
+          return;
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const items = (data.items || [])
+          .sort((a, b) => (b.volumeInfo?.ratingsCount || 0) - (a.volumeInfo?.ratingsCount || 0))
+          .slice(0, 8);
+        renderSuggestions(items);
+      } catch (err) {
+        console.error('Book search failed:', err);
+      }
+    }
+
+    function renderSuggestions(items) {
+      suggestBox.innerHTML = '';
+      if (!items.length) { suggestBox.style.display = 'none'; return; }
+
+      items.forEach(item => {
+        const info   = item.volumeInfo || {};
+        const title  = info.title || '';
+        const author = (info.authors || [])[0] || '';
+        const pages  = info.pageCount || 0;
+        const cover  = (info.imageLinks || {}).smallThumbnail || (info.imageLinks || {}).thumbnail || '';
+
+        const el = document.createElement('div');
+        el.className = 'book-suggestion-item';
+
+        const img = cover
+          ? `<img class="suggestion-cover" src="${cover.replace('http:', 'https:')}" alt="">`
+          : `<div class="suggestion-cover-placeholder"></div>`;
+        const meta = author ? `by ${esc(author)}` : '';
+
+        el.innerHTML = `<div class="suggestion-inner">${img}<div><div class="suggestion-title">${esc(title)}</div><div class="suggestion-meta">${meta}</div></div></div>`;
+
+        el.addEventListener('mousedown', e => {
+          e.preventDefault();
+          selectedBook             = { title, author, pages };
+          searchInput.value        = title;
+          suggestBox.innerHTML     = '';
+          suggestBox.style.display = 'none';
+        });
+
+        suggestBox.appendChild(el);
+      });
+
+      suggestBox.style.display = 'block';
+    }
+
     saveBtn.addEventListener('click', async () => {
-      const title  = document.getElementById('new-title').value.trim();
-      const author = document.getElementById('new-author').value.trim();
-      const pages  = parseInt(document.getElementById('new-pages').value) || 0;
-      if (!title) { document.getElementById('new-title').focus(); return; }
+      const title  = selectedBook?.title || searchInput.value.trim();
+      const author = selectedBook?.author || '';
+      const pages  = selectedBook?.pages  || 0;
+      if (!title) { searchInput.focus(); return; }
 
       saveBtn.disabled    = true;
       saveBtn.textContent = 'Adding…';

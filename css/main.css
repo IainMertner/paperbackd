@@ -841,3 +841,50 @@ body.auth-loading { visibility: hidden; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .btn-danger:hover { background: #450a0a; }
 }
+
+/* ── Book search dropdown ──────────────────────────────────── */
+.book-search-wrap { position: relative; }
+
+.book-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  z-index: 50;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.book-suggestion-item {
+  padding: .6rem .875rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background .1s;
+}
+.book-suggestion-item:last-child { border-bottom: none; }
+.book-suggestion-item:hover { background: var(--bg-alt); }
+
+.suggestion-inner { display: flex; gap: .625rem; align-items: center; }
+
+.suggestion-cover {
+  width: 28px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.suggestion-cover-placeholder {
+  width: 28px;
+  height: 42px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.suggestion-title { font-size: .85rem; font-weight: 500; line-height: 1.3; }
+.suggestion-meta  { font-size: .72rem; color: var(--text-muted); margin-top: .1rem; }
