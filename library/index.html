@@ -26,7 +26,8 @@
   </header>
 
   <main class="page-content">
-    <h1 class="page-title">Library</h1>
+    <a class="back-link" id="back-link" href="../" style="display:none">← Back</a>
+    <h1 class="page-title" id="page-title">Library</h1>
 
     <div class="add-book-card card" id="add-book-card">
       <button class="add-book-toggle" id="add-book-toggle">
@@ -101,9 +102,14 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating, updateBookDates } from '../js/firebase.js';
+    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating, updateBookDates, getProfileByUsername } from '../js/firebase.js';
 
     const { user, profile } = await requireAuth();
+
+    const params   = new URLSearchParams(location.search);
+    const viewUser = params.get('u')?.toLowerCase();
+    const isOwn    = !viewUser;
+
     const readingList  = document.getElementById('reading-list');
     const finishedList = document.getElementById('finished-list');
 
@@ -397,20 +403,88 @@
       return card;
     }
 
+    function renderReadingView(book) {
+      const pct  = book.totalPages ? Math.round((book.currentPage / book.totalPages) * 100) : 0;
+      const card = document.createElement('div');
+      card.className = 'card';
+      const titleHtml = book.gbid
+        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
+        : `<span class="book-title">${esc(book.title)}</span>`;
+      card.innerHTML = `<div class="book-entry">
+        <div class="book-cover">📖</div>
+        <div class="book-info">
+          ${titleHtml}
+          ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
+          ${book.totalPages ? `<div class="progress-bar-track"><div class="progress-bar-fill" style="width:${pct}%"></div></div><div class="progress-label">Page ${book.currentPage} of ${book.totalPages}</div>` : ''}
+        </div>
+      </div>`;
+      return card;
+    }
+
+    function renderFinishedView(book) {
+      const when = book.finishedAt?.toDate?.()
+        ? book.finishedAt.toDate().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+        : 'Recently';
+      const card = document.createElement('div');
+      card.className = 'card';
+      const titleHtml = book.gbid
+        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
+        : `<span class="book-title">${esc(book.title)}</span>`;
+      const starsHtml  = renderStars(book.rating);
+      const reviewHtml = book.review
+        ? `<div class="review-preview">${esc(book.review.slice(0, 100))}${book.review.length > 100 ? '…' : ''}</div>`
+        : '';
+      card.innerHTML = `<div class="book-entry">
+        <div class="book-cover">📖</div>
+        <div class="book-info">
+          ${titleHtml}
+          ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
+          <div class="book-finished-meta">Finished ${when}</div>
+          ${starsHtml}
+          ${reviewHtml}
+        </div>
+      </div>`;
+      return card;
+    }
+
     try {
-      const books    = await getBooks(user.uid);
-      const reading  = books.filter(b => b.status === 'reading');
-      const finished = books.filter(b => b.status === 'finished');
+      if (isOwn) {
+        const books    = await getBooks(user.uid);
+        const reading  = books.filter(b => b.status === 'reading');
+        const finished = books.filter(b => b.status === 'finished');
 
-      if (reading.length === 0) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
-      else reading.forEach(b => readingList.appendChild(renderReading(b)));
+        if (reading.length === 0) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
+        else reading.forEach(b => readingList.appendChild(renderReading(b)));
 
-      if (finished.length === 0) showEmpty(finishedList, 'finished-empty', 'No finished books yet.');
-      else finished.forEach(b => finishedList.appendChild(renderFinished(b)));
+        if (finished.length === 0) showEmpty(finishedList, 'finished-empty', 'No finished books yet.');
+        else finished.forEach(b => finishedList.appendChild(renderFinished(b)));
+      } else {
+        document.getElementById('add-book-card').style.display = 'none';
+        const backLink = document.getElementById('back-link');
+        backLink.style.display = '';
+        backLink.addEventListener('click', e => { if (history.length > 1) { e.preventDefault(); history.back(); } });
+
+        const target = await getProfileByUsername(viewUser);
+        if (!target) {
+          document.getElementById('page-title').textContent = 'User not found';
+        } else {
+          document.getElementById('page-title').textContent = `${target.username}'s Library`;
+          const books    = await getBooks(target.uid);
+          const reading  = books.filter(b => b.status === 'reading');
+          const finished = books.filter(b => b.status === 'finished');
+
+          if (reading.length === 0) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
+          else reading.forEach(b => readingList.appendChild(renderReadingView(b)));
+
+          if (finished.length === 0) showEmpty(finishedList, 'finished-empty', 'No finished books yet.');
+          else finished.forEach(b => finishedList.appendChild(renderFinishedView(b)));
+        }
+      }
     } finally {
       document.body.classList.remove('auth-loading');
     }
 
+    if (isOwn) {
     // ── Add book form ──────────────────────────────────────────────────────────
     const toggle      = document.getElementById('add-book-toggle');
     const form        = document.getElementById('add-book-form');
@@ -580,6 +654,7 @@
         closeForm();
       });
     });
+    } // end if (isOwn)
   </script>
 </body>
 </html>
