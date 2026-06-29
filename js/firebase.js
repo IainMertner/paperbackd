@@ -160,7 +160,7 @@ export async function getBooks(uid) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-export async function addFinishedBook(uid, { title, author, totalPages, gbid, rating, review, finishedAt }) {
+export async function addFinishedBook(uid, { title, author, totalPages, gbid, rating, review, finishedAt, addedAt }, username) {
   const data = {
     title,
     author:      author || '',
@@ -168,12 +168,25 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, ra
     currentPage: totalPages || 0,
     status:      'finished',
     gbid:        gbid || '',
-    addedAt:     serverTimestamp()
+    addedAt:     addedAt || serverTimestamp()
   };
   if (finishedAt) data.finishedAt = finishedAt;
   if (rating != null) data.rating = rating;
   if (review)         data.review = review;
-  const bookRef = await addDoc(collection(db, 'users', uid, 'books'), data);
+  const [bookRef] = await Promise.all([
+    addDoc(collection(db, 'users', uid, 'books'), data),
+    addDoc(collection(db, 'activity'), {
+      uid,
+      username:   username || '',
+      type:       'finished',
+      bookTitle:  title,
+      bookAuthor: author || '',
+      gbid:       gbid || '',
+      rating:     rating ?? null,
+      hasReview:  !!(review && review.trim()),
+      timestamp:  finishedAt || serverTimestamp()
+    })
+  ]);
   return bookRef.id;
 }
 
@@ -225,20 +238,30 @@ export function finishBook(uid, bookId, { title, author, gbid, rating, review } 
   ]);
 }
 
-async function updateActivityTimestamp(uid, bookTitle, type, date) {
-  const snap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid), where('type', '==', type)));
-  await Promise.all(
-    snap.docs
-      .filter(d => d.data().bookTitle === bookTitle)
-      .map(d => updateDoc(d.ref, { timestamp: date }))
-  );
+async function upsertActivityTimestamp(uid, type, date, { title, author, gbid, rating, review, username }) {
+  const snap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
+  const matching = snap.docs.filter(d => d.data().bookTitle === title && d.data().type === type);
+  if (matching.length > 0) {
+    await Promise.all(matching.map(d => updateDoc(d.ref, { timestamp: date })));
+  } else {
+    const entry = {
+      uid, username: username || '', type,
+      bookTitle: title || '', bookAuthor: author || '', gbid: gbid || '',
+      timestamp: date
+    };
+    if (type === 'finished') {
+      entry.rating    = rating ?? null;
+      entry.hasReview = !!(review && review.trim());
+    }
+    await addDoc(collection(db, 'activity'), entry);
+  }
 }
 
-export async function updateBookDates(uid, bookId, updates, bookTitle) {
+export async function updateBookDates(uid, bookId, updates, bookInfo) {
   await updateDoc(doc(db, 'users', uid, 'books', bookId), updates);
-  if (bookTitle) {
-    if (updates.addedAt   instanceof Date) await updateActivityTimestamp(uid, bookTitle, 'started',  updates.addedAt);
-    if (updates.finishedAt instanceof Date) await updateActivityTimestamp(uid, bookTitle, 'finished', updates.finishedAt);
+  if (bookInfo) {
+    if (updates.addedAt    instanceof Date) await upsertActivityTimestamp(uid, 'started',  updates.addedAt,    bookInfo);
+    if (updates.finishedAt instanceof Date) await upsertActivityTimestamp(uid, 'finished', updates.finishedAt, bookInfo);
   }
 }
 

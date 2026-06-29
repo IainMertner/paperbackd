@@ -957,3 +957,30 @@ body.auth-loading { visibility: hidden; }
 
 .suggestion-title { font-size: .85rem; font-weight: 500; line-height: 1.3; }
 .suggestion-meta  { font-size: .72rem; color: var(--text-muted); margin-top: .1rem; }
+
+/* ── Clickable stars (finished book cards) ──────────────────── */
+.stars-clickable { cursor: pointer; display: inline-block; margin-top: .2rem; }
+
+/* ── Date range (Started – Finished) ───────────────────────── */
+.book-date-range { display: flex; align-items: baseline; flex-wrap: wrap; gap: .3rem; }
+
+/* ── Feed day dividers ──────────────────────────────────────── */
+.feed-day-divider {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: .75rem 0 .35rem;
+  white-space: nowrap;
+}
+.feed-day-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.feed-day-divider:first-child { padding-top: 0; }

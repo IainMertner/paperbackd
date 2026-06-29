@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -15,7 +15,7 @@
     <div class="header-inner">
       <a class="logo" href="../">Reading Log</a>
       <nav class="desktop-nav">
-        <a href="../"          data-nav="home">Home</a>
+        <a href="../"          data-nav="home">Feed</a>
         <a href="../clubs/"    data-nav="clubs">Clubs</a>
         <a href="../library/"  data-nav="library">Library</a>
         <a href="../profile/"  data-nav="profile">Profile</a>
@@ -65,7 +65,7 @@
         <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
         <polyline points="9 22 9 12 15 12 15 22"/>
       </svg>
-      Home
+      Feed
     </a>
     <a class="mobile-nav-item" href="../clubs/" data-nav="clubs">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -190,13 +190,13 @@
       return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     }
 
-    function makeDateEl(label, ts, field, bookId, bookTitle) {
+    function makeDateEl(label, ts, field, book, withActivity = true) {
       const el = document.createElement('div');
       el.className = 'book-finished-meta book-date-editable';
       const dateStr = ts?.toDate?.()
         ? ts.toDate().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
         : 'Unknown';
-      el.textContent = `${label} ${dateStr}`;
+      el.textContent = label ? `${label} ${dateStr}` : dateStr;
 
       el.addEventListener('click', () => {
         const initialVal = toDateInputVal(ts);
@@ -215,10 +215,14 @@
           let newTs = ts;
           if (val && val !== initialVal) {
             const newDate = new Date(val + 'T12:00:00');
-            await updateBookDates(user.uid, bookId, { [field]: newDate }, bookTitle);
+            const bookInfo = withActivity ? {
+              title: book.title, author: book.author, gbid: book.gbid,
+              rating: book.rating, review: book.review, username: profile.username
+            } : null;
+            await updateBookDates(user.uid, book.id, { [field]: newDate }, bookInfo);
             newTs = { toDate: () => newDate };
           }
-          input.replaceWith(makeDateEl(label, newTs, field, bookId, bookTitle));
+          input.replaceWith(makeDateEl(label, newTs, field, book, withActivity));
         }
 
         input.addEventListener('change', commit);
@@ -256,7 +260,7 @@
         </div>
         <button class="btn-remove-x" aria-label="Remove" title="Remove">✕</button>
       </div>`;
-      card.querySelector('.book-started-date').replaceWith(makeDateEl('Started', book.addedAt, 'addedAt', book.id, book.title));
+      card.querySelector('.book-started-date').replaceWith(makeDateEl('Started', book.addedAt, 'addedAt', book));
 
       const inputs    = card.querySelectorAll('.page-input');
       const fillEl    = card.querySelector('.progress-bar-fill');
@@ -339,7 +343,6 @@
       const titleHtml = book.gbid
         ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
-      const starsHtml  = renderStars(book.rating);
       const reviewHtml = book.review
         ? `<div class="review-preview">${esc(book.review.slice(0, 100))}${book.review.length > 100 ? '…' : ''}</div>`
         : '';
@@ -349,28 +352,40 @@
         <div class="book-info">
           ${titleHtml}
           ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
-          <div class="book-finished-date"></div>
-          ${starsHtml}
+          <div class="book-date-range"></div>
+          <div class="book-stars-wrap"></div>
           ${reviewHtml}
-          <div class="progress-controls" style="margin-top:.5rem">
-            <button class="btn-update btn-rate">${book.rating || book.review ? 'Edit rating' : 'Rate'}</button>
-          </div>
           <div class="rating-edit-form" style="display:none;margin-top:.75rem"></div>
         </div>
         <button class="btn-remove-x" aria-label="Remove" title="Remove">✕</button>
       </div>`;
-      card.querySelector('.book-finished-date').replaceWith(makeDateEl('Finished', book.finishedAt, 'finishedAt', book.id, book.title));
 
-      card.querySelector('.btn-rate').addEventListener('click', () => {
+      const rangeEl = card.querySelector('.book-date-range');
+      rangeEl.className = 'book-finished-meta book-date-range';
+      const sepSpan = document.createElement('span');
+      sepSpan.textContent = '–';
+      rangeEl.append(
+        makeDateEl(null, book.addedAt,    'addedAt',    book, false),
+        sepSpan,
+        makeDateEl(null, book.finishedAt, 'finishedAt', book)
+      );
+
+      const starsWrap = card.querySelector('.book-stars-wrap');
+      starsWrap.className = 'book-stars-wrap stars-clickable';
+      starsWrap.innerHTML = book.rating
+        ? renderStars(book.rating)
+        : '<span class="stars-display">' + Array.from({length:5}, () => '<span class="star-char">★</span>').join('') + '</span>';
+
+      starsWrap.addEventListener('click', () => {
         const editForm = card.querySelector('.rating-edit-form');
-        if (editForm.style.display !== 'none') { editForm.style.display = 'none'; return; }
+        if (editForm.style.display !== 'none') {
+          editForm.style.display = 'none';
+          starsWrap.style.display = '';
+          return;
+        }
+        starsWrap.style.display = 'none';
 
         editForm.innerHTML = '';
-        const rateLabel = document.createElement('div');
-        rateLabel.style.cssText = 'font-size:.8rem;color:var(--text-muted);margin-bottom:.35rem';
-        rateLabel.textContent = 'Your rating';
-        editForm.appendChild(rateLabel);
-
         const picker = createStarPicker(book.rating || 0);
         editForm.appendChild(picker);
 
@@ -397,6 +412,7 @@
         });
         actions.querySelector('.btn-cancel-rating').addEventListener('click', () => {
           editForm.style.display = 'none';
+          starsWrap.style.display = '';
         });
       });
 
@@ -430,9 +446,11 @@
     }
 
     function renderFinishedView(book) {
-      const when = book.finishedAt?.toDate?.()
-        ? book.finishedAt.toDate().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-        : 'Recently';
+      const fmt = ts => ts?.toDate?.()
+        ? ts.toDate().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+        : null;
+      const whenStarted  = fmt(book.addedAt);
+      const whenFinished = fmt(book.finishedAt);
       const card = document.createElement('div');
       card.className = 'card';
       const titleHtml = book.gbid
@@ -447,7 +465,7 @@
         <div class="book-info">
           ${titleHtml}
           ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
-          <div class="book-finished-meta">Finished ${when}</div>
+          ${(whenStarted || whenFinished) ? `<div class="book-finished-meta">${whenStarted || 'Unknown'} – ${whenFinished || 'Unknown'}</div>` : ''}
           ${starsHtml}
           ${reviewHtml}
         </div>
@@ -659,12 +677,17 @@
       const picker = createStarPicker(0);
       const ta = document.createElement('textarea');
       ta.className = 'review-input'; ta.placeholder = 'Write a review… (optional)'; ta.rows = 3;
+      const startedLabel = document.createElement('div');
+      startedLabel.style.cssText = 'font-size:.8rem;color:var(--text-muted);margin:.5rem 0 .25rem';
+      startedLabel.textContent = 'Date started (optional)';
+      const startedInput = document.createElement('input');
+      startedInput.type = 'date'; startedInput.className = 'date-edit-input';
       const dateLabel = document.createElement('div');
       dateLabel.style.cssText = 'font-size:.8rem;color:var(--text-muted);margin:.5rem 0 .25rem';
       dateLabel.textContent = 'Date finished (optional)';
       const dateInput = document.createElement('input');
       dateInput.type = 'date'; dateInput.className = 'date-edit-input';
-      ratingDiv.append(titleLabel, rateLabel, picker, ta, dateLabel, dateInput);
+      ratingDiv.append(titleLabel, rateLabel, picker, ta, startedLabel, startedInput, dateLabel, dateInput);
       fields.appendChild(ratingDiv);
 
       actions.innerHTML = '';
@@ -685,9 +708,15 @@
         confirmBtn.disabled = true; confirmBtn.textContent = 'Adding…';
         const rating = picker.getValue();
         const review = ta.value.trim() || null;
-        const finishedAt = dateInput.value ? new Date(dateInput.value + 'T12:00:00') : null;
-        const id   = await addFinishedBook(user.uid, { title, author, totalPages: pages, gbid, rating, review, finishedAt });
-        const book = { id, title, author, totalPages: pages, currentPage: pages, status: 'finished', finishedAt: finishedAt ? { toDate: () => finishedAt } : null, gbid, rating, review };
+        const addedAt    = startedInput.value ? new Date(startedInput.value + 'T12:00:00') : null;
+        const finishedAt = dateInput.value    ? new Date(dateInput.value    + 'T12:00:00') : null;
+        const id   = await addFinishedBook(user.uid, { title, author, totalPages: pages, gbid, rating, review, finishedAt, addedAt }, profile.username);
+        const book = {
+          id, title, author, totalPages: pages, currentPage: pages, status: 'finished',
+          addedAt:    addedAt    ? { toDate: () => addedAt }    : { toDate: () => new Date() },
+          finishedAt: finishedAt ? { toDate: () => finishedAt } : null,
+          gbid, rating, review
+        };
         document.getElementById('finished-empty')?.remove();
         finishedList.prepend(renderFinished(book));
         closeForm();

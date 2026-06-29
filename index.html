@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -15,7 +15,7 @@
     <div class="header-inner">
       <a class="logo" href="./">Reading Log</a>
       <nav class="desktop-nav">
-        <a href="./"        data-nav="home">Home</a>
+        <a href="./"        data-nav="home">Feed</a>
         <a href="clubs/"    data-nav="clubs">Clubs</a>
         <a href="library/"  data-nav="library">Library</a>
         <a href="profile/"  data-nav="profile">Profile</a>
@@ -36,7 +36,7 @@
         <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
         <polyline points="9 22 9 12 15 12 15 22"/>
       </svg>
-      Home
+      Feed
     </a>
     <a class="mobile-nav-item" href="clubs/" data-nav="clubs">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -107,6 +107,21 @@
       return html + '</span>';
     }
 
+    function dayLabel(ts) {
+      if (!ts?.seconds) return null;
+      const d   = new Date(ts.seconds * 1000);
+      const now = new Date();
+      const today    = new Date(now.getFullYear(),  now.getMonth(),  now.getDate());
+      const eventDay = new Date(d.getFullYear(),    d.getMonth(),    d.getDate());
+      const diffDays = Math.round((today - eventDay) / 86400000);
+      if (diffDays === 0) return 'Today';
+      if (diffDays === 1) return 'Yesterday';
+      const opts = d.getFullYear() === now.getFullYear()
+        ? { day: 'numeric', month: 'long' }
+        : { day: 'numeric', month: 'long', year: 'numeric' };
+      return d.toLocaleDateString('en-GB', opts);
+    }
+
     function renderEvent(event) {
       const card   = document.createElement('div');
       card.className = 'card';
@@ -147,7 +162,18 @@
           : 'No activity yet.';
         main.appendChild(p);
       } else {
-        feed.forEach(e => main.appendChild(renderEvent(e)));
+        let lastDay = null;
+        feed.forEach(e => {
+          const label = dayLabel(e.timestamp);
+          if (label !== lastDay) {
+            lastDay = label;
+            const div = document.createElement('div');
+            div.className = 'feed-day-divider';
+            div.textContent = label || '';
+            main.appendChild(div);
+          }
+          main.appendChild(renderEvent(e));
+        });
       }
     } finally {
       document.body.classList.remove('auth-loading');
