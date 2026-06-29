@@ -33,18 +33,7 @@
       <div class="settings-list">
         <div class="settings-row">
           <span class="settings-row-label">Username</span>
-          <div style="display:flex;align-items:center;gap:.5rem">
-            <span class="settings-row-value" id="settings-username">—</span>
-            <button class="btn-update" id="edit-username-btn" style="font-size:.75rem;padding:.2rem .5rem">Edit</button>
-          </div>
-        </div>
-        <div id="username-edit-form" style="display:none;padding:.25rem 1rem .75rem">
-          <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
-            <input type="text" id="new-username-input" class="add-book-input" style="max-width:180px;flex:1" placeholder="new username" autocomplete="off" spellcheck="false">
-            <button class="join-club-btn" id="save-username-btn">Save</button>
-            <button class="btn-update" id="cancel-username-btn">Cancel</button>
-          </div>
-          <div id="username-msg" style="font-size:.78rem;margin-top:.35rem;display:none"></div>
+          <span class="settings-row-value" id="settings-username">—</span>
         </div>
         <div class="settings-row">
           <span class="settings-row-label">Sign out</span>
@@ -122,58 +111,11 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { logOut, changeUsername, ROOT } from '../js/firebase.js';
-
-    let currentUsername = '';
+    import { logOut, ROOT } from '../js/firebase.js';
 
     try {
-      const { user, profile } = await requireAuth();
-      currentUsername = profile?.username || '';
+      const { profile } = await requireAuth();
       if (profile) document.getElementById('settings-username').textContent = profile.username;
-
-      // ── Username editing ───────────────────────────────────────
-      const editForm  = document.getElementById('username-edit-form');
-      const newInput  = document.getElementById('new-username-input');
-      const msgEl     = document.getElementById('username-msg');
-      const saveBtn   = document.getElementById('save-username-btn');
-
-      document.getElementById('edit-username-btn').addEventListener('click', () => {
-        newInput.value = currentUsername;
-        msgEl.style.display = 'none';
-        editForm.style.display = '';
-        newInput.focus();
-        newInput.select();
-      });
-
-      document.getElementById('cancel-username-btn').addEventListener('click', () => {
-        editForm.style.display = 'none';
-      });
-
-      saveBtn.addEventListener('click', async () => {
-        const newName = newInput.value.trim().toLowerCase();
-        msgEl.style.display = 'none';
-        if (newName === currentUsername) { editForm.style.display = 'none'; return; }
-
-        saveBtn.disabled = true;
-        saveBtn.textContent = 'Saving…';
-        try {
-          await changeUsername(currentUsername, newName);
-          currentUsername = newName;
-          document.getElementById('settings-username').textContent = newName;
-          editForm.style.display = 'none';
-        } catch (err) {
-          msgEl.textContent = err.message === 'Firebase: Error (auth/requires-recent-login).'
-            ? 'Please sign out and sign back in before changing your username.'
-            : err.message;
-          msgEl.style.cssText = 'font-size:.78rem;margin-top:.35rem;color:#ef4444';
-        } finally {
-          saveBtn.disabled = false;
-          saveBtn.textContent = 'Save';
-        }
-      });
-
-      newInput.addEventListener('keydown', e => { if (e.key === 'Enter') saveBtn.click(); });
-
     } finally {
       document.body.classList.remove('auth-loading');
     }

@@ -4,8 +4,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut as fbSignOut,
-  onAuthStateChanged,
-  updateEmail
+  onAuthStateChanged
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   getFirestore,
@@ -77,22 +76,6 @@ export function logOut() {
   return fbSignOut(auth);
 }
 
-export async function changeUsername(oldUsername, newUsername) {
-  const user = auth.currentUser;
-  if (!user) throw new Error('Not signed in.');
-  if (!/^[a-z0-9_]{3,20}$/.test(newUsername)) {
-    throw new Error('Username must be 3–20 characters: lowercase letters, numbers, underscores.');
-  }
-  if (newUsername === oldUsername) return;
-  const taken = await getDoc(doc(db, 'usernames', newUsername));
-  if (taken.exists()) throw new Error('That username is already taken.');
-  await updateEmail(user, `${newUsername}@readinglog.local`);
-  await Promise.all([
-    updateDoc(doc(db, 'users', user.uid), { username: newUsername }),
-    setDoc(doc(db, 'usernames', newUsername), { uid: user.uid }),
-    deleteDoc(doc(db, 'usernames', oldUsername))
-  ]);
-}
 
 export function onAuth(callback) {
   return onAuthStateChanged(auth, callback);

@@ -539,9 +539,19 @@
           return;
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        const data  = await res.json();
+        const seen  = new Set();
         const items = (data.items || [])
           .sort((a, b) => (b.volumeInfo?.ratingsCount || 0) - (a.volumeInfo?.ratingsCount || 0))
+          .filter(item => {
+            const v      = item.volumeInfo || {};
+            const title  = (v.title  || '').toLowerCase().replace(/\s+/g, ' ').trim();
+            const author = ((v.authors || [])[0] || '').toLowerCase().trim();
+            const key    = `${title}||${author}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          })
           .slice(0, 8);
         renderSuggestions(items);
       } catch (err) {
