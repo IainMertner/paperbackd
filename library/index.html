@@ -365,7 +365,7 @@
       const sepSpan = document.createElement('span');
       sepSpan.textContent = '–';
       rangeEl.append(
-        makeDateEl(null, book.addedAt,    'addedAt',    book, false),
+        makeDateEl(null, book.addedAt,    'addedAt',    book),
         sepSpan,
         makeDateEl(null, book.finishedAt, 'finishedAt', book)
       );
