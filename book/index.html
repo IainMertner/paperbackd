@@ -95,6 +95,16 @@
       d.innerHTML = html;
       return d.textContent || '';
     }
+    function renderStars(rating) {
+      if (!rating) return '';
+      let html = '<span class="stars-display">';
+      for (let i = 1; i <= 5; i++) {
+        if (rating >= i)          html += '<span class="star-char full">★</span>';
+        else if (rating >= i-0.5) html += '<span class="star-char half">★</span>';
+        else                      html += '<span class="star-char">★</span>';
+      }
+      return html + '</span>';
+    }
 
     try {
       const [gbRes, following, myBook] = await Promise.all([
@@ -123,7 +133,11 @@
             ? `You're reading this · page ${myBook.currentPage} of ${myBook.totalPages}`
             : `You're currently reading this`
           : `You've finished this`;
-        myStatusHtml = `<div style="margin-top:.625rem;font-size:.8rem;color:var(--accent);font-weight:500">${s}</div>`;
+        const myStars  = myBook.status === 'finished' ? renderStars(myBook.rating) : '';
+        const myReview = (myBook.status === 'finished' && myBook.review)
+          ? `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(myBook.review.slice(0, 200))}${myBook.review.length > 200 ? '…' : ''}</div>`
+          : '';
+        myStatusHtml = `<div style="margin-top:.625rem;font-size:.8rem;color:var(--accent);font-weight:500">${s}</div>${myStars}${myReview}`;
       }
 
       card.innerHTML = `<div style="display:flex;gap:1rem;align-items:flex-start">
@@ -150,6 +164,10 @@
               ? `Currently reading · page ${book.currentPage} of ${book.totalPages}`
               : 'Currently reading'
             : 'Finished';
+          const friendStars  = (book.status === 'finished' && book.rating) ? renderStars(book.rating) : '';
+          const friendReview = (book.status === 'finished' && book.review)
+            ? `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(book.review.slice(0, 150))}${book.review.length > 150 ? '…' : ''}</div>`
+            : '';
           const el = document.createElement('div');
           el.className = 'card';
           el.innerHTML = `<div class="friend-item">
@@ -157,6 +175,8 @@
             <div style="flex:1;min-width:0">
               <a href="../profile/?u=${esc(username)}" style="font-weight:600;font-size:.9rem;color:inherit;text-decoration:none">${esc(username)}</a>
               <div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">${status}</div>
+              ${friendStars}
+              ${friendReview}
             </div>
           </div>`;
           list.appendChild(el);

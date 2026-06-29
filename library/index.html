@@ -101,7 +101,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook } from '../js/firebase.js';
+    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating } from '../js/firebase.js';
 
     const { user, profile } = await requireAuth();
     const readingList  = document.getElementById('reading-list');
@@ -117,6 +117,57 @@
       p.style.cssText = 'color:var(--text-muted);font-size:.875rem;margin-bottom:.625rem';
       p.textContent = msg;
       container.appendChild(p);
+    }
+
+    function renderStars(rating) {
+      if (!rating) return '';
+      let html = '<span class="stars-display">';
+      for (let i = 1; i <= 5; i++) {
+        if (rating >= i)          html += '<span class="star-char full">★</span>';
+        else if (rating >= i-0.5) html += '<span class="star-char half">★</span>';
+        else                      html += '<span class="star-char">★</span>';
+      }
+      return html + '</span>';
+    }
+
+    function createStarPicker(initial) {
+      const wrap = document.createElement('div');
+      wrap.className = 'star-picker';
+      let value = initial || 0;
+      const btns = [];
+
+      for (let i = 1; i <= 5; i++) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'star-pick-btn';
+        btn.textContent = '★';
+        btn.dataset.i = i;
+        btns.push(btn);
+        wrap.appendChild(btn);
+      }
+
+      function update(v) {
+        value = v;
+        btns.forEach((b, idx) => {
+          const n = idx + 1;
+          b.classList.remove('full', 'half');
+          if (value >= n)          b.classList.add('full');
+          else if (value >= n-0.5) b.classList.add('half');
+        });
+      }
+
+      wrap.addEventListener('click', e => {
+        const btn = e.target.closest('.star-pick-btn');
+        if (!btn) return;
+        const i    = parseInt(btn.dataset.i);
+        const half = e.offsetX < btn.offsetWidth / 2;
+        const v    = half ? i - 0.5 : i;
+        update(v === value ? 0 : v);
+      });
+
+      wrap.getValue = () => value || null;
+      update(value);
+      return wrap;
     }
 
     function renderReading(book) {
@@ -140,18 +191,21 @@
             <input class="page-input" type="number" value="${book.currentPage}" min="0" max="9999" aria-label="Current page">
             <span class="page-sep">/</span>
             <input class="page-input page-total" type="number" value="${book.totalPages || ''}" min="1" max="9999" aria-label="Total pages" placeholder="?">
-            <button class="btn-update">Update</button>
+            <button class="btn-update btn-pg-update" style="display:none">Update</button>
             <button class="btn-finished">Finished</button>
-            <button class="btn-danger btn-remove" style="font-size:.78rem;padding:.28rem .6rem">Remove</button>
           </div>
         </div>
+        <button class="btn-remove-x" aria-label="Remove" title="Remove">✕</button>
       </div>`;
 
       const inputs    = card.querySelectorAll('.page-input');
       const fillEl    = card.querySelector('.progress-bar-fill');
       const labelEl   = card.querySelector('.progress-label');
+      const updateBtn = card.querySelector('.btn-pg-update');
 
-      card.querySelector('.btn-update').addEventListener('click', async () => {
+      inputs.forEach(inp => inp.addEventListener('input', () => { updateBtn.style.display = ''; }));
+
+      updateBtn.addEventListener('click', async () => {
         const cur     = Math.max(0, parseInt(inputs[0].value) || 0);
         const total   = Math.max(1, parseInt(inputs[1].value) || 1);
         const clamped = Math.min(cur, total);
@@ -159,23 +213,55 @@
         fillEl.style.width  = Math.round((clamped / total) * 100) + '%';
         labelEl.textContent = `Page ${clamped} of ${total}`;
         await updateBookProgress(user.uid, book.id, clamped);
-        book.currentPage = clamped;
-        book.totalPages  = total;
+        book.currentPage    = clamped;
+        book.totalPages     = total;
+        updateBtn.style.display = 'none';
       });
 
-      card.querySelector('.btn-finished').addEventListener('click', async () => {
-        await finishBook(user.uid, book.id, { title: book.title, author: book.author, gbid: book.gbid }, profile.username);
-        card.remove();
-        if (!readingList.querySelector('.card')) {
-          showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
-        }
-        book.status     = 'finished';
-        book.finishedAt = { toDate: () => new Date() };
-        document.getElementById('finished-empty')?.remove();
-        finishedList.prepend(renderFinished(book));
+      card.querySelector('.btn-finished').addEventListener('click', () => {
+        const controls = card.querySelector('.progress-controls');
+        controls.innerHTML = '<div class="rating-prompt" style="margin-top:.25rem"></div>';
+        const prompt = controls.querySelector('.rating-prompt');
+
+        const label = document.createElement('div');
+        label.style.cssText = 'font-size:.8rem;color:var(--text-muted);margin-bottom:.35rem';
+        label.textContent = 'Rate this book (optional)';
+        prompt.appendChild(label);
+
+        const picker = createStarPicker(0);
+        prompt.appendChild(picker);
+
+        const ta = document.createElement('textarea');
+        ta.className = 'review-input';
+        ta.placeholder = 'Write a review… (optional)';
+        ta.rows = 3;
+        prompt.appendChild(ta);
+
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:.5rem;margin-top:.5rem';
+        actions.innerHTML = `<button class="join-club-btn btn-do-finish" type="button">Mark as finished</button><button class="btn-update btn-cancel-finish" type="button">Cancel</button>`;
+        prompt.appendChild(actions);
+
+        actions.querySelector('.btn-cancel-finish').addEventListener('click', () => {
+          card.replaceWith(renderReading(book));
+        });
+
+        actions.querySelector('.btn-do-finish').addEventListener('click', async () => {
+          const rating = picker.getValue();
+          const review = ta.value.trim() || null;
+          await finishBook(user.uid, book.id, { title: book.title, author: book.author, gbid: book.gbid, rating, review }, profile.username);
+          card.remove();
+          if (!readingList.querySelector('.card')) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
+          book.status     = 'finished';
+          book.finishedAt = { toDate: () => new Date() };
+          book.rating     = rating;
+          book.review     = review;
+          document.getElementById('finished-empty')?.remove();
+          finishedList.prepend(renderFinished(book));
+        });
       });
 
-      card.querySelector('.btn-remove').addEventListener('click', async () => {
+      card.querySelector('.btn-remove-x').addEventListener('click', async () => {
         await deleteBook(user.uid, book.id, { title: book.title });
         card.remove();
         if (!readingList.querySelector('.card')) {
@@ -196,32 +282,67 @@
       const titleHtml = book.gbid
         ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
+      const starsHtml  = renderStars(book.rating);
+      const reviewHtml = book.review
+        ? `<div class="review-preview">${esc(book.review.slice(0, 100))}${book.review.length > 100 ? '…' : ''}</div>`
+        : '';
+
       card.innerHTML = `<div class="book-entry">
         <div class="book-cover">📖</div>
         <div class="book-info">
           ${titleHtml}
           ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
           <div class="book-finished-meta">Finished ${when}</div>
+          ${starsHtml}
+          ${reviewHtml}
           <div class="progress-controls" style="margin-top:.5rem">
-            <button class="btn-update btn-unfinish">Move to reading</button>
-            <button class="btn-danger btn-remove" style="font-size:.78rem;padding:.28rem .6rem">Remove</button>
+            <button class="btn-update btn-rate">${book.rating || book.review ? 'Edit rating' : 'Rate'}</button>
           </div>
+          <div class="rating-edit-form" style="display:none;margin-top:.75rem"></div>
         </div>
+        <button class="btn-remove-x" aria-label="Remove" title="Remove">✕</button>
       </div>`;
 
-      card.querySelector('.btn-unfinish').addEventListener('click', async () => {
-        await unfinishBook(user.uid, book.id, { title: book.title });
-        card.remove();
-        if (!finishedList.querySelector('.card')) {
-          showEmpty(finishedList, 'finished-empty', 'No finished books yet.');
-        }
-        document.getElementById('reading-empty')?.remove();
-        book.status     = 'reading';
-        book.finishedAt = null;
-        readingList.prepend(renderReading(book));
+      card.querySelector('.btn-rate').addEventListener('click', () => {
+        const editForm = card.querySelector('.rating-edit-form');
+        if (editForm.style.display !== 'none') { editForm.style.display = 'none'; return; }
+
+        editForm.innerHTML = '';
+        const rateLabel = document.createElement('div');
+        rateLabel.style.cssText = 'font-size:.8rem;color:var(--text-muted);margin-bottom:.35rem';
+        rateLabel.textContent = 'Your rating';
+        editForm.appendChild(rateLabel);
+
+        const picker = createStarPicker(book.rating || 0);
+        editForm.appendChild(picker);
+
+        const ta = document.createElement('textarea');
+        ta.className   = 'review-input';
+        ta.placeholder = 'Write a review…';
+        ta.rows = 3;
+        ta.value = book.review || '';
+        editForm.appendChild(ta);
+
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:.5rem;margin-top:.5rem';
+        actions.innerHTML = `<button class="join-club-btn btn-save-rating" type="button">Save</button><button class="btn-update btn-cancel-rating" type="button">Cancel</button>`;
+        editForm.appendChild(actions);
+        editForm.style.display = 'block';
+
+        actions.querySelector('.btn-save-rating').addEventListener('click', async () => {
+          const rating = picker.getValue();
+          const review = ta.value.trim() || null;
+          await updateBookRating(user.uid, book.id, { rating, review });
+          book.rating = rating;
+          book.review = review;
+          card.replaceWith(renderFinished(book));
+        });
+        actions.querySelector('.btn-cancel-rating').addEventListener('click', () => {
+          editForm.style.display = 'none';
+        });
       });
 
-      card.querySelector('.btn-remove').addEventListener('click', async () => {
+      card.querySelector('.btn-remove-x').addEventListener('click', async () => {
         await deleteBook(user.uid, book.id, { title: book.title });
         card.remove();
         if (!finishedList.querySelector('.card')) {
@@ -271,8 +392,10 @@
       setAddEnabled(false);
     }
 
+    function closeForm() { form.hidden = true; toggle.hidden = false; resetForm(); }
+
     toggle.addEventListener('click', () => { form.hidden = false; toggle.hidden = true; searchInput.focus(); });
-    cancelBtn.addEventListener('click', () => { form.hidden = true; toggle.hidden = false; resetForm(); });
+    cancelBtn.addEventListener('click', closeForm);
 
     document.addEventListener('click', e => {
       if (!document.getElementById('book-search-wrap').contains(e.target)) {
@@ -364,22 +487,54 @@
       cancelBtn.click();
     });
 
-    finishedBtn.addEventListener('click', async () => {
+    finishedBtn.addEventListener('click', () => {
       if (!selectedBook) return;
       const { title, author, pages, gbid } = selectedBook;
 
-      finishedBtn.disabled    = true;
-      finishedBtn.textContent = 'Adding…';
+      const fields     = form.querySelector('.add-book-fields');
+      const actions    = form.querySelector('.add-book-actions');
+      const searchWrap = document.getElementById('book-search-wrap');
+      const origBtns   = [...actions.children];
 
-      const id   = await addFinishedBook(user.uid, { title, author, totalPages: pages, gbid });
-      const book = { id, title, author, totalPages: pages, currentPage: pages, status: 'finished', finishedAt: { toDate: () => new Date() }, gbid };
+      searchWrap.style.display = 'none';
 
-      document.getElementById('finished-empty')?.remove();
-      finishedList.prepend(renderFinished(book));
+      const ratingDiv = document.createElement('div');
+      const titleLabel = document.createElement('div');
+      titleLabel.style.cssText = 'font-size:.85rem;font-weight:600;margin-bottom:.5rem';
+      titleLabel.textContent = title;
+      const rateLabel = document.createElement('div');
+      rateLabel.style.cssText = 'font-size:.8rem;color:var(--text-muted);margin-bottom:.35rem';
+      rateLabel.textContent = 'Rate this book (optional)';
+      const picker = createStarPicker(0);
+      const ta = document.createElement('textarea');
+      ta.className = 'review-input'; ta.placeholder = 'Write a review… (optional)'; ta.rows = 3;
+      ratingDiv.append(titleLabel, rateLabel, picker, ta);
+      fields.appendChild(ratingDiv);
 
-      finishedBtn.disabled    = false;
-      finishedBtn.textContent = 'Already read';
-      cancelBtn.click();
+      actions.innerHTML = '';
+      const backBtn    = document.createElement('button');
+      backBtn.type = 'button'; backBtn.className = 'btn-update'; backBtn.textContent = 'Back';
+      const confirmBtn = document.createElement('button');
+      confirmBtn.type = 'button'; confirmBtn.className = 'join-club-btn'; confirmBtn.textContent = 'Add to finished';
+      actions.append(backBtn, confirmBtn);
+
+      backBtn.addEventListener('click', () => {
+        ratingDiv.remove();
+        searchWrap.style.display = '';
+        actions.innerHTML = '';
+        origBtns.forEach(b => actions.appendChild(b));
+      });
+
+      confirmBtn.addEventListener('click', async () => {
+        confirmBtn.disabled = true; confirmBtn.textContent = 'Adding…';
+        const rating = picker.getValue();
+        const review = ta.value.trim() || null;
+        const id   = await addFinishedBook(user.uid, { title, author, totalPages: pages, gbid, rating, review });
+        const book = { id, title, author, totalPages: pages, currentPage: pages, status: 'finished', finishedAt: { toDate: () => new Date() }, gbid, rating, review };
+        document.getElementById('finished-empty')?.remove();
+        finishedList.prepend(renderFinished(book));
+        closeForm();
+      });
     });
   </script>
 </body>

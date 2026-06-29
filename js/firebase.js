@@ -160,8 +160,8 @@ export async function getBooks(uid) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-export async function addFinishedBook(uid, { title, author, totalPages, gbid }) {
-  const bookRef = await addDoc(collection(db, 'users', uid, 'books'), {
+export async function addFinishedBook(uid, { title, author, totalPages, gbid, rating, review }) {
+  const data = {
     title,
     author:      author || '',
     totalPages:  totalPages || 0,
@@ -170,7 +170,10 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid }) 
     gbid:        gbid || '',
     addedAt:     serverTimestamp(),
     finishedAt:  serverTimestamp()
-  });
+  };
+  if (rating != null) data.rating = rating;
+  if (review)         data.review = review;
+  const bookRef = await addDoc(collection(db, 'users', uid, 'books'), data);
   return bookRef.id;
 }
 
@@ -202,12 +205,12 @@ export function updateBookProgress(uid, bookId, currentPage) {
   return updateDoc(doc(db, 'users', uid, 'books', bookId), { currentPage });
 }
 
-export function finishBook(uid, bookId, { title, author, gbid } = {}, username) {
+export function finishBook(uid, bookId, { title, author, gbid, rating, review } = {}, username) {
+  const bookUpdate = { status: 'finished', finishedAt: serverTimestamp() };
+  if (rating != null) bookUpdate.rating = rating;
+  if (review)         bookUpdate.review = review;
   return Promise.all([
-    updateDoc(doc(db, 'users', uid, 'books', bookId), {
-      status:     'finished',
-      finishedAt: serverTimestamp()
-    }),
+    updateDoc(doc(db, 'users', uid, 'books', bookId), bookUpdate),
     addDoc(collection(db, 'activity'), {
       uid,
       username,
@@ -215,9 +218,18 @@ export function finishBook(uid, bookId, { title, author, gbid } = {}, username) 
       bookTitle:  title || '',
       bookAuthor: author || '',
       gbid:       gbid || '',
+      rating:     rating ?? null,
+      hasReview:  !!(review && review.trim()),
       timestamp:  serverTimestamp()
     })
   ]);
+}
+
+export function updateBookRating(uid, bookId, { rating, review }) {
+  return updateDoc(doc(db, 'users', uid, 'books', bookId), {
+    rating: rating != null ? rating : deleteField(),
+    review: review       ? review : deleteField()
+  });
 }
 
 export async function getBookByGbid(uid, gbid) {

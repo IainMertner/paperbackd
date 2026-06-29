@@ -96,6 +96,17 @@
         .toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     }
 
+    function renderStars(rating) {
+      if (!rating) return '';
+      let html = '<span class="stars-display">';
+      for (let i = 1; i <= 5; i++) {
+        if (rating >= i)          html += '<span class="star-char full">★</span>';
+        else if (rating >= i-0.5) html += '<span class="star-char half">★</span>';
+        else                      html += '<span class="star-char">★</span>';
+      }
+      return html + '</span>';
+    }
+
     function renderEvent(event) {
       const card   = document.createElement('div');
       card.className = 'card';
@@ -109,10 +120,14 @@
       const author  = event.bookAuthor
         ? `<span style="color:var(--text-muted)"> by ${esc(event.bookAuthor)}</span>`
         : '';
+      const ratingRow = (event.type === 'finished' && event.rating != null)
+        ? `<div style="margin-top:.2rem;display:flex;align-items:center;gap:.5rem">${renderStars(event.rating)}${event.hasReview && event.gbid ? `<a href="book/?gbid=${esc(event.gbid)}" style="font-size:.75rem;color:var(--accent);text-decoration:none">Read review</a>` : ''}</div>`
+        : '';
       card.innerHTML = `<div class="friend-item">
         <a class="friend-avatar" href="profile/?u=${esc(event.username)}" style="text-decoration:none;color:inherit">${esc(initial)}</a>
         <div style="flex:1;min-width:0">
           <div style="font-size:.9rem;line-height:1.4"><a href="profile/?u=${esc(event.username)}" style="font-weight:600;color:inherit;text-decoration:none">${esc(event.username)}</a> ${action}${author}</div>
+          ${ratingRow}
           <div class="book-finished-meta">${timeAgo(event.timestamp)}</div>
         </div>
       </div>`;
