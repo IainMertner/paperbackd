@@ -834,6 +834,12 @@ a { color: inherit; }
 .library-cover-rating .star-char { color: transparent; }
 .library-cover-rating .star-char.full { color: #fff; }
 .library-cover-rating .star-char.half { background: linear-gradient(90deg, #fff 50%, transparent 50%); -webkit-background-clip: text; background-clip: text; }
+.rating-stars-compact { display: none; color: #fff; font-weight: 700; }
+@media (max-width: 540px) {
+  .rating-stars-full { display: none; }
+  .rating-stars-compact { display: inline; }
+  .library-cover-title { display: none; }
+}
 
 /* Book detail modal */
 .book-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 500; display: flex; align-items: flex-start; justify-content: center; padding: 1.5rem 1rem; overflow-y: auto; }

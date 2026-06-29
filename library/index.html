@@ -186,13 +186,14 @@
     const TRASH_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
 
     function cellRatingHtml(rating) {
-      let html = '';
+      let stars = '';
       for (let i = 1; i <= 5; i++) {
-        if (rating >= i)          html += '<span class="star-char full">★</span>';
-        else if (rating >= i-0.5) html += '<span class="star-char half">★</span>';
-        else                      html += '<span class="star-char">★</span>';
+        if (rating >= i)          stars += '<span class="star-char full">★</span>';
+        else if (rating >= i-0.5) stars += '<span class="star-char half">★</span>';
+        else                      stars += '<span class="star-char">★</span>';
       }
-      return html;
+      const num = Number.isInteger(rating) ? String(rating) : rating.toFixed(1);
+      return `<span class="rating-stars-full">${stars}</span><span class="rating-stars-compact">★ ${num}</span>`;
     }
 
     function bookCoverHtml(book) {
