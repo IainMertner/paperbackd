@@ -177,9 +177,9 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, co
   if (coverUrl)       data.coverUrl       = coverUrl;
   if (rating != null) data.rating         = rating;
   if (review)         data.review         = review;
-  const [bookRef] = await Promise.all([
-    addDoc(collection(db, 'users', uid, 'books'), data),
-    addDoc(collection(db, 'activity'), {
+  const bookRef = await addDoc(collection(db, 'users', uid, 'books'), data);
+  if (finishedAt && finishedAtPrecision === 'day') {
+    await addDoc(collection(db, 'activity'), {
       uid,
       username:   username || '',
       type:       'finished',
@@ -188,9 +188,9 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, co
       gbid:       gbid || '',
       rating:     rating ?? null,
       hasReview:  !!(review && review.trim()),
-      timestamp:  finishedAt || serverTimestamp()
-    })
-  ]);
+      timestamp:  finishedAt
+    });
+  }
   return bookRef.id;
 }
 
@@ -269,8 +269,14 @@ export async function updateBookDates(uid, bookId, updates, bookInfo) {
   if (firestoreUpdates.finishedAtPrecision === null) firestoreUpdates.finishedAtPrecision = deleteField();
   await updateDoc(doc(db, 'users', uid, 'books', bookId), firestoreUpdates);
   if (bookInfo) {
-    if (updates.addedAt    instanceof Date) await upsertActivityTimestamp(uid, 'started',  updates.addedAt,    bookInfo);
-    if (updates.finishedAt instanceof Date) await upsertActivityTimestamp(uid, 'finished', updates.finishedAt, bookInfo);
+    if (updates.addedAt instanceof Date) {
+      if (updates.addedAtPrecision === 'day') await upsertActivityTimestamp(uid, 'started', updates.addedAt, bookInfo);
+      else await deleteActivityForBook(uid, bookInfo.title, 'started');
+    }
+    if (updates.finishedAt instanceof Date) {
+      if (updates.finishedAtPrecision === 'day') await upsertActivityTimestamp(uid, 'finished', updates.finishedAt, bookInfo);
+      else await deleteActivityForBook(uid, bookInfo.title, 'finished');
+    }
   }
 }
 
