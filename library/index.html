@@ -215,6 +215,28 @@
       const wrap = document.createElement('div');
       wrap.className = 'date-picker-partial';
 
+      function makeSpinner(input, defaultVal, min, max) {
+        const up = document.createElement('button');
+        up.type = 'button'; up.className = 'date-num-btn'; up.textContent = '▲';
+        up.addEventListener('click', () => {
+          const v = parseInt(input.value);
+          input.value = v ? Math.min(v + 1, max) : defaultVal;
+        });
+        const down = document.createElement('button');
+        down.type = 'button'; down.className = 'date-num-btn'; down.textContent = '▼';
+        down.addEventListener('click', () => {
+          const v = parseInt(input.value);
+          input.value = v ? Math.max(v - 1, min) : defaultVal;
+        });
+        const btns = document.createElement('div');
+        btns.className = 'date-num-btns';
+        btns.append(up, down);
+        const spinWrap = document.createElement('div');
+        spinWrap.className = 'date-num-wrap';
+        spinWrap.append(input, btns);
+        return spinWrap;
+      }
+
       const dayInput = document.createElement('input');
       dayInput.type = 'text'; dayInput.inputMode = 'numeric'; dayInput.maxLength = 2;
       dayInput.className = 'date-day-input'; dayInput.placeholder = 'Day';
@@ -232,7 +254,7 @@
       yearInput.className = 'date-year-input'; yearInput.placeholder = 'Year';
       yearInput.value = initYear;
 
-      wrap.append(dayInput, monthSel, yearInput);
+      wrap.append(makeSpinner(dayInput, 1, 1, 31), monthSel, makeSpinner(yearInput, new Date().getFullYear(), 1000, 2200));
 
       wrap.getDate = () => {
         const year = parseInt(yearInput.value);

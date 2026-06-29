@@ -548,8 +548,20 @@ a { color: inherit; }
   color: inherit; font-size: .78rem; font-family: inherit;
 }
 
-.date-day-input  { width: 2.4rem; }
-.date-year-input { width: 3.8rem; }
+.date-day-input  { width: 2.4rem; border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.date-year-input { width: 3.8rem; border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+
+.date-num-wrap { display: flex; align-items: stretch; }
+.date-num-btns { display: flex; flex-direction: column; }
+.date-num-btn {
+  background: var(--bg-alt); border: 1px solid var(--border); border-left: none;
+  color: var(--text-muted); cursor: pointer; padding: 0 .3rem;
+  font-size: .55rem; line-height: 1; flex: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.date-num-btn:first-child { border-radius: 0 var(--radius-sm) 0 0; border-bottom-width: 0; }
+.date-num-btn:last-child  { border-radius: 0 0 var(--radius-sm) 0; }
+.date-num-btn:hover { color: var(--text); }
 
 .date-editor-wrap {
   display: flex; align-items: center; gap: .35rem;
