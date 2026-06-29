@@ -592,7 +592,7 @@
 
     let selectedBook = null;
     let searchTimer;
-    const HARDCOVER_TOKEN = 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJIYXJkY292ZXIiLCJ2ZXJzaW9uIjoiOCIsImp0aSI6IjU2Njc5NjU1LWFiZjUtNGVmZi05YmE4LWJjOTliZjIxYTdhZSIsImFwcGxpY2F0aW9uSWQiOjIsInN1YiI6IjEyMDgyMSIsImF1ZCI6IjEiLCJpZCI6IjEyMDgyMSIsImxvZ2dlZEluIjp0cnVlLCJpYXQiOjE3ODI3NDc0MDEsImV4cCI6MTgxNDI4MzQwMSwiaHR0cHM6Ly9oYXN1cmEuaW8vand0L2NsYWltcyI6eyJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzIjpbInVzZXIiXSwieC1oYXN1cmEtZGVmYXVsdC1yb2xlIjoidXNlciIsIngtaGFzdXJhLXJvbGUiOiJ1c2VyIiwiWC1oYXN1cmEtdXNlci1pZCI6IjEyMDgyMSJ9LCJ1c2VyIjp7ImlkIjoxMjA4MjF9fQ.Ku1c0LUwF4Jqq2YoAT1L86m-Nurl7spJU8nXFn6OUGw';
+    const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
     function setAddEnabled(on) {
       saveBtn.disabled     = !on;
@@ -636,33 +636,23 @@
 
     async function fetchSuggestions(q) {
       try {
-        const res = await fetch('https://api.hardcover.app/v1/graphql', {
+        const res = await fetch(HARDCOVER_PROXY, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': HARDCOVER_TOKEN },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            query: `query SearchBooks($q: String!) {
-              books(
-                where: { title: { _ilike: $q }, book_status_id: { _eq: 1 } }
-                order_by: { ratings_count: desc }
-                limit: 10
-              ) {
-                id
-                title
-                slug
-                pages
-                cached_image
-                contributions { author { name } }
-              }
+            query: `query Search($q: String!) {
+              search(query: $q, query_type: "Book", per_page: 10) { results }
             }`,
-            variables: { q: `%${q}%` }
+            variables: { q }
           })
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        const hits = data.data?.search?.results?.hits || [];
         const seen = new Set();
-        const items = (data.data?.books || []).filter(b => {
-          const author = b.contributions?.find(c => c.author)?.author?.name || '';
-          const key = `${(b.title || '').toLowerCase()}||${author.toLowerCase()}`;
+        const items = hits.map(h => h.document).filter(doc => {
+          const author = Array.isArray(doc.author_names) ? (doc.author_names[0] || '') : (doc.author_names || '');
+          const key = `${(doc.title || '').toLowerCase()}||${author.toLowerCase()}`;
           if (seen.has(key)) return false;
           seen.add(key);
           return true;
@@ -677,12 +667,12 @@
       suggestBox.innerHTML = '';
       if (!items.length) { suggestBox.style.display = 'none'; return; }
 
-      items.forEach(item => {
-        const title  = item.title || '';
-        const author = item.contributions?.find(c => c.author)?.author?.name || '';
-        const pages  = item.pages || 0;
-        const cover  = item.cached_image?.url || '';
-        const slug   = item.slug || String(item.id);
+      items.forEach(doc => {
+        const title  = doc.title || '';
+        const author = Array.isArray(doc.author_names) ? doc.author_names[0] : doc.author_names || '';
+        const pages  = doc.pages || 0;
+        const cover  = doc.image?.url || '';
+        const slug   = doc.slug || String(doc.id);
 
         const el = document.createElement('div');
         el.className = 'book-suggestion-item';
