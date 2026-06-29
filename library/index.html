@@ -526,6 +526,14 @@
       suggestBox.style.display = 'none';
       selectedBook = null;
       setAddEnabled(false);
+      // Restore form to initial state in case we were in the "Already read" rating step
+      const searchWrap = document.getElementById('book-search-wrap');
+      const fields     = form.querySelector('.add-book-fields');
+      const actions    = form.querySelector('.add-book-actions');
+      searchWrap.style.display = '';
+      [...fields.children].forEach(el => { if (el !== searchWrap) el.remove(); });
+      actions.innerHTML = '';
+      actions.append(cancelBtn, finishedBtn, saveBtn);
     }
 
     function closeForm() { form.hidden = true; toggle.hidden = false; resetForm(); }
