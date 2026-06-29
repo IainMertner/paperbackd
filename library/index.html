@@ -585,7 +585,7 @@
       saveBtn.textContent = 'Adding…';
 
       const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid }, profile.username);
-      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid };
+      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, addedAt: { toDate: () => new Date() } };
 
       document.getElementById('reading-empty')?.remove();
       readingList.prepend(renderReading(book));
