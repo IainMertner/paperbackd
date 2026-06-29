@@ -154,14 +154,16 @@
     });
 
     // ── Goodreads import ──────────────────────────────────────────────────────
-    const grFile      = document.getElementById('gr-file');
-    const grSelectBtn = document.getElementById('gr-select-btn');
-    const grFilename  = document.getElementById('gr-filename');
-    const grPreview   = document.getElementById('gr-preview');
+    const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
+
+    const grFile        = document.getElementById('gr-file');
+    const grSelectBtn   = document.getElementById('gr-select-btn');
+    const grFilename    = document.getElementById('gr-filename');
+    const grPreview     = document.getElementById('gr-preview');
     const grPreviewText = document.getElementById('gr-preview-text');
-    const grImportBtn = document.getElementById('gr-import-btn');
-    const grStatus    = document.getElementById('gr-status');
-    let parsedBooks   = [];
+    const grImportBtn   = document.getElementById('gr-import-btn');
+    const grStatus      = document.getElementById('gr-status');
+    let parsedBooks     = [];
 
     grSelectBtn.addEventListener('click', () => grFile.click());
 
@@ -187,10 +189,24 @@
       grImportBtn.disabled = true;
       grStatus.style.display = '';
       grStatus.style.color = 'var(--text-muted)';
-      grStatus.textContent = `Importing ${parsedBooks.length} books…`;
+
+      // Enrich with Hardcover data
+      const total = parsedBooks.length;
+      let matched = 0;
+      const enriched = [];
+      for (let i = 0; i < total; i++) {
+        grStatus.textContent = `Matching with Hardcover… (${i + 1}/${total})`;
+        const result = await enrichFromHardcover(parsedBooks[i]);
+        if (result._hardcoverMatched) matched++;
+        // Strip private lookup fields before saving
+        const { _grId, _isbn13, _hardcoverMatched, ...book } = result;
+        enriched.push(book);
+      }
+
+      grStatus.textContent = `Matched ${matched}/${total} books on Hardcover. Importing…`;
       try {
-        await importBooks(currentUser.uid, parsedBooks);
-        grStatus.textContent = `Imported ${parsedBooks.length} books successfully.`;
+        await importBooks(currentUser.uid, enriched);
+        grStatus.textContent = `Imported ${total} books (${matched} matched on Hardcover).`;
         grStatus.style.color = 'var(--accent)';
         grPreview.style.display = 'none';
         parsedBooks = [];
@@ -203,6 +219,64 @@
         grImportBtn.disabled = false;
       }
     });
+
+    async function hcQuery(query, variables) {
+      const res = await fetch(HARDCOVER_PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, variables })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    function applyHardcoverBook(book, hc) {
+      if (!hc) return book;
+      return {
+        ...book,
+        gbid:       hc.slug || book.gbid,
+        coverUrl:   hc.image?.url || book.coverUrl || '',
+        totalPages: hc.pages || book.totalPages,
+        currentPage: book.status === 'finished' ? (hc.pages || book.totalPages) : book.currentPage,
+        _hardcoverMatched: true,
+      };
+    }
+
+    async function enrichFromHardcover(book) {
+      try {
+        // 1. Try Goodreads ID
+        if (book._grId) {
+          const data = await hcQuery(
+            `query($id: Int!) { books(where: {goodreads_id: {_eq: $id}}, limit: 1) { slug pages image { url } } }`,
+            { id: parseInt(book._grId) }
+          );
+          const hc = data?.data?.books?.[0];
+          if (hc?.slug) return applyHardcoverBook(book, hc);
+        }
+
+        // 2. Try ISBN-13
+        if (book._isbn13) {
+          const data = await hcQuery(
+            `query($isbn: String!) { editions(where: {isbn_13: {_eq: $isbn}}, limit: 1) { book { slug pages image { url } } } }`,
+            { isbn: book._isbn13 }
+          );
+          const hc = data?.data?.editions?.[0]?.book;
+          if (hc?.slug) return applyHardcoverBook(book, hc);
+        }
+
+        // 3. Fall back to title search
+        const data = await hcQuery(
+          `query($q: String!) { search(query: $q, query_type: "Book", per_page: 3) { results } }`,
+          { q: `${book.title} ${book.author}`.trim() }
+        );
+        const hits = data?.data?.search?.results?.hits || [];
+        const doc  = hits[0]?.document;
+        if (doc?.slug) return applyHardcoverBook(book, { slug: doc.slug, pages: doc.pages, image: doc.image });
+      } catch (e) {
+        console.warn('Hardcover lookup failed for', book.title, e);
+      }
+      return book;
+    }
 
     function parseCSV(text) {
       // Strip UTF-8 BOM if present (common in Goodreads exports)
@@ -252,6 +326,8 @@
       const headers = rows[0];
       const idx = h => headers.indexOf(h);
       const col = {
+        grId:      idx('Book Id'),
+        isbn13:    idx('ISBN13'),
         title:     idx('Title'),
         author:    idx('Author'),
         pages:     idx('Number of Pages'),
@@ -277,6 +353,8 @@
         const addedAt    = parseGRDate(r[col.dateAdded]) || finishedAt || null;
         const review     = (r[col.review] || '').trim();
         const title      = (r[col.title] || '').trim();
+        const isbn13     = (r[col.isbn13] || '').replace(/[^0-9X]/gi, '');
+        const grId       = (r[col.grId] || '').trim();
         if (!title) continue;
 
         const book = {
@@ -286,6 +364,8 @@
           currentPage: status === 'finished' ? totalPages : 0,
           status,
           gbid:        '',
+          _grId:       grId,
+          _isbn13:     isbn13,
         };
         if (addedAt) { book.addedAt = addedAt; book.addedAtPrecision = 'day'; }
         if (rating != null) book.rating = rating;
