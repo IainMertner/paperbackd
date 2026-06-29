@@ -202,7 +202,7 @@ export async function getBooks(uid) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-export async function addFinishedBook(uid, { title, author, totalPages, gbid, coverUrl, rating, review, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
+export async function addFinishedBook(uid, { title, author, totalPages, gbid, coverUrl, rating, review, releaseYear, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
   const data = {
     title,
     author:      author || '',
@@ -218,6 +218,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, co
   if (coverUrl)       data.coverUrl       = coverUrl;
   if (rating != null) data.rating         = rating;
   if (review)         data.review         = review;
+  if (releaseYear)    data.releaseYear    = releaseYear;
   const bookRef = await addDoc(collection(db, 'users', uid, 'books'), data);
   if (finishedAt && finishedAtPrecision === 'day') {
     await addDoc(collection(db, 'activity'), {
@@ -235,7 +236,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, co
   return bookRef.id;
 }
 
-export async function addBook(uid, { title, author, totalPages, gbid, coverUrl }, username) {
+export async function addBook(uid, { title, author, totalPages, gbid, coverUrl, releaseYear }, username) {
   const bookData = {
     title,
     author:      author || '',
@@ -245,7 +246,8 @@ export async function addBook(uid, { title, author, totalPages, gbid, coverUrl }
     gbid:        gbid || '',
     addedAt:     serverTimestamp()
   };
-  if (coverUrl) bookData.coverUrl = coverUrl;
+  if (coverUrl)    bookData.coverUrl    = coverUrl;
+  if (releaseYear) bookData.releaseYear = releaseYear;
   const [bookRef] = await Promise.all([
     addDoc(collection(db, 'users', uid, 'books'), bookData),
     addDoc(collection(db, 'activity'), {

@@ -59,7 +59,15 @@
     <p class="section-title" id="reading-title">Currently Reading</p>
     <div id="reading-list" class="books-grid"></div>
 
-    <p class="section-title" id="finished-title" style="margin-top:1.5rem">Finished</p>
+    <div class="section-header" style="margin-top:1.5rem">
+      <p class="section-title" id="finished-title" style="margin:0">Finished</p>
+      <div id="finished-sort" class="sort-options" style="display:none">
+        <button class="sort-btn" data-key="date"    data-default="desc" data-label="Date">Date</button>
+        <button class="sort-btn" data-key="alpha"   data-default="asc"  data-label="A–Z">A–Z</button>
+        <button class="sort-btn" data-key="release" data-default="desc"  data-label="Release">Release</button>
+        <button class="sort-btn" data-key="rating"  data-default="desc" data-label="Rating">Rating</button>
+      </div>
+    </div>
     <div id="finished-list" class="books-grid"></div>
 
   </main>
@@ -110,6 +118,14 @@
     import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating, updateBookDates, updateBookCover, updateShelf, getProfileByUsername } from '../js/firebase.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
+
+    async function hcPost(query, variables) {
+      const r = await fetch(HARDCOVER_PROXY, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, variables })
+      });
+      return r.json();
+    }
 
     const { user, profile } = await requireAuth();
 
@@ -299,14 +315,6 @@
         // OpenLibrary: upgrade S or M thumbnails to L
         url = url.replace(/-(S|M)\.jpg(\?|$)/, '-L.jpg$2');
         return url;
-      }
-
-      async function hcPost(query, variables) {
-        const r = await fetch(HARDCOVER_PROXY, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, variables })
-        });
-        return r.json();
       }
 
       try {
@@ -868,6 +876,86 @@
         document.getElementById('finished-title').textContent = `Finished · ${finished.length}`;
       }
 
+      function setupFinishedSort(finished, attachCell) {
+        const finishedSortEl = document.getElementById('finished-sort');
+        finishedSortEl.style.display = '';
+        const sortBtns = finishedSortEl.querySelectorAll('.sort-btn');
+
+        let sortState = (() => { try { return JSON.parse(localStorage.getItem('library-finished-sort')) || {}; } catch { return {}; } })();
+        if (!sortState.key) sortState = { key: 'date', dir: 'desc' };
+
+        const updateSortUI = () => {
+          sortBtns.forEach(btn => {
+            const active = btn.dataset.key === sortState.key;
+            btn.classList.toggle('sort-btn-active', active);
+            if (active) {
+              btn.textContent = btn.dataset.key === 'alpha'
+                ? (sortState.dir === 'asc' ? 'A–Z' : 'Z–A')
+                : btn.dataset.label + (sortState.dir === 'asc' ? ' ↑' : ' ↓');
+            } else {
+              btn.textContent = btn.dataset.label;
+            }
+          });
+        };
+
+        const alphaKey = t => (t || '').replace(/^the\s+/i, '');
+
+        const renderFinishedSorted = () => {
+          finishedList.innerHTML = '';
+          const { key, dir } = sortState;
+          const asc = dir === 'asc';
+          const sorted = [...finished];
+          switch (key) {
+            case 'alpha': {
+              sorted.sort((a, b) => { const ak = alphaKey(a.title), bk = alphaKey(b.title); return asc ? ak.localeCompare(bk) : bk.localeCompare(ak); });
+              break;
+            }
+            case 'release': sorted.sort((a, b) => asc ? (a.releaseYear||9999) - (b.releaseYear||9999) : (b.releaseYear||0) - (a.releaseYear||0)); break;
+            case 'rating':  sorted.sort((a, b) => asc ? (a.rating||0) - (b.rating||0) : (b.rating||0) - (a.rating||0)); break;
+            default:        sorted.sort((a, b) => { const at = tsOf(a,'finishedAt')||tsOf(a,'addedAt'), bt = tsOf(b,'finishedAt')||tsOf(b,'addedAt'); return asc ? at - bt : bt - at; });
+          }
+          if (!sorted.length) { showEmpty(finishedList, 'finished-empty', 'No finished books yet.'); return; }
+          sorted.forEach(b => { const cell = makeBookCoverCell(b); attachCell(cell, b); finishedList.appendChild(cell); });
+        };
+
+        sortBtns.forEach(btn => btn.addEventListener('click', () => {
+          if (btn.dataset.key === sortState.key) {
+            sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+          } else {
+            sortState = { key: btn.dataset.key, dir: btn.dataset.default };
+          }
+          localStorage.setItem('library-finished-sort', JSON.stringify(sortState));
+          updateSortUI();
+          renderFinishedSorted();
+        }));
+
+        updateSortUI();
+        renderFinishedSorted();
+
+        // Background-fetch release years for books that don't have them stored
+        const missing = finished.filter(b => b.gbid && b.releaseYear == null);
+        if (missing.length) {
+          (async () => {
+            try {
+              const slugs = missing.filter(b => !/^\d+$/.test(b.gbid)).map(b => b.gbid);
+              const ids   = missing.filter(b => /^\d+$/.test(b.gbid)).map(b => parseInt(b.gbid, 10));
+              const parts = [], vars = {};
+              if (slugs.length) { parts.push('bySlug:books(where:{slug:{_in:$slugs}}){slug release_year}'); vars.slugs = slugs; }
+              if (ids.length)   { parts.push('byId:books(where:{id:{_in:$ids}}){id release_year}');         vars.ids   = ids; }
+              if (!parts.length) return;
+              const paramStr = [slugs.length && '$slugs:[String!]!', ids.length && '$ids:[Int!]!'].filter(Boolean).join(',');
+              const d = await hcPost(`query(${paramStr}){${parts.join(' ')}}`, vars);
+              const yearMap = new Map();
+              (d?.data?.bySlug || []).forEach(b => { if (b.release_year) yearMap.set(b.slug, b.release_year); });
+              (d?.data?.byId   || []).forEach(b => { if (b.release_year) yearMap.set(String(b.id), b.release_year); });
+              let updated = false;
+              missing.forEach(b => { const y = yearMap.get(b.gbid); if (y) { b.releaseYear = y; updated = true; } });
+              if (updated && sortState.key === 'release') renderFinishedSorted();
+            } catch (e) { console.error('release year fetch:', e); }
+          })();
+        }
+      }
+
       if (isOwn) {
         const { reading, finished } = sortBooks(await getBooks(user.uid));
         setTitles(reading, finished);
@@ -879,12 +967,7 @@
           readingList.appendChild(cell);
         });
 
-        if (finished.length === 0) showEmpty(finishedList, 'finished-empty', 'No finished books yet.');
-        else finished.forEach(b => {
-          const cell = makeBookCoverCell(b);
-          attachFinishedCell(cell, b);
-          finishedList.appendChild(cell);
-        });
+        setupFinishedSort(finished, (cell, b) => attachFinishedCell(cell, b));
       } else {
         document.getElementById('add-book-card').style.display = 'none';
         const backLink = document.getElementById('back-link');
@@ -905,12 +988,7 @@
             readingList.appendChild(cell);
           });
 
-          if (finished.length === 0) showEmpty(finishedList, 'finished-empty', 'No finished books yet.');
-          else finished.forEach(b => {
-            const cell = makeBookCoverCell(b);
-            cell.addEventListener('click', () => createBookModal(renderFinishedView(b)));
-            finishedList.appendChild(cell);
-          });
+          setupFinishedSort(finished, (cell, b) => cell.addEventListener('click', () => createBookModal(renderFinishedView(b))));
         }
       }
     } finally {
@@ -1002,11 +1080,12 @@
       if (!items.length) { suggestBox.style.display = 'none'; return; }
 
       items.forEach(doc => {
-        const title  = doc.title || '';
-        const author = Array.isArray(doc.author_names) ? doc.author_names[0] : doc.author_names || '';
-        const pages  = doc.pages || 0;
-        const cover  = doc.image?.url || '';
-        const slug   = doc.slug || String(doc.id);
+        const title       = doc.title || '';
+        const author      = Array.isArray(doc.author_names) ? doc.author_names[0] : doc.author_names || '';
+        const pages       = doc.pages || 0;
+        const cover       = doc.image?.url || '';
+        const slug        = doc.slug || String(doc.id);
+        const releaseYear = doc.release_year ? parseInt(doc.release_year, 10) : null;
 
         const el = document.createElement('div');
         el.className = 'book-suggestion-item';
@@ -1020,7 +1099,7 @@
 
         el.addEventListener('mousedown', e => {
           e.preventDefault();
-          selectedBook             = { title, author, pages, gbid: slug, cover };
+          selectedBook             = { title, author, pages, gbid: slug, cover, releaseYear };
           searchInput.value        = title;
           suggestBox.innerHTML     = '';
           suggestBox.style.display = 'none';
@@ -1037,13 +1116,13 @@
 
     saveBtn.addEventListener('click', async () => {
       if (!selectedBook) return;
-      const { title, author, pages, gbid, cover } = selectedBook;
+      const { title, author, pages, gbid, cover, releaseYear } = selectedBook;
 
       saveBtn.disabled    = true;
       saveBtn.textContent = 'Adding…';
 
-      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, coverUrl: cover }, profile.username);
-      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, addedAt: { toDate: () => new Date() } };
+      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, coverUrl: cover, releaseYear }, profile.username);
+      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, addedAt: { toDate: () => new Date() } };
 
       document.getElementById('reading-empty')?.remove();
       const newCell = makeBookCoverCell(book);
@@ -1057,7 +1136,7 @@
 
     finishedBtn.addEventListener('click', () => {
       if (!selectedBook) return;
-      const { title, author, pages, gbid, cover } = selectedBook;
+      const { title, author, pages, gbid, cover, releaseYear } = selectedBook;
 
       const fields     = form.querySelector('.add-book-fields');
       const actions    = form.querySelector('.add-book-actions');
@@ -1108,7 +1187,7 @@
         const { date: addedAt,    precision: startedPrec  } = startedPicker.getDate();
         const { date: finishedAt, precision: finishedPrec } = datePicker.getDate();
         const id = await addFinishedBook(user.uid, {
-          title, author, totalPages: pages, gbid, coverUrl: cover, rating, review,
+          title, author, totalPages: pages, gbid, coverUrl: cover, rating, review, releaseYear,
           finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,
           addedAt,    addedAtPrecision:    addedAt    ? startedPrec  : undefined
         }, profile.username);
@@ -1119,7 +1198,7 @@
           addedAtPrecision:    addedAt    ? startedPrec  : null,
           finishedAt:          finishedAt ? { toDate: () => finishedAt } : null,
           finishedAtPrecision: finishedAt ? finishedPrec : null,
-          gbid, rating, review
+          gbid, rating, review, releaseYear
         };
         document.getElementById('finished-empty')?.remove();
         const newCell = makeBookCoverCell(book);
