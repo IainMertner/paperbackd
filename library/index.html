@@ -225,7 +225,7 @@
       const card = document.createElement('div');
       card.className  = 'card';
       card.dataset.id = book.id;
-      const titleHtml = book.gbid
+      const titleHtml = book.gbid?.startsWith('OL')
         ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
       card.innerHTML = `<div class="book-entry">
@@ -328,7 +328,7 @@
       const card = document.createElement('div');
       card.className  = 'card';
       card.dataset.id = book.id;
-      const titleHtml = book.gbid
+      const titleHtml = book.gbid?.startsWith('OL')
         ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
       const starsHtml  = renderStars(book.rating);
@@ -407,7 +407,7 @@
       const pct  = book.totalPages ? Math.round((book.currentPage / book.totalPages) * 100) : 0;
       const card = document.createElement('div');
       card.className = 'card';
-      const titleHtml = book.gbid
+      const titleHtml = book.gbid?.startsWith('OL')
         ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
       card.innerHTML = `<div class="book-entry">
@@ -427,7 +427,7 @@
         : 'Recently';
       const card = document.createElement('div');
       card.className = 'card';
-      const titleHtml = book.gbid
+      const titleHtml = book.gbid?.startsWith('OL')
         ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
       const starsHtml  = renderStars(book.rating);
@@ -495,7 +495,6 @@
 
     let selectedBook = null;
     let searchTimer;
-    let retryTimer;
 
     function setAddEnabled(on) {
       saveBtn.disabled     = !on;
@@ -525,35 +524,16 @@
       selectedBook = null;
       clearTimeout(searchTimer);
       const q = searchInput.value.trim();
-      clearTimeout(retryTimer);
       if (q.length < 3) { suggestBox.innerHTML = ''; suggestBox.style.display = 'none'; return; }
       searchTimer = setTimeout(() => fetchSuggestions(q), 350);
     });
 
     async function fetchSuggestions(q) {
-      clearTimeout(retryTimer);
       try {
-        const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(q)}&maxResults=20&printType=books&key=AIzaSyBj-U331sEcIO__4d0NWEdXx74QjOXae9E`);
-        if (res.status === 429) {
-          retryTimer = setTimeout(() => fetchSuggestions(q), 2500);
-          return;
-        }
+        const res = await fetch(`https://openlibrary.org/search.json?title=${encodeURIComponent(q)}&fields=key,title,author_name,cover_i,number_of_pages_median&sort=rating&limit=10`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data  = await res.json();
-        const seen  = new Set();
-        const items = (data.items || [])
-          .sort((a, b) => (b.volumeInfo?.ratingsCount || 0) - (a.volumeInfo?.ratingsCount || 0))
-          .filter(item => {
-            const v      = item.volumeInfo || {};
-            const title  = (v.title  || '').toLowerCase().replace(/\s+/g, ' ').trim();
-            const author = ((v.authors || [])[0] || '').toLowerCase().trim();
-            const key    = `${title}||${author}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          })
-          .slice(0, 8);
-        renderSuggestions(items);
+        renderSuggestions((data.docs || []).slice(0, 8));
       } catch (err) {
         console.error('Book search failed:', err);
       }
@@ -564,17 +544,17 @@
       if (!items.length) { suggestBox.style.display = 'none'; return; }
 
       items.forEach(item => {
-        const info   = item.volumeInfo || {};
-        const title  = info.title || '';
-        const author = (info.authors || [])[0] || '';
-        const pages  = info.pageCount || 0;
-        const cover  = (info.imageLinks || {}).smallThumbnail || (info.imageLinks || {}).thumbnail || '';
+        const title  = item.title || '';
+        const author = (item.author_name || [])[0] || '';
+        const pages  = item.number_of_pages_median || 0;
+        const cover  = item.cover_i ? `https://covers.openlibrary.org/b/id/${item.cover_i}-S.jpg` : '';
+        const olid   = (item.key || '').replace('/works/', '');
 
         const el = document.createElement('div');
         el.className = 'book-suggestion-item';
 
-        const img = cover
-          ? `<img class="suggestion-cover" src="${cover.replace('http:', 'https:')}" alt="">`
+        const img  = cover
+          ? `<img class="suggestion-cover" src="${cover}" alt="">`
           : `<div class="suggestion-cover-placeholder"></div>`;
         const meta = author ? `by ${esc(author)}` : '';
 
@@ -582,7 +562,7 @@
 
         el.addEventListener('mousedown', e => {
           e.preventDefault();
-          selectedBook             = { title, author, pages, gbid: item.id || '' };
+          selectedBook             = { title, author, pages, gbid: olid };
           searchInput.value        = title;
           suggestBox.innerHTML     = '';
           suggestBox.style.display = 'none';

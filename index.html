@@ -111,7 +111,7 @@
       const card   = document.createElement('div');
       card.className = 'card';
       const initial  = (event.username?.[0] || '?').toUpperCase();
-      const bookLink = event.gbid
+      const bookLink = event.gbid?.startsWith('OL')
         ? `<a href="book/?gbid=${esc(event.gbid)}" style="font-style:italic;color:inherit;text-decoration:none">${esc(event.bookTitle)}</a>`
         : `<em>${esc(event.bookTitle)}</em>`;
       const action  = event.type === 'started'
@@ -121,7 +121,7 @@
         ? `<span style="color:var(--text-muted)"> by ${esc(event.bookAuthor)}</span>`
         : '';
       const ratingRow = (event.type === 'finished' && event.rating != null)
-        ? `<div style="margin-top:.2rem;display:flex;align-items:center;gap:.5rem">${renderStars(event.rating)}${event.hasReview && event.gbid ? `<a href="book/?gbid=${esc(event.gbid)}" style="font-size:.75rem;color:var(--accent);text-decoration:none">Read review</a>` : ''}</div>`
+        ? `<div style="margin-top:.2rem;display:flex;align-items:center;gap:.5rem">${renderStars(event.rating)}${event.hasReview && event.gbid?.startsWith('OL') ? `<a href="book/?gbid=${esc(event.gbid)}" style="font-size:.75rem;color:var(--accent);text-decoration:none">Read review</a>` : ''}</div>`
         : '';
       card.innerHTML = `<div class="friend-item">
         <a class="friend-avatar" href="profile/?u=${esc(event.username)}" style="text-decoration:none;color:inherit">${esc(initial)}</a>
