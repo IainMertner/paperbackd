@@ -782,16 +782,16 @@
         const { date: finishedAt, precision: finishedPrec } = datePicker.getDate();
         const id = await addFinishedBook(user.uid, {
           title, author, totalPages: pages, gbid, coverUrl: cover, rating, review,
-          finishedAt, finishedAtPrecision: finishedPrec === 'year' ? 'year' : undefined,
-          addedAt,    addedAtPrecision:    startedPrec  === 'year' ? 'year' : undefined
+          finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,
+          addedAt,    addedAtPrecision:    addedAt    ? startedPrec  : undefined
         }, profile.username);
         const book = {
           id, title, author, totalPages: pages, currentPage: pages, status: 'finished',
           coverUrl:            cover,
           addedAt:             addedAt    ? { toDate: () => addedAt }    : { toDate: () => new Date() },
-          addedAtPrecision:    startedPrec  === 'year' ? 'year' : null,
-          finishedAt:          finishedAt  ? { toDate: () => finishedAt } : null,
-          finishedAtPrecision: finishedPrec === 'year' ? 'year' : null,
+          addedAtPrecision:    addedAt    ? startedPrec  : null,
+          finishedAt:          finishedAt ? { toDate: () => finishedAt } : null,
+          finishedAtPrecision: finishedAt ? finishedPrec : null,
           gbid, rating, review
         };
         document.getElementById('finished-empty')?.remove();
