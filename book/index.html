@@ -182,7 +182,7 @@
       if (friendStatuses.length) {
         document.getElementById('friends-title').style.display = '';
         const list = document.getElementById('friends-list');
-        for (const { username, book } of friendStatuses) {
+        for (const { username, avatarUrl, book } of friendStatuses) {
           const status = book.status === 'reading'
             ? book.totalPages
               ? `Currently reading · page ${book.currentPage} of ${book.totalPages}`
@@ -192,10 +192,13 @@
           const friendReview = (book.status === 'finished' && book.review)
             ? `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(book.review.slice(0, 150))}${book.review.length > 150 ? '…' : ''}</div>`
             : '';
+          const avatarContent = avatarUrl
+            ? `<img src="${esc(avatarUrl)}" alt="">`
+            : esc(username[0].toUpperCase());
           const el = document.createElement('div');
           el.className = 'card';
           el.innerHTML = `<div class="friend-item">
-            <a class="friend-avatar" href="../profile/?u=${esc(username)}" style="text-decoration:none;color:inherit">${esc(username[0].toUpperCase())}</a>
+            <a class="friend-avatar" href="../profile/?u=${esc(username)}" style="text-decoration:none;color:inherit">${avatarContent}</a>
             <div style="flex:1;min-width:0">
               <a href="../profile/?u=${esc(username)}" style="font-weight:600;font-size:.9rem;color:inherit;text-decoration:none">${esc(username)}</a>
               <div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">${status}</div>

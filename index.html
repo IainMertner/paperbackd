@@ -78,7 +78,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from './js/auth.js';
-    import { getFollowing, getFeed } from './js/firebase.js';
+    import { getFollowing, getFeed, getProfile } from './js/firebase.js';
 
     const { user } = await requireAuth();
     const main = document.querySelector('main.page-content');
@@ -127,10 +127,16 @@
       return d.toLocaleDateString('en-GB', opts);
     }
 
+    let avatarMap = {};
+
     function renderEvent(event) {
       const card   = document.createElement('div');
       card.className = 'card';
-      const initial  = (event.username?.[0] || '?').toUpperCase();
+      const initial    = (event.username?.[0] || '?').toUpperCase();
+      const avatarUrl  = avatarMap[event.uid];
+      const avatarContent = avatarUrl
+        ? `<img src="${esc(avatarUrl)}" alt="">`
+        : esc(initial);
       const bookLink = event.gbid
         ? `<a href="book/?gbid=${esc(event.gbid)}" style="font-style:italic;color:inherit;text-decoration:none">${esc(event.bookTitle)}</a>`
         : `<em>${esc(event.bookTitle)}</em>`;
@@ -144,7 +150,7 @@
         ? `<div style="margin-top:.2rem;display:flex;align-items:center;gap:.5rem">${renderStars(event.rating)}${event.hasReview && event.gbid ? `<a href="book/?gbid=${esc(event.gbid)}" style="font-size:.75rem;color:var(--accent);text-decoration:none">Read review</a>` : ''}</div>`
         : '';
       card.innerHTML = `<div class="friend-item">
-        <a class="friend-avatar" href="profile/?u=${esc(event.username)}" style="text-decoration:none;color:inherit">${esc(initial)}</a>
+        <a class="friend-avatar" href="profile/?u=${esc(event.username)}" style="text-decoration:none;color:inherit">${avatarContent}</a>
         <div style="flex:1;min-width:0">
           <div style="font-size:.9rem;line-height:1.4"><a href="profile/?u=${esc(event.username)}" style="font-weight:600;color:inherit;text-decoration:none">${esc(event.username)}</a> ${action}${author}</div>
           ${ratingRow}
@@ -155,9 +161,13 @@
     }
 
     try {
-      const following     = await getFollowing(user.uid);
+      const [following, myProfile] = await Promise.all([getFollowing(user.uid), getProfile(user.uid)]);
       const followingUids = following.map(f => f.uid);
-      const feed          = await getFeed(user.uid, followingUids);
+      const mutedUids     = myProfile?.muted || [];
+      avatarMap[user.uid] = myProfile?.avatarUrl || null;
+      following.forEach(f => { avatarMap[f.uid] = f.avatarUrl || null; });
+      const feed          = (await getFeed(user.uid, followingUids))
+        .filter(e => e.uid === user.uid || !mutedUids.includes(e.uid));
 
       if (feed.length === 0) {
         const p = document.createElement('p');

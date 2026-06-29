@@ -20,6 +20,7 @@ import {
   collection,
   addDoc,
   getDocs,
+  getCountFromServer,
   query,
   orderBy,
   where
@@ -154,7 +155,24 @@ export async function unfollowUser(currentUid, targetUid) {
   await updateDoc(doc(db, 'users', currentUid), { following: arrayRemove(targetUid) });
 }
 
+export function updateAvatarUrl(uid, dataUrl) {
+  return updateDoc(doc(db, 'users', uid), { avatarUrl: dataUrl });
+}
+
+export function muteUser(currentUid, targetUid) {
+  return updateDoc(doc(db, 'users', currentUid), { muted: arrayUnion(targetUid) });
+}
+
+export function unmuteUser(currentUid, targetUid) {
+  return updateDoc(doc(db, 'users', currentUid), { muted: arrayRemove(targetUid) });
+}
+
 // ── Books ─────────────────────────────────────────────────────────────────────
+
+export async function getBookCount(uid) {
+  const snap = await getCountFromServer(collection(db, 'users', uid, 'books'));
+  return snap.data().count;
+}
 
 export async function getBooks(uid) {
   const snap = await getDocs(collection(db, 'users', uid, 'books'));
@@ -310,7 +328,7 @@ export async function getFriendBookStatus(followingUids, gbid) {
       if (snap.empty) return null;
       const userSnap = await getDoc(doc(db, 'users', uid));
       return userSnap.exists()
-        ? { uid, username: userSnap.data().username, book: { id: snap.docs[0].id, ...snap.docs[0].data() } }
+        ? { uid, username: userSnap.data().username, avatarUrl: userSnap.data().avatarUrl || null, book: { id: snap.docs[0].id, ...snap.docs[0].data() } }
         : null;
     })
   );

@@ -130,12 +130,18 @@
       container.appendChild(p);
     }
 
+    function avatarHtml(profile) {
+      return profile.avatarUrl
+        ? `<img src="${esc(profile.avatarUrl)}" alt="">`
+        : esc((profile.username[0] || '?').toUpperCase());
+    }
+
     function renderFollowing(profile) {
       const card = document.createElement('div');
       card.className   = 'card';
       card.dataset.uid = profile.uid;
       card.innerHTML = `<div class="friend-item">
-        <div class="friend-avatar">${esc(profile.username[0].toUpperCase())}</div>
+        <a class="friend-avatar" href="../profile/?u=${esc(profile.username)}" style="text-decoration:none;color:inherit">${avatarHtml(profile)}</a>
         <a class="friend-name" href="../profile/?u=${esc(profile.username)}">${esc(profile.username)}</a>
         <button class="btn-danger btn-unfollow" style="margin-left:auto;font-size:.75rem;padding:.3rem .75rem">Unfollow</button>
       </div>`;
@@ -154,7 +160,7 @@
       card.className   = 'card';
       card.dataset.uid = profile.uid;
       card.innerHTML = `<div class="friend-item">
-        <div class="friend-avatar">${esc(profile.username[0].toUpperCase())}</div>
+        <a class="friend-avatar" href="../profile/?u=${esc(profile.username)}" style="text-decoration:none;color:inherit">${avatarHtml(profile)}</a>
         <a class="friend-name" href="../profile/?u=${esc(profile.username)}">${esc(profile.username)}</a>
       </div>`;
       return card;

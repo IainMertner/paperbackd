@@ -40,17 +40,20 @@
       </div>
       <div class="profile-name-wrap">
         <div class="profile-name" id="profile-name"></div>
+        <div id="own-actions" style="display:none;margin-top:.45rem">
+          <a href="../edit-profile/" class="profile-action-btn profile-action-mute" style="text-decoration:none">Edit profile</a>
+        </div>
+        <div class="profile-actions" id="profile-actions" hidden>
+          <button id="follow-btn" class="profile-action-btn profile-action-follow">Follow</button>
+          <button id="mute-btn" class="profile-action-btn profile-action-mute">Mute</button>
+        </div>
       </div>
-    </div>
-
-    <div id="follow-action" hidden style="margin-bottom:.625rem">
-      <button id="follow-btn" class="join-club-btn" style="width:100%">Follow</button>
     </div>
 
     <div class="profile-links" id="own-links" style="display:none">
       <a class="profile-link-row card" href="../friends/">
-        <span class="profile-link-label">Following / Followers</span>
-        <span class="profile-link-meta"><span id="following-count">—</span> · <span id="followers-count">—</span></span>
+        <span class="profile-link-label">Network</span>
+        <span class="profile-link-meta"><span id="followers-count">—</span> Followers · <span id="following-count">—</span> Following</span>
         <svg class="profile-link-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 18 15 12 9 6"/>
         </svg>
@@ -59,8 +62,8 @@
 
     <div class="profile-links" id="other-counts" style="display:none">
       <a class="profile-link-row card" id="other-counts-link" href="#">
-        <span class="profile-link-label">Following / Followers</span>
-        <span class="profile-link-meta"><span id="other-following-count">—</span> · <span id="other-followers-count">—</span></span>
+        <span class="profile-link-label">Network</span>
+        <span class="profile-link-meta"><span id="other-followers-count">—</span> Followers · <span id="other-following-count">—</span> Following</span>
         <svg class="profile-link-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 18 15 12 9 6"/>
         </svg>
@@ -70,6 +73,7 @@
     <div class="profile-links">
       <a class="profile-link-row card" id="library-link" href="../library/">
         <span class="profile-link-label">Library</span>
+        <span class="profile-link-meta" id="book-count"></span>
         <svg class="profile-link-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 18 15 12 9 6"/>
         </svg>
@@ -121,7 +125,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getProfileByUsername, getFollowers, followUser, unfollowUser } from '../js/firebase.js';
+    import { getProfileByUsername, getFollowers, getProfile, getBookCount, followUser, unfollowUser, muteUser, unmuteUser } from '../js/firebase.js';
 
     const { user, profile: myProfile } = await requireAuth();
     const params      = new URLSearchParams(location.search);
@@ -130,24 +134,40 @@
 
     try {
       if (isOwn) {
-        document.getElementById('profile-avatar').textContent  = myProfile.username[0].toUpperCase();
+        const avatarEl = document.getElementById('profile-avatar');
+        if (myProfile.avatarUrl) { avatarEl.innerHTML  = `<img src="${myProfile.avatarUrl}" alt="">`; }
+        else                     { avatarEl.textContent = myProfile.username[0].toUpperCase(); }
+
+        document.getElementById('own-actions').style.display  = '';
         document.getElementById('profile-name').textContent    = myProfile.username;
         document.getElementById('following-count').textContent = (myProfile.following || myProfile.friends || []).length;
-        document.getElementById('own-links').style.display = '';
+        document.getElementById('own-links').style.display     = '';
         getFollowers(user.uid).then(f => {
           document.getElementById('followers-count').textContent = f.length;
+        });
+        getBookCount(user.uid).then(n => {
+          document.getElementById('book-count').textContent = `${n} Book${n === 1 ? '' : 's'}`;
         });
       } else {
         const backLink = document.getElementById('back-link');
         backLink.style.display = '';
         backLink.addEventListener('click', e => { e.preventDefault(); history.back(); });
 
-        const target = await getProfileByUsername(targetParam);
+        const [target, myFreshProfile] = await Promise.all([
+          getProfileByUsername(targetParam),
+          getProfile(user.uid)
+        ]);
+
         if (!target) {
           document.getElementById('profile-name').textContent = 'User not found.';
         } else {
-          document.getElementById('profile-avatar').textContent = target.username[0].toUpperCase();
-          document.getElementById('profile-name').textContent   = target.username;
+          const avatarEl = document.getElementById('profile-avatar');
+          if (target.avatarUrl) {
+            avatarEl.innerHTML = `<img src="${target.avatarUrl}" alt="">`;
+          } else {
+            avatarEl.textContent = target.username[0].toUpperCase();
+          }
+          document.getElementById('profile-name').textContent = target.username;
 
           document.getElementById('other-following-count').textContent = (target.following || []).length;
           document.getElementById('other-counts-link').href = `../friends/?u=${encodeURIComponent(target.username)}`;
@@ -156,14 +176,31 @@
           getFollowers(target.uid).then(f => {
             document.getElementById('other-followers-count').textContent = f.length;
           });
+          getBookCount(target.uid).then(n => {
+            document.getElementById('book-count').textContent = `${n} Book${n === 1 ? '' : 's'}`;
+          });
 
-          const myFollowing = myProfile.following || myProfile.friends || [];
+          const myFollowing = myFreshProfile?.following || myProfile.following || myProfile.friends || [];
+          const myMuted     = myFreshProfile?.muted || [];
           let isFollowing   = myFollowing.includes(target.uid);
+          let isMuted       = myMuted.includes(target.uid);
 
-          const followAction = document.getElementById('follow-action');
-          const followBtn    = document.getElementById('follow-btn');
-          followAction.hidden   = false;
-          followBtn.textContent = isFollowing ? 'Unfollow' : 'Follow';
+          const profileActions = document.getElementById('profile-actions');
+          const followBtn      = document.getElementById('follow-btn');
+          const muteBtn        = document.getElementById('mute-btn');
+
+          profileActions.hidden = false;
+
+          function updateFollowBtn() {
+            followBtn.textContent = isFollowing ? 'Following' : 'Follow';
+            followBtn.classList.toggle('following', isFollowing);
+          }
+          function updateMuteBtn() {
+            muteBtn.textContent = isMuted ? 'Unmute' : 'Mute';
+            muteBtn.classList.toggle('muted', isMuted);
+          }
+          updateFollowBtn();
+          updateMuteBtn();
 
           followBtn.addEventListener('click', async () => {
             followBtn.disabled = true;
@@ -175,9 +212,25 @@
                 await followUser(user.uid, target.username);
                 isFollowing = true;
               }
-              followBtn.textContent = isFollowing ? 'Unfollow' : 'Follow';
+              updateFollowBtn();
             } finally {
               followBtn.disabled = false;
+            }
+          });
+
+          muteBtn.addEventListener('click', async () => {
+            muteBtn.disabled = true;
+            try {
+              if (isMuted) {
+                await unmuteUser(user.uid, target.uid);
+                isMuted = false;
+              } else {
+                await muteUser(user.uid, target.uid);
+                isMuted = true;
+              }
+              updateMuteBtn();
+            } finally {
+              muteBtn.disabled = false;
             }
           });
         }

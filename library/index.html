@@ -56,10 +56,10 @@
       </div>
     </div>
 
-    <p class="section-title">Currently Reading</p>
+    <p class="section-title" id="reading-title">Currently Reading</p>
     <div id="reading-list"></div>
 
-    <p class="section-title" style="margin-top:1.5rem">Finished</p>
+    <p class="section-title" id="finished-title" style="margin-top:1.5rem">Finished</p>
     <div id="finished-list"></div>
 
   </main>
@@ -580,8 +580,14 @@
         return { reading, finished };
       }
 
+      function setTitles(reading, finished) {
+        document.getElementById('reading-title').textContent = `Currently Reading · ${reading.length}`;
+        document.getElementById('finished-title').textContent = `Finished · ${finished.length}`;
+      }
+
       if (isOwn) {
         const { reading, finished } = sortBooks(await getBooks(user.uid));
+        setTitles(reading, finished);
 
         if (reading.length === 0) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
         else reading.forEach(b => readingList.appendChild(renderReading(b)));
@@ -600,6 +606,7 @@
         } else {
           document.getElementById('page-title').textContent = `${target.username}'s Library`;
           const { reading, finished } = sortBooks(await getBooks(target.uid));
+          setTitles(reading, finished);
 
           if (reading.length === 0) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
           else reading.forEach(b => readingList.appendChild(renderReadingView(b)));
