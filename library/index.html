@@ -592,7 +592,7 @@
 
     let selectedBook = null;
     let searchTimer;
-    let retryTimer;
+    const HARDCOVER_TOKEN = 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJIYXJkY292ZXIiLCJ2ZXJzaW9uIjoiOCIsImp0aSI6IjU2Njc5NjU1LWFiZjUtNGVmZi05YmE4LWJjOTliZjIxYTdhZSIsImFwcGxpY2F0aW9uSWQiOjIsInN1YiI6IjEyMDgyMSIsImF1ZCI6IjEiLCJpZCI6IjEyMDgyMSIsImxvZ2dlZEluIjp0cnVlLCJpYXQiOjE3ODI3NDc0MDEsImV4cCI6MTgxNDI4MzQwMSwiaHR0cHM6Ly9oYXN1cmEuaW8vand0L2NsYWltcyI6eyJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzIjpbInVzZXIiXSwieC1oYXN1cmEtZGVmYXVsdC1yb2xlIjoidXNlciIsIngtaGFzdXJhLXJvbGUiOiJ1c2VyIiwiWC1oYXN1cmEtdXNlci1pZCI6IjEyMDgyMSJ9LCJ1c2VyIjp7ImlkIjoxMjA4MjF9fQ.Ku1c0LUwF4Jqq2YoAT1L86m-Nurl7spJU8nXFn6OUGw';
 
     function setAddEnabled(on) {
       saveBtn.disabled     = !on;
@@ -631,29 +631,42 @@
       clearTimeout(searchTimer);
       const q = searchInput.value.trim();
       if (q.length < 3) { suggestBox.innerHTML = ''; suggestBox.style.display = 'none'; return; }
-      searchTimer = setTimeout(() => fetchSuggestions(q), 350);
+      searchTimer = setTimeout(() => fetchSuggestions(q), 250);
     });
 
     async function fetchSuggestions(q) {
       try {
-        const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(q)}&maxResults=20&printType=books&key=AIzaSyBj-U331sEcIO__4d0NWEdXx74QjOXae9E`);
-        if (res.status === 429) { retryTimer = setTimeout(() => fetchSuggestions(q), 2500); return; }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data  = await res.json();
-        const seen  = new Set();
-        const items = (data.items || [])
-          .filter(item => item.volumeInfo?.imageLinks)
-          .sort((a, b) => (b.volumeInfo?.ratingsCount || 0) - (a.volumeInfo?.ratingsCount || 0))
-          .filter(item => {
-            const v      = item.volumeInfo;
-            const title  = (v.title  || '').toLowerCase().replace(/\s+/g, ' ').trim();
-            const author = ((v.authors || [])[0] || '').toLowerCase().trim();
-            const key    = `${title}||${author}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
+        const res = await fetch('https://api.hardcover.app/v1/graphql', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': HARDCOVER_TOKEN },
+          body: JSON.stringify({
+            query: `query SearchBooks($q: String!) {
+              books(
+                where: { title: { _ilike: $q }, book_status_id: { _eq: 1 } }
+                order_by: { ratings_count: desc }
+                limit: 10
+              ) {
+                id
+                title
+                slug
+                pages
+                cached_image
+                contributions { author { name } }
+              }
+            }`,
+            variables: { q: `%${q}%` }
           })
-          .slice(0, 8);
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const seen = new Set();
+        const items = (data.data?.books || []).filter(b => {
+          const author = b.contributions?.find(c => c.author)?.author?.name || '';
+          const key = `${(b.title || '').toLowerCase()}||${author.toLowerCase()}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        }).slice(0, 8);
         renderSuggestions(items);
       } catch (err) {
         console.error('Book search failed:', err);
@@ -665,12 +678,11 @@
       if (!items.length) { suggestBox.style.display = 'none'; return; }
 
       items.forEach(item => {
-        const info   = item.volumeInfo || {};
-        const title  = info.title || '';
-        const author = (info.authors || [])[0] || '';
-        const pages  = info.pageCount || 0;
-        const cover  = (info.imageLinks?.smallThumbnail || info.imageLinks?.thumbnail || '').replace('http:', 'https:');
-        const gbid   = item.id || '';
+        const title  = item.title || '';
+        const author = item.contributions?.find(c => c.author)?.author?.name || '';
+        const pages  = item.pages || 0;
+        const cover  = item.cached_image?.url || '';
+        const slug   = item.slug || String(item.id);
 
         const el = document.createElement('div');
         el.className = 'book-suggestion-item';
@@ -684,7 +696,7 @@
 
         el.addEventListener('mousedown', e => {
           e.preventDefault();
-          selectedBook             = { title, author, pages, gbid };
+          selectedBook             = { title, author, pages, gbid: slug };
           searchInput.value        = title;
           suggestBox.innerHTML     = '';
           suggestBox.style.display = 'none';
