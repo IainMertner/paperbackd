@@ -176,13 +176,21 @@
       return wrap;
     }
 
+    function tsOf(book, field) {
+      const ts = book[field];
+      if (!ts) return 0;
+      if (ts.seconds != null) return ts.seconds;
+      if (ts.toDate) return ts.toDate().getTime() / 1000;
+      return 0;
+    }
+
     function toDateInputVal(ts) {
       if (!ts?.toDate) return '';
       const d = ts.toDate();
       return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     }
 
-    function makeDateEl(label, ts, field, bookId) {
+    function makeDateEl(label, ts, field, bookId, bookTitle) {
       const el = document.createElement('div');
       el.className = 'book-finished-meta book-date-editable';
       const dateStr = ts?.toDate?.()
@@ -207,10 +215,10 @@
           let newTs = ts;
           if (val && val !== initialVal) {
             const newDate = new Date(val + 'T12:00:00');
-            await updateBookDates(user.uid, bookId, { [field]: newDate });
+            await updateBookDates(user.uid, bookId, { [field]: newDate }, bookTitle);
             newTs = { toDate: () => newDate };
           }
-          input.replaceWith(makeDateEl(label, newTs, field, bookId));
+          input.replaceWith(makeDateEl(label, newTs, field, bookId, bookTitle));
         }
 
         input.addEventListener('change', commit);
@@ -248,7 +256,7 @@
         </div>
         <button class="btn-remove-x" aria-label="Remove" title="Remove">✕</button>
       </div>`;
-      card.querySelector('.book-started-date').replaceWith(makeDateEl('Started', book.addedAt, 'addedAt', book.id));
+      card.querySelector('.book-started-date').replaceWith(makeDateEl('Started', book.addedAt, 'addedAt', book.id, book.title));
 
       const inputs    = card.querySelectorAll('.page-input');
       const fillEl    = card.querySelector('.progress-bar-fill');
@@ -351,7 +359,7 @@
         </div>
         <button class="btn-remove-x" aria-label="Remove" title="Remove">✕</button>
       </div>`;
-      card.querySelector('.book-finished-date').replaceWith(makeDateEl('Finished', book.finishedAt, 'finishedAt', book.id));
+      card.querySelector('.book-finished-date').replaceWith(makeDateEl('Finished', book.finishedAt, 'finishedAt', book.id, book.title));
 
       card.querySelector('.btn-rate').addEventListener('click', () => {
         const editForm = card.querySelector('.rating-edit-form');
@@ -448,10 +456,22 @@
     }
 
     try {
+      function sortBooks(books) {
+        const reading  = books
+          .filter(b => b.status === 'reading')
+          .sort((a, b) => tsOf(b, 'addedAt') - tsOf(a, 'addedAt'));
+        const finished = books
+          .filter(b => b.status === 'finished')
+          .sort((a, b) => {
+            const bTs = tsOf(b, 'finishedAt') || tsOf(b, 'addedAt');
+            const aTs = tsOf(a, 'finishedAt') || tsOf(a, 'addedAt');
+            return bTs - aTs;
+          });
+        return { reading, finished };
+      }
+
       if (isOwn) {
-        const books    = await getBooks(user.uid);
-        const reading  = books.filter(b => b.status === 'reading');
-        const finished = books.filter(b => b.status === 'finished');
+        const { reading, finished } = sortBooks(await getBooks(user.uid));
 
         if (reading.length === 0) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
         else reading.forEach(b => readingList.appendChild(renderReading(b)));
@@ -469,9 +489,7 @@
           document.getElementById('page-title').textContent = 'User not found';
         } else {
           document.getElementById('page-title').textContent = `${target.username}'s Library`;
-          const books    = await getBooks(target.uid);
-          const reading  = books.filter(b => b.status === 'reading');
-          const finished = books.filter(b => b.status === 'finished');
+          const { reading, finished } = sortBooks(await getBooks(target.uid));
 
           if (reading.length === 0) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
           else reading.forEach(b => readingList.appendChild(renderReadingView(b)));
@@ -633,7 +651,12 @@
       const picker = createStarPicker(0);
       const ta = document.createElement('textarea');
       ta.className = 'review-input'; ta.placeholder = 'Write a review… (optional)'; ta.rows = 3;
-      ratingDiv.append(titleLabel, rateLabel, picker, ta);
+      const dateLabel = document.createElement('div');
+      dateLabel.style.cssText = 'font-size:.8rem;color:var(--text-muted);margin:.5rem 0 .25rem';
+      dateLabel.textContent = 'Date finished (optional)';
+      const dateInput = document.createElement('input');
+      dateInput.type = 'date'; dateInput.className = 'date-edit-input';
+      ratingDiv.append(titleLabel, rateLabel, picker, ta, dateLabel, dateInput);
       fields.appendChild(ratingDiv);
 
       actions.innerHTML = '';
@@ -654,8 +677,9 @@
         confirmBtn.disabled = true; confirmBtn.textContent = 'Adding…';
         const rating = picker.getValue();
         const review = ta.value.trim() || null;
-        const id   = await addFinishedBook(user.uid, { title, author, totalPages: pages, gbid, rating, review });
-        const book = { id, title, author, totalPages: pages, currentPage: pages, status: 'finished', finishedAt: { toDate: () => new Date() }, gbid, rating, review };
+        const finishedAt = dateInput.value ? new Date(dateInput.value + 'T12:00:00') : null;
+        const id   = await addFinishedBook(user.uid, { title, author, totalPages: pages, gbid, rating, review, finishedAt });
+        const book = { id, title, author, totalPages: pages, currentPage: pages, status: 'finished', finishedAt: finishedAt ? { toDate: () => finishedAt } : null, gbid, rating, review };
         document.getElementById('finished-empty')?.remove();
         finishedList.prepend(renderFinished(book));
         closeForm();

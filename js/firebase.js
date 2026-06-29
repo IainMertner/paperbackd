@@ -156,12 +156,11 @@ export async function unfollowUser(currentUid, targetUid) {
 // ── Books ─────────────────────────────────────────────────────────────────────
 
 export async function getBooks(uid) {
-  const q    = query(collection(db, 'users', uid, 'books'), orderBy('addedAt', 'desc'));
-  const snap = await getDocs(q);
+  const snap = await getDocs(collection(db, 'users', uid, 'books'));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-export async function addFinishedBook(uid, { title, author, totalPages, gbid, rating, review }) {
+export async function addFinishedBook(uid, { title, author, totalPages, gbid, rating, review, finishedAt }) {
   const data = {
     title,
     author:      author || '',
@@ -169,9 +168,9 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, ra
     currentPage: totalPages || 0,
     status:      'finished',
     gbid:        gbid || '',
-    addedAt:     serverTimestamp(),
-    finishedAt:  serverTimestamp()
+    addedAt:     serverTimestamp()
   };
+  if (finishedAt) data.finishedAt = finishedAt;
   if (rating != null) data.rating = rating;
   if (review)         data.review = review;
   const bookRef = await addDoc(collection(db, 'users', uid, 'books'), data);
@@ -226,8 +225,21 @@ export function finishBook(uid, bookId, { title, author, gbid, rating, review } 
   ]);
 }
 
-export function updateBookDates(uid, bookId, updates) {
-  return updateDoc(doc(db, 'users', uid, 'books', bookId), updates);
+async function updateActivityTimestamp(uid, bookTitle, type, date) {
+  const snap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid), where('type', '==', type)));
+  await Promise.all(
+    snap.docs
+      .filter(d => d.data().bookTitle === bookTitle)
+      .map(d => updateDoc(d.ref, { timestamp: date }))
+  );
+}
+
+export async function updateBookDates(uid, bookId, updates, bookTitle) {
+  await updateDoc(doc(db, 'users', uid, 'books', bookId), updates);
+  if (bookTitle) {
+    if (updates.addedAt   instanceof Date) await updateActivityTimestamp(uid, bookTitle, 'started',  updates.addedAt);
+    if (updates.finishedAt instanceof Date) await updateActivityTimestamp(uid, bookTitle, 'finished', updates.finishedAt);
+  }
 }
 
 export function updateBookRating(uid, bookId, { rating, review }) {
