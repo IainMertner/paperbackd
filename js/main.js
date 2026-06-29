@@ -67,3 +67,11 @@ document.addEventListener('DOMContentLoaded', () => {
   setActiveNav();
   document.querySelector('.theme-toggle')?.addEventListener('click', toggleTheme);
 });
+
+// Safety net: if the module script crashes or hangs, don't leave the page invisible
+window.addEventListener('unhandledrejection', () => {
+  document.body.classList.remove('auth-loading');
+});
+window.addEventListener('error', () => {
+  document.body.classList.remove('auth-loading');
+});

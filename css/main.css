@@ -778,7 +778,8 @@ a { color: inherit; }
 .friend-name { font-size: 0.9rem; font-weight: 500; }
 
 /* ── Auth (login / register) ───────────────────────────────── */
-body.auth-loading { visibility: hidden; }
+body.auth-loading { visibility: hidden; animation: auth-reveal 0s 8s forwards; }
+@keyframes auth-reveal { to { visibility: visible; } }
 
 .auth-page {
   min-height: 100dvh;
