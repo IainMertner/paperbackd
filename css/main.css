@@ -804,6 +804,17 @@ a { color: inherit; }
 .shelf-covers a { display: block; width: calc((100% - 3 * .625rem) / 4); flex-shrink: 0; }
 .shelf-cover { width: 100%; aspect-ratio: 2/3; border-radius: var(--radius-sm); object-fit: cover; display: block; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
 
+/* Cover picker */
+.book-cover-wrap { position: relative; flex-shrink: 0; cursor: pointer; }
+.book-cover-wrap:hover::after { content: ''; position: absolute; inset: 0; background: rgba(0,0,0,.22); border-radius: var(--radius-sm); pointer-events: none; }
+.cover-picker-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 500; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.cover-picker-modal { background: var(--bg-card); border-radius: var(--radius); padding: 1.25rem; max-width: 380px; width: 100%; max-height: 80vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,.3); }
+.cover-picker-grid { display: flex; flex-wrap: wrap; gap: .5rem; }
+.cover-picker-item { width: calc(25% - .375rem); cursor: pointer; border-radius: var(--radius-sm); overflow: hidden; border: 2px solid transparent; transition: border-color .12s, transform .12s; }
+.cover-picker-item:hover { border-color: var(--accent); transform: scale(1.04); }
+.cover-picker-item.selected { border-color: var(--accent); }
+.cover-picker-item img { width: 100%; display: block; aspect-ratio: 2/3; object-fit: cover; }
+
 /* Edit shelf */
 .shelf-edit-list { display: flex; flex-wrap: wrap; gap: .625rem; margin-bottom: .75rem; min-height: 0; }
 .shelf-edit-item { position: relative; }

@@ -107,7 +107,9 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating, updateBookDates, getProfileByUsername } from '../js/firebase.js';
+    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating, updateBookDates, updateBookCover, updateShelf, getProfileByUsername } from '../js/firebase.js';
+
+    const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
     const { user, profile } = await requireAuth();
 
@@ -184,10 +186,127 @@
     const TRASH_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
 
     function bookCoverHtml(book) {
-      if (book.coverUrl?.startsWith('https://')) {
-        return `<img class="book-cover book-cover-img" src="${book.coverUrl}" alt="">`;
+      const inner = book.coverUrl?.startsWith('https://')
+        ? `<img class="book-cover book-cover-img" src="${esc(book.coverUrl)}" alt="">`
+        : `<div class="book-cover">📖</div>`;
+      return `<div class="book-cover-wrap">${inner}</div>`;
+    }
+
+    function coverInnerHtml(book) {
+      return book.coverUrl?.startsWith('https://')
+        ? `<img class="book-cover book-cover-img" src="${esc(book.coverUrl)}" alt="">`
+        : `<div class="book-cover">📖</div>`;
+    }
+
+    async function openCoverPicker(book, wrapEl) {
+      const overlay = document.createElement('div');
+      overlay.className = 'cover-picker-overlay';
+      const modal = document.createElement('div');
+      modal.className = 'cover-picker-modal';
+      modal.innerHTML = `<div style="font-weight:600;margin-bottom:.2rem">${esc(book.title)}</div>
+        <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:.875rem">Choose an edition cover</div>
+        <div class="cover-picker-grid" id="cpg"><span style="font-size:.85rem;color:var(--text-muted)">Loading…</span></div>`;
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+      const grid = modal.querySelector('#cpg');
+
+      async function hcPost(query, variables) {
+        const r = await fetch(HARDCOVER_PROXY, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, variables })
+        });
+        return r.json();
       }
-      return `<div class="book-cover">📖</div>`;
+
+      try {
+        let editions = [];
+
+        // Search by title to get multiple book IDs (catches different publisher entries)
+        const searchData = await hcPost(
+          `query($q:String!){search(query:$q,query_type:"Book",per_page:8){results}}`,
+          { q: book.title }
+        );
+        const hits = searchData?.data?.search?.results?.hits || [];
+        const bookIds = [...new Set(hits.map(h => h.document?.id).filter(Boolean).map(id => parseInt(id, 10)).filter(n => !isNaN(n)))];
+
+        // If the stored gbid is a slug (not numeric), resolve it to an ID too
+        const slug = /^\d+$/.test(book.gbid) ? '' : (book.gbid || '');
+        if (slug) {
+          const d = await hcPost(
+            `query($s:String!){books(where:{slug:{_eq:$s}},limit:1){id}}`,
+            { s: slug }
+          );
+          const id = d?.data?.books?.[0]?.id;
+          if (id && !bookIds.includes(id)) bookIds.push(id);
+        }
+
+        if (bookIds.length) {
+          const d = await hcPost(
+            `query($ids:[Int!]!){editions(where:{book_id:{_in:$ids}},limit:100){id image{url} publisher{name} release_year}}`,
+            { ids: bookIds }
+          );
+          const seen = new Set();
+          editions = (d?.data?.editions || []).filter(e => {
+            if (!e.image?.url || seen.has(e.image.url)) return false;
+            seen.add(e.image.url);
+            return true;
+          });
+        }
+
+        grid.innerHTML = '';
+
+        // Deduplicate editions against current cover
+        const currentUrl = book.coverUrl?.startsWith('https://') ? book.coverUrl : null;
+        const filteredEditions = editions.filter(e => e.image.url !== currentUrl);
+
+        if (!currentUrl && !filteredEditions.length) {
+          grid.innerHTML = '<span style="font-size:.85rem;color:var(--text-muted)">No covers found.</span>';
+          return;
+        }
+
+        async function pickCover(url) {
+          if (url === book.coverUrl) { overlay.remove(); return; }
+          await updateBookCover(user.uid, book.id, url);
+          book.coverUrl = url;
+          wrapEl.innerHTML = coverInnerHtml(book);
+          // Sync shelf if this book is on it
+          if (profile.shelf?.some(s => s.gbid === book.gbid && book.gbid)) {
+            const updatedShelf = profile.shelf.map(s =>
+              s.gbid === book.gbid ? { ...s, coverUrl: url } : s
+            );
+            await updateShelf(user.uid, updatedShelf);
+            profile.shelf = updatedShelf;
+            const cached = JSON.parse(localStorage.getItem('rl_profile') || '{}');
+            if (cached.shelf) { cached.shelf = updatedShelf; localStorage.setItem('rl_profile', JSON.stringify(cached)); }
+          }
+          overlay.remove();
+        }
+
+        // Current cover first
+        if (currentUrl) {
+          const item = document.createElement('div');
+          item.className = 'cover-picker-item selected';
+          item.title = 'Current cover';
+          item.innerHTML = `<img src="${esc(currentUrl)}" alt="" loading="lazy">`;
+          item.addEventListener('click', () => overlay.remove());
+          grid.appendChild(item);
+        }
+
+        filteredEditions.forEach(ed => {
+          const url = ed.image.url;
+          const item = document.createElement('div');
+          item.className = 'cover-picker-item';
+          if (ed.publisher?.name || ed.release_year) item.title = [ed.publisher?.name, ed.release_year].filter(Boolean).join(' · ');
+          item.innerHTML = `<img src="${esc(url)}" alt="" loading="lazy">`;
+          item.addEventListener('click', () => { item.style.opacity = '0.5'; pickCover(url); });
+          grid.appendChild(item);
+        });
+      } catch (err) {
+        console.error(err);
+        grid.innerHTML = '<span style="font-size:.85rem;color:var(--text-muted)">Failed to load covers.</span>';
+      }
     }
 
     function tsOf(book, field) {
@@ -349,6 +468,7 @@
         </div>
         <button class="btn-remove-x" aria-label="Remove" title="Remove">${TRASH_ICON}</button>
       </div>`;
+      card.querySelector('.book-cover-wrap').addEventListener('click', () => openCoverPicker(book, card.querySelector('.book-cover-wrap')));
       card.querySelector('.book-started-date').replaceWith(makeDateEl('Started', book.addedAt, 'addedAt', book));
 
       const inputs    = card.querySelectorAll('.page-input');
@@ -448,6 +568,8 @@
         </div>
         <button class="btn-remove-x" aria-label="Remove" title="Remove">${TRASH_ICON}</button>
       </div>`;
+
+      card.querySelector('.book-cover-wrap').addEventListener('click', () => openCoverPicker(book, card.querySelector('.book-cover-wrap')));
 
       const rangeEl = card.querySelector('.book-date-range');
       rangeEl.className = 'book-finished-meta book-date-range';
@@ -630,8 +752,6 @@
 
     let selectedBook = null;
     let searchTimer;
-    const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
-
     function setAddEnabled(on) {
       saveBtn.disabled     = !on;
       finishedBtn.disabled = !on;

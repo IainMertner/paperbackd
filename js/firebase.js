@@ -167,6 +167,10 @@ export function updateAvatarBorderColor(uid, color) {
   return updateDoc(doc(db, 'users', uid), { avatarBorderColor: color || deleteField() });
 }
 
+export function updateBookCover(uid, bookId, coverUrl) {
+  return updateDoc(doc(db, 'users', uid, 'books', bookId), { coverUrl });
+}
+
 export async function importBooks(uid, books) {
   const col = collection(db, 'users', uid, 'books');
   for (let i = 0; i < books.length; i += 20) {
