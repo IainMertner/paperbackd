@@ -330,6 +330,10 @@ export function clearBookDate(uid, bookId, field) {
   });
 }
 
+export function updateBookMeta(uid, bookId, updates) {
+  return updateDoc(doc(db, 'users', uid, 'books', bookId), updates);
+}
+
 export function updateBookRating(uid, bookId, { rating, review }) {
   return updateDoc(doc(db, 'users', uid, 'books', bookId), {
     rating: rating != null ? rating : deleteField(),

@@ -82,6 +82,18 @@
     </div>
 
     <div class="settings-group">
+      <div class="settings-group-label">Library</div>
+      <div class="settings-list">
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Repair imports</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Re-matches books that are missing Hardcover data — covers, page counts, and release years.</p>
+          <button class="btn-update" id="repair-btn" type="button">Repair library</button>
+          <div id="repair-status" style="display:none;font-size:.85rem"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
       <div class="settings-group-label">Danger zone</div>
       <div class="settings-list">
         <div class="settings-row">
@@ -136,7 +148,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { logOut, ROOT, importBooks } from '../js/firebase.js';
+    import { logOut, ROOT, importBooks, getBooks, updateBookMeta } from '../js/firebase.js';
 
     let currentUser = null;
 
@@ -190,18 +202,15 @@
       grStatus.style.display = '';
       grStatus.style.color = 'var(--text-muted)';
 
-      // Enrich with Hardcover data
-      const total = parsedBooks.length;
-      let matched = 0;
-      const enriched = [];
-      for (let i = 0; i < total; i++) {
-        grStatus.textContent = `Matching with Hardcover… (${i + 1}/${total})`;
-        const result = await enrichFromHardcover(parsedBooks[i]);
-        if (result._hardcoverMatched) matched++;
-        // Strip private lookup fields before saving
-        const { _grId, _isbn13, _hardcoverMatched, ...book } = result;
-        enriched.push(book);
-      }
+      // Enrich with Hardcover data — batch GR ID + ISBN lookups, then individual title searches
+      const total    = parsedBooks.length;
+      grStatus.textContent = `Matching with Hardcover — looking up IDs…`;
+      const enrichedRaw = await enrichBatch(parsedBooks, (i, remaining, title) => {
+        grStatus.textContent = `Searching ${i + 1}/${remaining}: ${title}…`;
+      });
+      const matched  = enrichedRaw.filter(b => b._hardcoverMatched).length;
+      // Strip private lookup fields before saving
+      const enriched = enrichedRaw.map(({ _grId, _isbn13, _hardcoverMatched, ...b }) => b);
 
       grStatus.textContent = `Matched ${matched}/${total} books on Hardcover. Importing…`;
       try {
@@ -220,62 +229,122 @@
       }
     });
 
-    async function hcQuery(query, variables) {
+    async function hcQuery(query, variables, retries = 3) {
       const res = await fetch(HARDCOVER_PROXY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, variables })
       });
+      if (res.status === 429) {
+        if (retries > 0) {
+          await new Promise(r => setTimeout(r, 1500));
+          return hcQuery(query, variables, retries - 1);
+        }
+        throw new Error('HTTP 429');
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     }
 
     function applyHardcoverBook(book, hc) {
       if (!hc) return book;
-      return {
+      const result = {
         ...book,
-        gbid:       hc.slug || book.gbid,
-        coverUrl:   hc.image?.url || book.coverUrl || '',
-        totalPages: hc.pages || book.totalPages,
+        gbid:        hc.slug || book.gbid,
+        coverUrl:    hc.image?.url || book.coverUrl || '',
+        totalPages:  hc.pages || book.totalPages,
         currentPage: book.status === 'finished' ? (hc.pages || book.totalPages) : book.currentPage,
         _hardcoverMatched: true,
       };
+      if (hc.release_year) result.releaseYear = hc.release_year;
+      return result;
     }
 
-    async function enrichFromHardcover(book) {
-      try {
-        // 1. Try Goodreads ID
-        if (book._grId) {
-          const data = await hcQuery(
-            `query($id: Int!) { books(where: {goodreads_id: {_eq: $id}}, limit: 1) { slug pages image { url } } }`,
-            { id: parseInt(book._grId) }
-          );
-          const hc = data?.data?.books?.[0];
-          if (hc?.slug) return applyHardcoverBook(book, hc);
-        }
+    // Goodreads exports titles like "The Name of the Wind (The Kingkiller Chronicle, #1)"
+    // and authors like "Sanderson, Brandon" — clean both before searching.
+    function cleanTitle(t)  { return (t || '').replace(/\s*\([^)]*#\s*\d+[^)]*\)/g, '').trim(); }
+    function cleanAuthor(a) { return (a || '').replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim(); }
 
-        // 2. Try ISBN-13
-        if (book._isbn13) {
-          const data = await hcQuery(
-            `query($isbn: String!) { editions(where: {isbn_13: {_eq: $isbn}}, limit: 1) { book { slug pages image { url } } } }`,
-            { isbn: book._isbn13 }
-          );
-          const hc = data?.data?.editions?.[0]?.book;
-          if (hc?.slug) return applyHardcoverBook(book, hc);
-        }
+    async function searchHardcover(q) {
+      const data = await hcQuery(
+        `query($q:String!){search(query:$q,query_type:"Book",per_page:3){results}}`, { q }
+      );
+      const doc = data?.data?.search?.results?.hits?.[0]?.document;
+      return doc?.slug ? doc : null;
+    }
 
-        // 3. Fall back to title search
-        const data = await hcQuery(
-          `query($q: String!) { search(query: $q, query_type: "Book", per_page: 3) { results } }`,
-          { q: `${book.title} ${book.author}`.trim() }
-        );
-        const hits = data?.data?.search?.results?.hits || [];
-        const doc  = hits[0]?.document;
-        if (doc?.slug) return applyHardcoverBook(book, { slug: doc.slug, pages: doc.pages, image: doc.image });
-      } catch (e) {
-        console.warn('Hardcover lookup failed for', book.title, e);
+    // Batch-resolve Goodreads IDs and ISBNs in a single query each, then do
+    // individual title searches only for the remainder. This avoids hitting the
+    // rate limit that comes from making one API call per book.
+    async function enrichBatch(books, onProgress) {
+      const results = books.map(b => ({ ...b })); // shallow copy so we can mutate
+      const byIdx   = new Map(results.map((b, i) => [i, b]));
+
+      // ── Step 1: batch Goodreads ID lookup ──────────────────────────────────
+      const grIdEntries = results.map((b, i) => [i, parseInt(b._grId)]).filter(([, id]) => !isNaN(id));
+      if (grIdEntries.length) {
+        const CHUNK = 100;
+        for (let c = 0; c < grIdEntries.length; c += CHUNK) {
+          const chunk = grIdEntries.slice(c, c + CHUNK);
+          const ids   = chunk.map(([, id]) => id);
+          try {
+            const data = await hcQuery(
+              `query($ids:[Int!]!){books(where:{goodreads_id:{_in:$ids}},limit:100){goodreads_id slug pages release_year image{url}}}`,
+              { ids }
+            );
+            const matched = data?.data?.books || [];
+            const byGrId  = new Map(matched.map(b => [b.goodreads_id, b]));
+            chunk.forEach(([i, id]) => {
+              const hc = byGrId.get(id);
+              if (hc?.slug) Object.assign(byIdx.get(i), applyHardcoverBook(byIdx.get(i), hc));
+            });
+          } catch (e) { console.warn('GR ID batch failed', e); }
+        }
       }
-      return book;
+
+      // ── Step 2: batch ISBN-13 lookup for remaining unmatched ───────────────
+      const isbnEntries = results.map((b, i) => [i, b._isbn13]).filter(([i, isbn]) => isbn && !results[i]._hardcoverMatched);
+      if (isbnEntries.length) {
+        const CHUNK = 100;
+        for (let c = 0; c < isbnEntries.length; c += CHUNK) {
+          const chunk = isbnEntries.slice(c, c + CHUNK);
+          const isbns = chunk.map(([, isbn]) => isbn);
+          try {
+            const data = await hcQuery(
+              `query($isbns:[String!]!){editions(where:{isbn_13:{_in:$isbns}},limit:100){isbn_13 book{slug pages release_year image{url}}}}`,
+              { isbns }
+            );
+            const matched = data?.data?.editions || [];
+            const byIsbn  = new Map(matched.map(e => [e.isbn_13, e.book]));
+            chunk.forEach(([i, isbn]) => {
+              const hc = byIsbn.get(isbn);
+              if (hc?.slug) Object.assign(byIdx.get(i), applyHardcoverBook(byIdx.get(i), hc));
+            });
+          } catch (e) { console.warn('ISBN batch failed', e); }
+        }
+      }
+
+      // ── Step 3: individual title searches for the rest ────────────────────
+      const unmatched = results.map((b, i) => [i, b]).filter(([, b]) => !b._hardcoverMatched);
+      for (let u = 0; u < unmatched.length; u++) {
+        const [i, book] = unmatched[u];
+        if (onProgress) onProgress(u, unmatched.length, book.title);
+        try {
+          const title  = cleanTitle(book.title);
+          const author = cleanAuthor(book.author);
+          let doc = await searchHardcover(`${title} ${author}`.trim());
+          if (!doc && author) doc = await searchHardcover(title);
+          if (doc) Object.assign(byIdx.get(i), applyHardcoverBook(book, { slug: doc.slug, pages: doc.pages, release_year: doc.release_year, image: doc.image }));
+        } catch (e) { console.warn('Title search failed for', book.title, e); }
+      }
+
+      return results;
+    }
+
+    // Single-book wrapper used by repair (books have no _grId/_isbn13 after import strips them)
+    async function enrichFromHardcover(book) {
+      const [result] = await enrichBatch([book]);
+      return result;
     }
 
     function parseCSV(text) {
@@ -319,6 +388,69 @@
       if (parts.length === 3) return new Date(+parts[0], +parts[1] - 1, +parts[2]);
       return null;
     }
+
+    // ── Repair library ────────────────────────────────────────────────────────
+    const repairBtn    = document.getElementById('repair-btn');
+    const repairStatus = document.getElementById('repair-status');
+
+    repairBtn.addEventListener('click', async () => {
+      if (!currentUser) return;
+      repairBtn.disabled = true;
+      repairStatus.style.display = '';
+      repairStatus.style.color = 'var(--text-muted)';
+      repairStatus.textContent = 'Loading library…';
+
+      try {
+        const books  = await getBooks(currentUser.uid);
+        // Broken = missing gbid, missing cover (but not custom data-URL covers), or missing releaseYear
+        const broken = books.filter(b =>
+          !b.gbid ||
+          (!b.coverUrl || b.coverUrl === '') ||
+          b.releaseYear == null
+        ).filter(b => !b.coverUrl?.startsWith('data:'));
+
+        if (!broken.length) {
+          repairStatus.textContent = 'Nothing to repair — all books are matched.';
+          repairStatus.style.color = 'var(--accent)';
+          repairBtn.disabled = false;
+          return;
+        }
+
+        repairStatus.textContent = `Found ${broken.length} book${broken.length !== 1 ? 's' : ''} to check…`;
+        let fixed = 0;
+
+        const enrichedBroken = await enrichBatch(broken, (i, total, title) => {
+          repairStatus.textContent = `Searching ${i + 1}/${total}: ${title}…`;
+        });
+
+        for (let i = 0; i < broken.length; i++) {
+          const book     = broken[i];
+          const enriched = enrichedBroken[i];
+          if (!enriched._hardcoverMatched) continue;
+
+          const updates = {};
+          if (!book.gbid && enriched.gbid)                                   updates.gbid        = enriched.gbid;
+          if ((!book.coverUrl || book.coverUrl === '') && enriched.coverUrl)  updates.coverUrl    = enriched.coverUrl;
+          if (book.releaseYear == null && enriched.releaseYear)               updates.releaseYear = enriched.releaseYear;
+          if (!book.totalPages && enriched.totalPages)                        updates.totalPages  = enriched.totalPages;
+          if (book.status === 'finished' && !book.totalPages && enriched.totalPages) updates.currentPage = enriched.totalPages;
+
+          if (Object.keys(updates).length) {
+            await updateBookMeta(currentUser.uid, book.id, updates);
+            fixed++;
+          }
+        }
+
+        repairStatus.textContent = `Done — repaired ${fixed} of ${broken.length} books.`;
+        repairStatus.style.color = 'var(--accent)';
+      } catch (err) {
+        console.error(err);
+        repairStatus.textContent = 'Repair failed. Please try again.';
+        repairStatus.style.color = 'var(--danger, #d44)';
+      } finally {
+        repairBtn.disabled = false;
+      }
+    });
 
     function parseGoodreads(text) {
       const rows = parseCSV(text);
