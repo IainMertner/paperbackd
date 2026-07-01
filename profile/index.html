@@ -87,6 +87,15 @@
       </a>
     </div>
 
+    <div class="profile-links">
+      <a class="profile-link-row card" id="lists-link" href="../lists/">
+        <span class="profile-link-label">Lists</span>
+        <svg class="profile-link-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </a>
+    </div>
+
   </main>
 
   <nav class="mobile-nav">
@@ -262,6 +271,12 @@
           });
         }
       }
+
+      // Update Lists link for other profiles
+      if (!isOwn && typeof target !== 'undefined' && target) {
+        document.getElementById('lists-link').href = `../lists/?u=${encodeURIComponent(target.username)}`;
+      }
+
     } finally {
       document.body.classList.remove('auth-loading');
     }

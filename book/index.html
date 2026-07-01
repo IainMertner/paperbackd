@@ -79,7 +79,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getFollowing, getBookByGbid, getFriendBookStatus, addBook, addFinishedBook } from '../js/firebase.js';
+    import { getFollowing, getBookByGbid, getFriendBookStatus, addBook, addFinishedBook, getLists, ensureDefaultList, addBookToList, removeBookFromList } from '../js/firebase.js';
 
     const params = new URLSearchParams(location.search);
     const gbid   = params.get('gbid');
@@ -239,7 +239,8 @@
           </div>
           ${author ? `<div style="color:var(--text-muted);font-size:.875rem;margin-top:.2rem">${esc(author)}</div>` : ''}
           ${pages  ? `<div style="color:var(--text-muted);font-size:.78rem;margin-top:.15rem">${pages} pages</div>` : ''}
-          ${desc   ? `<div class="book-desc" style="font-size:.825rem;color:var(--text-muted);margin-top:.75rem;line-height:1.55">${esc(desc.slice(0, 300))}${desc.length > 300 ? '<span class="book-desc-more" style="cursor:pointer;color:var(--accent)">…</span>' : ''}</div>` : ''}
+          ${desc   ? `<div class="book-desc" style="font-size:.825rem;color:var(--text-muted);margin-top:.75rem;line-height:1.55">${esc(desc.slice(0, 300))}${desc.length > 300 ? '<span class="book-desc-more" style="cursor:pointer">…</span>' : ''}</div>` : ''}
+          ${myBook ? `<div style="margin-top:.625rem;font-size:.8rem;color:var(--accent);font-weight:500">${myBook.status === 'reading' ? (myBook.totalPages ? `You're reading this · page ${myBook.currentPage} of ${myBook.totalPages}` : `You're currently reading this`) : `You've finished this`}</div>${myBook.status === 'finished' ? renderStars(myBook.rating) : ''}${myBook.status === 'finished' && myBook.review ? `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(myBook.review.slice(0, 200))}${myBook.review.length > 200 ? '…' : ''}</div>` : ''}` : ''}
         </div>
       </div>`;
       detail.appendChild(card);
@@ -263,11 +264,46 @@
 
         const alreadyBtn  = document.createElement('button');
         alreadyBtn.className = 'btn-update';
-        alreadyBtn.textContent = 'Already read';
+        alreadyBtn.textContent = 'Mark as finished';
 
-        btnRow.append(startBtn, alreadyBtn);
+        const listBtn = document.createElement('button');
+        listBtn.className = 'btn-update';
+        listBtn.textContent = 'Reading list';
+        listBtn.disabled = true;
+
+        btnRow.append(startBtn, alreadyBtn, listBtn);
         actionsCard.appendChild(btnRow);
         detail.appendChild(actionsCard);
+
+        (async () => {
+          try {
+            let lists = await getLists(user.uid);
+            if (!lists.find(l => l.isDefault)) {
+              await ensureDefaultList(user.uid);
+              lists = await getLists(user.uid);
+            }
+            const defaultList = lists.find(l => l.isDefault);
+            if (!defaultList) return;
+            let inList = (defaultList.books || []).some(b => b.gbid === gbid);
+            function updateListBtn() {
+              listBtn.textContent = inList ? '✓ Reading list' : 'Reading list';
+              listBtn.style.color = inList ? 'var(--accent)' : '';
+              listBtn.disabled = false;
+            }
+            updateListBtn();
+            listBtn.addEventListener('click', async () => {
+              listBtn.disabled = true;
+              if (inList) {
+                await removeBookFromList(user.uid, defaultList.id, gbid);
+                inList = false;
+              } else {
+                await addBookToList(user.uid, defaultList.id, { gbid, title, author, coverUrl: cover });
+                inList = true;
+              }
+              updateListBtn();
+            });
+          } catch (e) { console.error('lists:', e); }
+        })();
 
         function showDone(msg) {
           actionsCard.innerHTML = `<div style="font-size:.85rem;color:var(--accent);font-weight:500">${msg}</div>`;
@@ -346,41 +382,15 @@
         });
       }
 
+
       const followingUids  = following.map(f => f.uid);
       const friendStatuses = await getFriendBookStatus(followingUids, gbid);
 
-      if (myBook || friendStatuses.length) {
+      if (friendStatuses.length) {
         document.getElementById('friends-title').style.display = '';
         const list = document.getElementById('friends-list');
 
-        if (myBook) {
-          const myStatus = myBook.status === 'reading'
-            ? myBook.totalPages
-              ? `Currently reading · page ${myBook.currentPage} of ${myBook.totalPages}`
-              : 'Currently reading'
-            : 'Finished';
-          const myStars  = (myBook.status === 'finished' && myBook.rating) ? renderStars(myBook.rating) : '';
-          const myReview = (myBook.status === 'finished' && myBook.review)
-            ? `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(myBook.review.slice(0, 150))}${myBook.review.length > 150 ? '…' : ''}</div>`
-            : '';
-          const myAvatarContent = profile.avatarUrl
-            ? `<img src="${esc(profile.avatarUrl)}" alt="">`
-            : esc(profile.username[0].toUpperCase());
-          const myEl = document.createElement('div');
-          myEl.className = 'card';
-          myEl.innerHTML = `<div class="friend-item">
-            <a class="friend-avatar" href="../profile/" style="text-decoration:none;color:inherit">${myAvatarContent}</a>
-            <div style="flex:1;min-width:0">
-              <a href="../profile/" style="font-weight:600;font-size:.9rem;color:inherit;text-decoration:none">${esc(profile.username)}</a>
-              <div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">${myStatus}</div>
-              ${myStars}
-              ${myReview}
-            </div>
-          </div>`;
-          list.appendChild(myEl);
-        }
-
-        for (const { username, avatarUrl, book } of friendStatuses) {
+        for (const { username, avatarUrl, avatarBorderColor, book } of friendStatuses) {
           const status = book.status === 'reading'
             ? book.totalPages
               ? `Currently reading · page ${book.currentPage} of ${book.totalPages}`
@@ -393,10 +403,11 @@
           const avatarContent = avatarUrl
             ? `<img src="${esc(avatarUrl)}" alt="">`
             : esc(username[0].toUpperCase());
+          const borderStyle = avatarBorderColor ? `border-color:${avatarBorderColor}` : '';
           const el = document.createElement('div');
           el.className = 'card';
           el.innerHTML = `<div class="friend-item">
-            <a class="friend-avatar" href="../profile/?u=${esc(username)}" style="text-decoration:none;color:inherit">${avatarContent}</a>
+            <a class="friend-avatar" href="../profile/?u=${esc(username)}" style="text-decoration:none;color:inherit;${borderStyle}">${avatarContent}</a>
             <div style="flex:1;min-width:0">
               <a href="../profile/?u=${esc(username)}" style="font-weight:600;font-size:.9rem;color:inherit;text-decoration:none">${esc(username)}</a>
               <div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">${status}</div>

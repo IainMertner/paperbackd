@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lists — Reading Log</title>
+  <link rel="stylesheet" href="../css/main.css">
+  <script>
+    (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
+  </script>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="../">Reading Log</a>
+      <nav class="desktop-nav">
+        <a href="../"          data-nav="home">Feed</a>
+        <a href="../search/"   data-nav="search">Search</a>
+        <a href="../library/"  data-nav="library">Library</a>
+        <a href="../profile/"  data-nav="profile">Profile</a>
+        <a href="../settings/" data-nav="settings">Settings</a>
+      </nav>
+      <button class="theme-toggle" aria-label="Toggle theme"></button>
+    </div>
+  </header>
+
+  <main class="page-content">
+    <a class="back-link" id="back-link" href="../profile/">← Profile</a>
+    <div id="lists-container"></div>
+  </main>
+
+  <nav class="mobile-nav">
+    <a class="mobile-nav-item" href="../" data-nav="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+      Feed
+    </a>
+    <a class="mobile-nav-item" href="../search/" data-nav="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      Search
+    </a>
+    <a class="mobile-nav-item" href="../library/" data-nav="library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
+        <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+      </svg>
+      Library
+    </a>
+    <a class="mobile-nav-item" href="../profile/" data-nav="profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      Profile
+    </a>
+    <a class="mobile-nav-item" href="../settings/" data-nav="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+      </svg>
+      Settings
+    </a>
+  </nav>
+
+  <script src="../js/main.js"></script>
+  <script>document.body.classList.add('auth-loading');</script>
+  <script type="module">
+    import { requireAuth } from '../js/auth.js';
+    import { getProfileByUsername, getLists, ensureDefaultList, createList, deleteList } from '../js/firebase.js';
+
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    const chevron = `<svg class="profile-link-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+
+    (async () => {
+      const { user, profile: myProfile } = await requireAuth();
+      const params    = new URLSearchParams(location.search);
+      const targetU   = params.get('u')?.toLowerCase();
+      const isOwn     = !targetU;
+      const container = document.getElementById('lists-container');
+
+      try {
+        let ownerUid, ownerUsername;
+
+        if (isOwn) {
+          ownerUid      = user.uid;
+          ownerUsername = myProfile.username;
+        } else {
+          const target = await getProfileByUsername(targetU);
+          if (!target) {
+            container.innerHTML = '<p style="color:var(--text-muted)">User not found.</p>';
+            return;
+          }
+          ownerUid      = target.uid;
+          ownerUsername = target.username;
+          document.getElementById('back-link').href = `../profile/?u=${encodeURIComponent(ownerUsername)}`;
+          document.title = `${ownerUsername}'s Lists — Reading Log`;
+        }
+
+        let lists = await getLists(ownerUid);
+        if (isOwn && !lists.find(l => l.isDefault)) {
+          await ensureDefaultList(ownerUid);
+          lists = await getLists(ownerUid);
+        }
+        renderLists(lists);
+
+        function renderLists(lists) {
+          container.innerHTML = '';
+
+          lists.forEach(list => {
+            const count = (list.books || []).length;
+            const href  = isOwn
+              ? `../list/?id=${encodeURIComponent(list.id)}`
+              : `../list/?u=${encodeURIComponent(ownerUsername)}&id=${encodeURIComponent(list.id)}`;
+            const row = document.createElement('div');
+            row.className = 'profile-links';
+            row.innerHTML = `<div style="display:flex;align-items:center;gap:.5rem">
+              <a class="profile-link-row card" href="${esc(href)}" style="flex:1;text-decoration:none">
+                <span class="profile-link-label">${esc(list.name)}</span>
+                <span class="profile-link-meta">${count} book${count === 1 ? '' : 's'}</span>
+                ${chevron}
+              </a>
+              ${isOwn && !list.isDefault ? `<button class="btn-danger" data-id="${esc(list.id)}" style="font-size:.75rem;padding:.3rem .65rem;flex-shrink:0">Delete</button>` : ''}
+            </div>`;
+            if (isOwn && !list.isDefault) {
+              row.querySelector('[data-id]').addEventListener('click', async () => {
+                const name = list.name;
+                if (!confirm(`Delete "${name}"?`)) return;
+                await deleteList(user.uid, list.id);
+                lists = lists.filter(l => l.id !== list.id);
+                renderLists(lists);
+              });
+            }
+            container.appendChild(row);
+          });
+
+          if (isOwn) {
+            const newCard = document.createElement('div');
+            newCard.className = 'card';
+            newCard.style.marginTop = '.625rem';
+            newCard.innerHTML = `<div id="new-list-trigger" style="font-size:.875rem;color:var(--accent);cursor:pointer">+ New list</div>
+              <div id="new-list-form" style="display:none;gap:.5rem;margin-top:.5rem">
+                <input id="new-list-input" class="join-club-input" placeholder="List name…" maxlength="60" autocomplete="off" style="flex:1;font-size:.875rem">
+                <button class="join-club-btn" id="new-list-save" style="font-size:.8rem;padding:.35rem .75rem">Add</button>
+              </div>`;
+            container.appendChild(newCard);
+
+            const trigger = newCard.querySelector('#new-list-trigger');
+            const form    = newCard.querySelector('#new-list-form');
+            const inp     = newCard.querySelector('#new-list-input');
+            const saveBtn = newCard.querySelector('#new-list-save');
+
+            trigger.addEventListener('click', () => {
+              trigger.style.display = 'none';
+              form.style.display = 'flex';
+              inp.focus();
+            });
+
+            saveBtn.addEventListener('click', async () => {
+              const name = inp.value.trim();
+              if (!name) return;
+              saveBtn.disabled = true;
+              const list = await createList(user.uid, name);
+              lists = [...lists, list];
+              renderLists(lists);
+            });
+
+            inp.addEventListener('keydown', e => { if (e.key === 'Enter') saveBtn.click(); });
+          }
+        }
+
+      } catch (e) {
+        console.error(e);
+        container.innerHTML = '<p style="color:var(--text-muted)">Failed to load lists.</p>';
+      } finally {
+        document.body.classList.remove('auth-loading');
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -375,7 +375,7 @@ export async function getFriendBookStatus(followingUids, gbid) {
       if (snap.empty) return null;
       const userSnap = await getDoc(doc(db, 'users', uid));
       return userSnap.exists()
-        ? { uid, username: userSnap.data().username, avatarUrl: userSnap.data().avatarUrl || null, book: { id: snap.docs[0].id, ...snap.docs[0].data() } }
+        ? { uid, username: userSnap.data().username, avatarUrl: userSnap.data().avatarUrl || null, avatarBorderColor: userSnap.data().avatarBorderColor || null, book: { id: snap.docs[0].id, ...snap.docs[0].data() } }
         : null;
     })
   );
@@ -403,6 +403,68 @@ export async function unfinishBook(uid, bookId, { title }) {
     updateDoc(doc(db, 'users', uid, 'books', bookId), { status: 'reading', finishedAt: deleteField() }),
     deleteActivityForBook(uid, title, 'finished')
   ]);
+}
+
+// ── Lists ─────────────────────────────────────────────────────────────────────
+
+export async function getLists(uid) {
+  const snap = await getDocs(collection(db, 'users', uid, 'lists'));
+  const lists = snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.isDefault ? -1 : b.isDefault ? 1 : 0));
+  const stale = lists.find(l => l.isDefault && (l.name === 'Want to Read' || l.name === 'Reading List'));
+  if (stale) {
+    await updateDoc(doc(db, 'users', uid, 'lists', stale.id), { name: 'Reading list' });
+    stale.name = 'Reading list';
+  }
+  return lists;
+}
+
+export async function ensureDefaultList(uid) {
+  const lists = await getLists(uid);
+  const def = lists.find(l => l.isDefault);
+  if (def) return def.id;
+  const ref = await addDoc(collection(db, 'users', uid, 'lists'), {
+    name: 'Reading list',
+    isDefault: true,
+    createdAt: new Date().toISOString(),
+    books: []
+  });
+  return ref.id;
+}
+
+export async function createList(uid, name) {
+  const ref = await addDoc(collection(db, 'users', uid, 'lists'), {
+    name,
+    isDefault: false,
+    createdAt: new Date().toISOString(),
+    books: []
+  });
+  return { id: ref.id, name, isDefault: false, books: [] };
+}
+
+export async function deleteList(uid, listId) {
+  await deleteDoc(doc(db, 'users', uid, 'lists', listId));
+}
+
+export async function addBookToList(uid, listId, book) {
+  const ref  = doc(db, 'users', uid, 'lists', listId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const books = snap.data().books || [];
+  if (books.some(b => b.gbid === book.gbid)) return;
+  await updateDoc(ref, { books: [...books, { gbid: book.gbid, title: book.title, author: book.author || '', coverUrl: book.coverUrl || '' }] });
+}
+
+export async function removeBookFromList(uid, listId, gbid) {
+  const ref  = doc(db, 'users', uid, 'lists', listId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  await updateDoc(ref, { books: (snap.data().books || []).filter(b => b.gbid !== gbid) });
+}
+
+export async function renameList(uid, listId, name) {
+  await updateDoc(doc(db, 'users', uid, 'lists', listId), { name });
 }
 
 export async function getFeed(currentUid, followingUids) {

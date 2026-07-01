@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>List — Reading Log</title>
+  <link rel="stylesheet" href="../css/main.css">
+  <script>
+    (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
+  </script>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="../">Reading Log</a>
+      <nav class="desktop-nav">
+        <a href="../"          data-nav="home">Feed</a>
+        <a href="../search/"   data-nav="search">Search</a>
+        <a href="../library/"  data-nav="library">Library</a>
+        <a href="../profile/"  data-nav="profile">Profile</a>
+        <a href="../settings/" data-nav="settings">Settings</a>
+      </nav>
+      <button class="theme-toggle" aria-label="Toggle theme"></button>
+    </div>
+  </header>
+
+  <main class="page-content">
+    <a class="back-link" href="../profile/" id="back-link">← Back</a>
+    <div id="list-header"></div>
+    <div id="list-add" style="display:none"></div>
+    <div id="list-books"></div>
+  </main>
+
+  <nav class="mobile-nav">
+    <a class="mobile-nav-item" href="../" data-nav="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+      Feed
+    </a>
+    <a class="mobile-nav-item" href="../search/" data-nav="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      Search
+    </a>
+    <a class="mobile-nav-item" href="../library/" data-nav="library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
+        <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+      </svg>
+      Library
+    </a>
+    <a class="mobile-nav-item" href="../profile/" data-nav="profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      Profile
+    </a>
+    <a class="mobile-nav-item" href="../settings/" data-nav="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+      </svg>
+      Settings
+    </a>
+  </nav>
+
+  <script src="../js/main.js"></script>
+  <script>document.body.classList.add('auth-loading');</script>
+  <script type="module">
+    import { requireAuth } from '../js/auth.js';
+    import { getProfileByUsername, getLists, addBookToList, removeBookFromList, deleteList, renameList } from '../js/firebase.js';
+
+    const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
+
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    (async () => {
+      const { user } = await requireAuth();
+      const params   = new URLSearchParams(location.search);
+      const listId   = params.get('id');
+      const targetU  = params.get('u')?.toLowerCase();
+      const isOwn    = !targetU;
+
+      let ownerUid, ownerUsername;
+      if (isOwn) {
+        const { profile } = await (await import('../js/auth.js')).requireAuth();
+        ownerUid      = user.uid;
+        ownerUsername = profile.username;
+      } else {
+        const target = await getProfileByUsername(targetU);
+        if (!target) {
+          document.getElementById('list-header').innerHTML = '<p style="color:var(--text-muted)">User not found.</p>';
+          document.body.classList.remove('auth-loading');
+          return;
+        }
+        ownerUid      = target.uid;
+        ownerUsername = target.username;
+        document.getElementById('back-link').href = `../profile/?u=${encodeURIComponent(ownerUsername)}`;
+      }
+
+      const lists = await getLists(ownerUid);
+      const list  = lists.find(l => l.id === listId);
+
+      if (!list) {
+        document.getElementById('list-header').innerHTML = '<p style="color:var(--text-muted)">List not found.</p>';
+        document.body.classList.remove('auth-loading');
+        return;
+      }
+
+      document.title = `${list.name} — Reading Log`;
+      let books = [...(list.books || [])];
+
+      // ── Header ───────────────────────────────────────────────────────────────
+      const headerEl = document.getElementById('list-header');
+
+      function renderHeader() {
+        headerEl.innerHTML = '';
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.marginBottom = '.625rem';
+
+        if (isOwn && !list.isDefault) {
+          card.innerHTML = `<div style="display:flex;align-items:center;gap:.5rem">
+            <div id="list-title-display" style="font-size:1.1rem;font-weight:700;flex:1">${esc(list.name)}</div>
+            <button class="btn-update" id="rename-btn" style="font-size:.75rem;padding:.25rem .6rem">Rename</button>
+            <button class="btn-danger" id="delete-btn" style="font-size:.75rem;padding:.25rem .6rem">Delete</button>
+          </div>`;
+          headerEl.appendChild(card);
+
+          card.querySelector('#rename-btn').addEventListener('click', () => {
+            card.innerHTML = `<div style="display:flex;align-items:center;gap:.5rem">
+              <input id="rename-input" class="join-club-input" value="${esc(list.name)}" style="flex:1;font-size:.875rem" maxlength="60">
+              <button class="join-club-btn" id="rename-save" style="font-size:.8rem;padding:.35rem .75rem">Save</button>
+              <button class="btn-update" id="rename-cancel" style="font-size:.8rem;padding:.35rem .75rem">Cancel</button>
+            </div>`;
+            const inp = card.querySelector('#rename-input');
+            inp.focus(); inp.select();
+            card.querySelector('#rename-cancel').addEventListener('click', renderHeader);
+            card.querySelector('#rename-save').addEventListener('click', async () => {
+              const name = inp.value.trim();
+              if (!name) return;
+              await renameList(user.uid, list.id, name);
+              list.name = name;
+              document.title = `${name} — Reading Log`;
+              renderHeader();
+            });
+            inp.addEventListener('keydown', e => { if (e.key === 'Enter') card.querySelector('#rename-save').click(); });
+          });
+
+          card.querySelector('#delete-btn').addEventListener('click', async () => {
+            if (!confirm(`Delete "${list.name}"?`)) return;
+            await deleteList(user.uid, list.id);
+            location.replace(`../profile/`);
+          });
+        } else {
+          card.innerHTML = `<div style="font-size:1.1rem;font-weight:700">${esc(list.name)}</div>
+            ${!isOwn ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">${esc(ownerUsername)}'s list</div>` : ''}`;
+          headerEl.appendChild(card);
+        }
+      }
+      renderHeader();
+
+      // ── Add search (own only) ─────────────────────────────────────────────────
+      if (isOwn) {
+        const addEl = document.getElementById('list-add');
+        addEl.style.display = '';
+        addEl.innerHTML = `<div class="card" style="margin-bottom:.625rem">
+          <div class="book-search-wrap">
+            <input type="text" id="list-search" class="join-club-input"
+              placeholder="Search to add a book…" autocomplete="off" spellcheck="false"
+              style="width:100%;box-sizing:border-box">
+            <div id="list-suggestions" class="book-suggestions" style="display:none"></div>
+          </div>
+        </div>`;
+
+        const searchInput = addEl.querySelector('#list-search');
+        const suggestBox  = addEl.querySelector('#list-suggestions');
+        let searchTimer;
+
+        searchInput.addEventListener('input', () => {
+          clearTimeout(searchTimer);
+          const q = searchInput.value.trim();
+          if (q.length < 2) { suggestBox.style.display = 'none'; return; }
+          searchTimer = setTimeout(async () => {
+            try {
+              const res  = await fetch(HARDCOVER_PROXY, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  query: `query Search($q: String!) {
+                    search(query: $q, query_type: "Book", per_page: 8, page: 1) {
+                      results
+                    }
+                  }`,
+                  variables: { q }
+                })
+              });
+              const data = res.ok ? await res.json() : {};
+              const hits = data?.data?.search?.results?.hits || [];
+              suggestBox.innerHTML = '';
+              if (!hits.length) { suggestBox.style.display = 'none'; return; }
+              hits.forEach(hit => {
+                const doc = hit.document || {};
+                const gbid     = doc.slug || String(doc.id || '');
+                const title    = doc.title || '';
+                const author   = doc.author_names?.[0] || '';
+                const coverUrl = doc.image?.url || '';
+                if (!gbid || !title) return;
+                const item = document.createElement('div');
+                item.className = 'book-suggestion-item';
+                item.innerHTML = `<div class="suggestion-inner">
+                  ${coverUrl ? `<img class="suggestion-cover" src="${esc(coverUrl)}" alt="">` : '<div class="suggestion-cover" style="background:var(--border)"></div>'}
+                  <div>
+                    <div class="suggestion-title">${esc(title)}</div>
+                    <div class="suggestion-meta">${esc(author)}</div>
+                  </div>
+                </div>`;
+                item.addEventListener('click', async () => {
+                  suggestBox.style.display = 'none';
+                  searchInput.value = '';
+                  await addBookToList(user.uid, list.id, { gbid, title, author, coverUrl });
+                  if (!books.find(b => b.gbid === gbid)) {
+                    books = [...books, { gbid, title, author, coverUrl }];
+                    renderBooks();
+                  }
+                });
+                suggestBox.appendChild(item);
+              });
+              suggestBox.style.display = '';
+            } catch (e) { console.error(e); }
+          }, 280);
+        });
+
+        document.addEventListener('click', e => {
+          if (!suggestBox.contains(e.target) && e.target !== searchInput) {
+            suggestBox.style.display = 'none';
+          }
+        });
+      }
+
+      // ── Books ─────────────────────────────────────────────────────────────────
+      const booksEl = document.getElementById('list-books');
+
+      function renderBooks() {
+        booksEl.innerHTML = '';
+        if (!books.length) {
+          booksEl.innerHTML = `<p style="color:var(--text-muted);font-size:.875rem">${isOwn ? 'Search above to add books.' : 'No books yet.'}</p>`;
+          return;
+        }
+        books.forEach(book => {
+          const el = document.createElement('div');
+          el.className = 'card';
+          el.style.marginBottom = '.5rem';
+          el.innerHTML = `<div style="display:flex;gap:.75rem;align-items:center">
+            <a href="../book/?gbid=${encodeURIComponent(book.gbid)}" style="display:flex;flex-shrink:0">
+              ${book.coverUrl
+                ? `<img src="${esc(book.coverUrl)}" alt="" style="width:42px;border-radius:var(--radius-sm);display:block">`
+                : `<div style="width:42px;height:63px;background:var(--border);border-radius:var(--radius-sm)"></div>`}
+            </a>
+            <div style="flex:1;min-width:0">
+              <a href="../book/?gbid=${encodeURIComponent(book.gbid)}" style="font-weight:600;font-size:.9rem;color:inherit;text-decoration:none;line-height:1.3;display:block">${esc(book.title)}</a>
+              ${book.author ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.15rem">${esc(book.author)}</div>` : ''}
+            </div>
+            ${isOwn ? `<button class="btn-danger" data-gbid="${esc(book.gbid)}" style="font-size:.75rem;padding:.25rem .6rem;flex-shrink:0">Remove</button>` : ''}
+          </div>`;
+          if (isOwn) {
+            el.querySelector('[data-gbid]').addEventListener('click', async () => {
+              await removeBookFromList(user.uid, list.id, book.gbid);
+              books = books.filter(b => b.gbid !== book.gbid);
+              renderBooks();
+            });
+          }
+          booksEl.appendChild(el);
+        });
+      }
+      renderBooks();
+
+      document.body.classList.remove('auth-loading');
+    })();
+  </script>
+</body>
+</html>
