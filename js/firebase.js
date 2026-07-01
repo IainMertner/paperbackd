@@ -246,6 +246,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, co
       bookTitle:  title,
       bookAuthor: author || '',
       gbid:       gbid || '',
+      coverUrl:   coverUrl || '',
       rating:     rating ?? null,
       hasReview:  !!(review && review.trim()),
       timestamp:  finishedAt
@@ -275,6 +276,7 @@ export async function addBook(uid, { title, author, totalPages, gbid, coverUrl, 
       bookTitle:  title,
       bookAuthor: author || '',
       gbid:       gbid || '',
+      coverUrl:   coverUrl || '',
       timestamp:  serverTimestamp()
     })
   ]);
@@ -285,7 +287,7 @@ export function updateBookProgress(uid, bookId, currentPage) {
   return updateDoc(doc(db, 'users', uid, 'books', bookId), { currentPage });
 }
 
-export function finishBook(uid, bookId, { title, author, gbid, rating, review } = {}, username) {
+export function finishBook(uid, bookId, { title, author, gbid, rating, review, coverUrl } = {}, username) {
   const bookUpdate = { status: 'finished', finishedAt: serverTimestamp() };
   if (rating != null) bookUpdate.rating = rating;
   if (review)         bookUpdate.review = review;
@@ -298,6 +300,7 @@ export function finishBook(uid, bookId, { title, author, gbid, rating, review } 
       bookTitle:  title || '',
       bookAuthor: author || '',
       gbid:       gbid || '',
+      coverUrl:   coverUrl || '',
       rating:     rating ?? null,
       hasReview:  !!(review && review.trim()),
       timestamp:  serverTimestamp()

@@ -692,7 +692,7 @@
         actions.querySelector('.btn-do-finish').addEventListener('click', async () => {
           const rating = picker.getValue();
           const review = ta.value.trim() || null;
-          await finishBook(user.uid, book.id, { title: book.title, author: book.author, gbid: book.gbid, rating, review }, profile.username);
+          await finishBook(user.uid, book.id, { title: book.title, author: book.author, gbid: book.gbid, rating, review, coverUrl: book.coverUrl }, profile.username);
           book.status     = 'finished';
           book.finishedAt = { toDate: () => new Date() };
           book.rating     = rating;
