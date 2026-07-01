@@ -49,6 +49,7 @@
           <button id="follow-btn" class="profile-action-btn profile-action-follow">Follow</button>
           <button id="mute-btn" class="profile-action-btn profile-action-mute">Mute</button>
         </div>
+        <a id="activity-link" href="#" style="font-size:.78rem;color:var(--text-muted);text-decoration:none;margin-top:.4rem;display:inline-flex;align-items:center;gap:.25rem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Show activity</a>
       </div>
     </div>
 
@@ -174,6 +175,7 @@
         renderShelf(myProfile.shelf, myProfile.username);
         document.getElementById('own-actions').style.display  = '';
         document.getElementById('profile-name').textContent    = myProfile.username;
+        document.getElementById('activity-link').href          = `../activity/?u=${encodeURIComponent(myProfile.username)}`;
         document.getElementById('following-count').textContent = (myProfile.following || myProfile.friends || []).length;
         document.getElementById('own-links').style.display     = '';
         getFollowers(user.uid).then(f => {
@@ -204,6 +206,7 @@
           if (target.avatarBorderColor) avatarEl.style.borderColor = target.avatarBorderColor;
           renderShelf(target.shelf, target.username);
           document.getElementById('profile-name').textContent = target.username;
+          document.getElementById('activity-link').href       = `../activity/?u=${encodeURIComponent(target.username)}`;
 
           document.getElementById('other-following-count').textContent = (target.following || []).length;
           document.getElementById('other-counts-link').href = `../friends/?u=${encodeURIComponent(target.username)}`;

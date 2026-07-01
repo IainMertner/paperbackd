@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Activity — Reading Log</title>
+  <link rel="stylesheet" href="../css/main.css">
+  <script>
+    (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
+  </script>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="../">Reading Log</a>
+      <nav class="desktop-nav">
+        <a href="../"          data-nav="home">Feed</a>
+        <a href="../search/"   data-nav="search">Search</a>
+        <a href="../library/"  data-nav="library">Library</a>
+        <a href="../profile/"  data-nav="profile">Profile</a>
+        <a href="../settings/" data-nav="settings">Settings</a>
+      </nav>
+      <button class="theme-toggle" aria-label="Toggle theme"></button>
+    </div>
+  </header>
+
+  <main class="page-content">
+    <a class="back-link" id="back-link" href="../profile/">← Back</a>
+    <div id="feed-container"></div>
+  </main>
+
+  <nav class="mobile-nav">
+    <a class="mobile-nav-item" href="../" data-nav="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+      Feed
+    </a>
+    <a class="mobile-nav-item" href="../search/" data-nav="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      Search
+    </a>
+    <a class="mobile-nav-item" href="../library/" data-nav="library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
+        <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+      </svg>
+      Library
+    </a>
+    <a class="mobile-nav-item" href="../profile/" data-nav="profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      Profile
+    </a>
+    <a class="mobile-nav-item" href="../settings/" data-nav="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+      </svg>
+      Settings
+    </a>
+  </nav>
+
+  <script src="../js/main.js"></script>
+  <script>document.body.classList.add('auth-loading');</script>
+  <script type="module">
+    import { requireAuth } from '../js/auth.js';
+    import { getProfileByUsername, getFeed, getBookByGbid } from '../js/firebase.js';
+
+    (async () => {
+    const { user } = await requireAuth();
+    const params  = new URLSearchParams(location.search);
+    const targetU = params.get('u')?.toLowerCase();
+    const main    = document.getElementById('feed-container');
+
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function timeAgo(ts) {
+      if (!ts?.seconds) return '';
+      const diff  = Date.now() - ts.seconds * 1000;
+      const mins  = Math.floor(diff / 60000);
+      const hours = Math.floor(diff / 3600000);
+      const days  = Math.floor(diff / 86400000);
+      if (mins < 1)   return 'just now';
+      if (mins < 60)  return `${mins}m ago`;
+      if (hours < 24) return `${hours}h ago`;
+      if (days < 7)   return `${days}d ago`;
+      return new Date(ts.seconds * 1000)
+        .toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    function renderStars(rating) {
+      if (!rating) return '';
+      let html = '<span class="stars-display">';
+      for (let i = 1; i <= 5; i++) {
+        if (rating >= i)          html += '<span class="star-char full">★</span>';
+        else if (rating >= i-0.5) html += '<span class="star-char half">★</span>';
+        else                      html += '<span class="star-char">★</span>';
+      }
+      return html + '</span>';
+    }
+
+    function dayLabel(ts) {
+      if (!ts?.seconds) return null;
+      const d   = new Date(ts.seconds * 1000);
+      const now = new Date();
+      const today    = new Date(now.getFullYear(),  now.getMonth(),  now.getDate());
+      const eventDay = new Date(d.getFullYear(),    d.getMonth(),    d.getDate());
+      const diffDays = Math.round((today - eventDay) / 86400000);
+      if (diffDays === 0) return 'Today';
+      if (diffDays === 1) return 'Yesterday';
+      const opts = d.getFullYear() === now.getFullYear()
+        ? { day: 'numeric', month: 'long' }
+        : { day: 'numeric', month: 'long', year: 'numeric' };
+      return d.toLocaleDateString('en-GB', opts);
+    }
+
+    function renderEvent(event, avatarUrl, borderColor) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      const initial = (event.username?.[0] || '?').toUpperCase();
+      const avatarContent = avatarUrl
+        ? `<img src="${esc(avatarUrl)}" alt="">`
+        : esc(initial);
+      const borderStyle = borderColor ? `border-color:${borderColor};` : '';
+      const bookLink = event.gbid
+        ? `<a href="../book/?gbid=${esc(event.gbid)}" style="font-style:italic;color:inherit;text-decoration:none">${esc(event.bookTitle)}</a>`
+        : `<em>${esc(event.bookTitle)}</em>`;
+      const action = event.type === 'started'
+        ? `started reading ${bookLink}`
+        : `finished ${bookLink}`;
+      const author = event.bookAuthor
+        ? `<span style="color:var(--text-muted)"> by ${esc(event.bookAuthor)}</span>`
+        : '';
+      const ratingRow = (event.type === 'finished' && event.rating != null)
+        ? `<div style="margin-top:.2rem;display:flex;align-items:center;gap:.5rem">${renderStars(event.rating)}${event.hasReview && event.gbid ? `<a href="../book/?gbid=${esc(event.gbid)}" style="font-size:.75rem;color:var(--accent);text-decoration:none">Read review</a>` : ''}</div>`
+        : '';
+      const coverThumb = event.coverUrl && event.gbid
+        ? `<a href="../book/?gbid=${esc(event.gbid)}" style="position:absolute;bottom:-4px;right:-7px;z-index:1;display:block"><img src="${esc(event.coverUrl)}" alt="" style="width:22px;border-radius:2px;display:block;box-shadow:0 1px 4px rgba(0,0,0,.4)"></a>`
+        : '';
+      card.innerHTML = `<div class="friend-item">
+        <div style="position:relative;flex-shrink:0;width:36px;height:36px">
+          <a class="friend-avatar" href="../profile/?u=${esc(event.username)}" style="text-decoration:none;color:inherit;${borderStyle}">${avatarContent}</a>
+          ${coverThumb}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.9rem;line-height:1.4"><a href="../profile/?u=${esc(event.username)}" style="font-weight:600;color:inherit;text-decoration:none">${esc(event.username)}</a> ${action}${author}</div>
+          ${ratingRow}
+          <div class="book-finished-meta">${timeAgo(event.timestamp)}</div>
+        </div>
+      </div>`;
+      return card;
+    }
+
+    try {
+      if (!targetU) {
+        main.innerHTML = '<p style="color:var(--text-muted)">No user specified.</p>';
+        document.body.classList.remove('auth-loading');
+        return;
+      }
+
+      const target = await getProfileByUsername(targetU);
+      if (!target) {
+        main.innerHTML = '<p style="color:var(--text-muted)">User not found.</p>';
+        document.body.classList.remove('auth-loading');
+        return;
+      }
+
+      document.title = `${target.username}'s Activity — Reading Log`;
+      document.getElementById('back-link').href = `../profile/?u=${encodeURIComponent(target.username)}`;
+
+      const avatarUrl   = target.avatarUrl || null;
+      const borderColor = target.avatarBorderColor || null;
+
+      const feed = await getFeed(target.uid, []);
+
+      // Backfill coverUrl for old entries
+      const coverless = feed.filter(e => !e.coverUrl && e.gbid);
+      if (coverless.length) {
+        await Promise.all(coverless.map(async e => {
+          const book = await getBookByGbid(e.uid, e.gbid);
+          if (book?.coverUrl) e.coverUrl = book.coverUrl;
+        }));
+      }
+
+      if (!feed.length) {
+        main.innerHTML = '<p style="color:var(--text-muted);font-size:.9rem">No activity yet.</p>';
+      } else {
+        let lastDay = null;
+        feed.forEach(e => {
+          const label = dayLabel(e.timestamp);
+          if (label !== lastDay) {
+            lastDay = label;
+            const div = document.createElement('div');
+            div.className = 'feed-day-divider';
+            div.textContent = label || '';
+            main.appendChild(div);
+          }
+          main.appendChild(renderEvent(e, avatarUrl, borderColor));
+        });
+      }
+    } finally {
+      document.body.classList.remove('auth-loading');
+    }
+    })();
+  </script>
+</body>
+</html>
