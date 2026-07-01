@@ -171,7 +171,7 @@
       ]);
 
       if (following.length === 0) showEmpty(followingList, 'following-empty', 'Not following anyone yet.');
-      else following.forEach(f => followingList.appendChild(renderFollowing(f)));
+      else following.forEach(f => followingList.appendChild(targetParam ? renderFollower(f) : renderFollowing(f)));
 
       if (followers.length === 0) showEmpty(followersList, 'followers-empty', 'No followers yet.');
       else followers.forEach(f => followersList.appendChild(renderFollower(f)));

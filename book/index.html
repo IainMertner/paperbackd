@@ -79,13 +79,13 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getFollowing, getBookByGbid, getFriendBookStatus } from '../js/firebase.js';
+    import { getFollowing, getBookByGbid, getFriendBookStatus, addBook, addFinishedBook } from '../js/firebase.js';
 
     const params = new URLSearchParams(location.search);
     const gbid   = params.get('gbid');
     if (!gbid) location.replace('../library/');
 
-    const { user } = await requireAuth();
+    const { user, profile } = await requireAuth();
 
     document.getElementById('back-link').addEventListener('click', e => {
       if (history.length > 1) { e.preventDefault(); history.back(); }
@@ -112,6 +112,78 @@
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
+    function createStarPicker(initial) {
+      const wrap = document.createElement('div');
+      wrap.className = 'star-picker';
+      let value = initial || 0;
+      const btns = [];
+      for (let i = 1; i <= 5; i++) {
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'star-pick-btn'; btn.textContent = '★';
+        btn.dataset.i = i;
+        btns.push(btn);
+        wrap.appendChild(btn);
+      }
+      function update(v) {
+        value = v;
+        btns.forEach((b, idx) => {
+          const n = idx + 1;
+          b.classList.remove('full', 'half');
+          if (value >= n)        b.classList.add('full');
+          else if (value >= n-0.5) b.classList.add('half');
+        });
+      }
+      wrap.addEventListener('click', e => {
+        const btn = e.target.closest('.star-pick-btn');
+        if (!btn) return;
+        const i = parseInt(btn.dataset.i);
+        const half = e.offsetX < btn.offsetWidth / 2;
+        const v = half ? i - 0.5 : i;
+        update(v === value ? 0 : v);
+      });
+      wrap.getValue = () => value || null;
+      update(value);
+      return wrap;
+    }
+
+    function createPartialDatePicker() {
+      const wrap = document.createElement('div');
+      wrap.className = 'date-picker-partial';
+      function makeSpinner(input, defaultVal, min, max) {
+        const up = document.createElement('button');
+        up.type = 'button'; up.className = 'date-num-btn'; up.textContent = '▲';
+        up.addEventListener('click', () => { const v = parseInt(input.value); input.value = v ? Math.min(v+1,max) : defaultVal; });
+        const down = document.createElement('button');
+        down.type = 'button'; down.className = 'date-num-btn'; down.textContent = '▼';
+        down.addEventListener('click', () => { const v = parseInt(input.value); input.value = v ? Math.max(v-1,min) : defaultVal; });
+        const btns = document.createElement('div'); btns.className = 'date-num-btns'; btns.append(up, down);
+        const w = document.createElement('div'); w.className = 'date-num-wrap'; w.append(input, btns);
+        return w;
+      }
+      const dayIn = document.createElement('input');
+      dayIn.type = 'text'; dayIn.inputMode = 'numeric'; dayIn.maxLength = 2;
+      dayIn.className = 'date-day-input'; dayIn.placeholder = 'Day';
+      const monthSel = document.createElement('select');
+      monthSel.className = 'date-month-select';
+      monthSel.innerHTML = '<option value="">Month</option>' +
+        ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+          .map((m,i) => `<option value="${i+1}">${m}</option>`).join('');
+      const yearIn = document.createElement('input');
+      yearIn.type = 'text'; yearIn.inputMode = 'numeric'; yearIn.maxLength = 4;
+      yearIn.className = 'date-year-input'; yearIn.placeholder = 'Year';
+      wrap.append(makeSpinner(dayIn, 1, 1, 31), monthSel, makeSpinner(yearIn, new Date().getFullYear(), 1000, 2200));
+      wrap.getDate = () => {
+        const year = parseInt(yearIn.value);
+        if (!year || year < 1000 || year > 2200) return { date: null, precision: null };
+        const month = parseInt(monthSel.value) || 0;
+        const day   = parseInt(dayIn.value)    || 0;
+        if (!month) return { date: new Date(year, 0, 1, 12, 0, 0), precision: 'year' };
+        if (!day)   return { date: new Date(year, month-1, 1, 12, 0, 0), precision: 'month' };
+        return { date: new Date(year, month-1, Math.min(day,31), 12, 0, 0), precision: 'day' };
+      };
+      return wrap;
+    }
+
     try {
       const [hcRes, following, myBook] = await Promise.all([
         fetch(HARDCOVER_PROXY, {
@@ -122,9 +194,11 @@
               books(where: { slug: { _eq: $slug } }, limit: 1) {
                 title
                 pages
+                release_year
                 description
                 cached_image
                 contributions { author { name } }
+                editions { isbn_10 isbn_13 }
               }
             }`,
             variables: { slug: gbid }
@@ -137,11 +211,15 @@
       const hcData = hcRes.ok ? await hcRes.json() : {};
       const hcBook = hcData.data?.books?.[0] || {};
 
-      const title  = hcBook.title  || myBook?.title  || 'Unknown title';
-      const author = hcBook.contributions?.find(c => c.author)?.author?.name || myBook?.author || '';
-      const pages  = hcBook.pages  || myBook?.totalPages || 0;
-      const cover  = hcBook.cached_image?.url || myBook?.coverUrl || '';
-      const desc   = hcBook.description || '';
+      const title       = hcBook.title  || myBook?.title  || 'Unknown title';
+      const author      = hcBook.contributions?.find(c => c.author)?.author?.name || myBook?.author || '';
+      const pages       = hcBook.pages  || myBook?.totalPages || 0;
+      const cover       = hcBook.cached_image?.url || myBook?.coverUrl || '';
+      const desc        = hcBook.description || '';
+      const releaseYear = hcBook.release_year || null;
+      const isbn        = hcBook.editions?.find(e => e.isbn_13)?.isbn_13
+                       || hcBook.editions?.find(e => e.isbn_10)?.isbn_10
+                       || null;
 
       document.title = `${title} — Reading Log`;
 
@@ -149,38 +227,159 @@
       const card   = document.createElement('div');
       card.className = 'card';
 
-      let myStatusHtml = '';
-      if (myBook) {
-        const s = myBook.status === 'reading'
-          ? myBook.totalPages
-            ? `You're reading this · page ${myBook.currentPage} of ${myBook.totalPages}`
-            : `You're currently reading this`
-          : `You've finished this`;
-        const myStars  = myBook.status === 'finished' ? renderStars(myBook.rating) : '';
-        const myReview = (myBook.status === 'finished' && myBook.review)
-          ? `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(myBook.review.slice(0, 200))}${myBook.review.length > 200 ? '…' : ''}</div>`
-          : '';
-        myStatusHtml = `<div style="margin-top:.625rem;font-size:.8rem;color:var(--accent);font-weight:500">${s}</div>${myStars}${myReview}`;
-      }
-
       card.innerHTML = `<div style="display:flex;gap:1rem;align-items:flex-start">
         ${cover?.startsWith('https://') ? `<img src="${cover}" alt="" style="width:80px;border-radius:var(--radius-sm);flex-shrink:0;display:block">` : ''}
         <div style="flex:1;min-width:0">
-          <div style="font-size:1.1rem;font-weight:700;line-height:1.3">${esc(title)}</div>
+          <div style="display:flex;align-items:flex-start;gap:.5rem">
+            <div style="font-size:1.1rem;font-weight:700;line-height:1.3;flex:1">${esc(title)}${releaseYear ? `<span style="font-size:.8rem;font-weight:400;color:var(--text-muted);margin-left:.4rem">${releaseYear}</span>` : ''}</div>
+            <div style="display:flex;gap:.3rem;align-items:center;padding-top:.2rem;flex-shrink:0">
+              ${isbn ? `<a href="https://www.goodreads.com/book/isbn/${isbn}" target="_blank" rel="noopener" title="View on Goodreads"><img src="https://www.google.com/s2/favicons?domain=goodreads.com&sz=32" width="16" height="16" alt="Goodreads" style="border-radius:2px;opacity:.75;display:block"></a>` : ''}
+              ${gbid && !/^\d+$/.test(gbid) ? `<a href="https://hardcover.app/books/${gbid}" target="_blank" rel="noopener" title="View on Hardcover"><img src="https://www.google.com/s2/favicons?domain=hardcover.app&sz=32" width="16" height="16" alt="Hardcover" style="border-radius:2px;opacity:.75;display:block"></a>` : ''}
+            </div>
+          </div>
           ${author ? `<div style="color:var(--text-muted);font-size:.875rem;margin-top:.2rem">${esc(author)}</div>` : ''}
           ${pages  ? `<div style="color:var(--text-muted);font-size:.78rem;margin-top:.15rem">${pages} pages</div>` : ''}
-          ${desc   ? `<div style="font-size:.825rem;color:var(--text-muted);margin-top:.75rem;line-height:1.55">${esc(desc.slice(0, 300))}${desc.length > 300 ? '…' : ''}</div>` : ''}
-          ${myStatusHtml}
+          ${desc   ? `<div class="book-desc" style="font-size:.825rem;color:var(--text-muted);margin-top:.75rem;line-height:1.55">${esc(desc.slice(0, 300))}${desc.length > 300 ? '<span class="book-desc-more" style="cursor:pointer;color:var(--accent)">…</span>' : ''}</div>` : ''}
         </div>
       </div>`;
       detail.appendChild(card);
 
+      card.querySelector('.book-desc-more')?.addEventListener('click', () => {
+        const el = card.querySelector('.book-desc');
+        el.textContent = desc;
+      });
+
+      // ── Library actions ──────────────────────────────────────────────────────
+      if (!myBook) {
+        const actionsCard = document.createElement('div');
+        actionsCard.className = 'card';
+
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap';
+
+        const startBtn    = document.createElement('button');
+        startBtn.className = 'join-club-btn';
+        startBtn.textContent = 'Start reading';
+
+        const alreadyBtn  = document.createElement('button');
+        alreadyBtn.className = 'btn-update';
+        alreadyBtn.textContent = 'Already read';
+
+        btnRow.append(startBtn, alreadyBtn);
+        actionsCard.appendChild(btnRow);
+        detail.appendChild(actionsCard);
+
+        function showDone(msg) {
+          actionsCard.innerHTML = `<div style="font-size:.85rem;color:var(--accent);font-weight:500">${msg}</div>`;
+        }
+
+        startBtn.addEventListener('click', async () => {
+          startBtn.disabled = alreadyBtn.disabled = true;
+          startBtn.textContent = 'Adding…';
+          try {
+            await addBook(user.uid, { title, author, totalPages: pages, gbid, coverUrl: cover, releaseYear }, profile.username);
+            showDone('Added to your currently reading!');
+          } catch (e) {
+            startBtn.textContent = 'Start reading';
+            startBtn.disabled = alreadyBtn.disabled = false;
+          }
+        });
+
+        alreadyBtn.addEventListener('click', () => {
+          btnRow.remove();
+          actionsCard.innerHTML = '';
+
+          const starPicker    = createStarPicker(0);
+          const ta            = document.createElement('textarea');
+          ta.className = 'review-input'; ta.placeholder = 'Write a review… (optional)'; ta.rows = 3;
+          ta.style.marginTop = '.5rem';
+
+          const startedLabel  = document.createElement('div');
+          startedLabel.style.cssText = 'font-size:.8rem;color:var(--text-muted);margin:.6rem 0 .25rem';
+          startedLabel.textContent = 'Date started (optional)';
+          const startedPicker = createPartialDatePicker();
+
+          const finishedLabel = document.createElement('div');
+          finishedLabel.style.cssText = 'font-size:.8rem;color:var(--text-muted);margin:.6rem 0 .25rem';
+          finishedLabel.textContent = 'Date finished (optional)';
+          const finishedPicker = createPartialDatePicker();
+
+          const confirmBtn = document.createElement('button');
+          confirmBtn.className = 'join-club-btn'; confirmBtn.textContent = 'Add to finished';
+          confirmBtn.style.marginTop = '.75rem';
+
+          const cancelBtn = document.createElement('button');
+          cancelBtn.className = 'btn-update'; cancelBtn.textContent = 'Cancel';
+          cancelBtn.style.marginTop = '.75rem';
+
+          const formBtns = document.createElement('div');
+          formBtns.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap';
+          formBtns.append(confirmBtn, cancelBtn);
+
+          actionsCard.append(starPicker, ta, startedLabel, startedPicker, finishedLabel, finishedPicker, formBtns);
+
+          cancelBtn.addEventListener('click', () => {
+            actionsCard.innerHTML = '';
+            actionsCard.appendChild(btnRow);
+          });
+
+          confirmBtn.addEventListener('click', async () => {
+            confirmBtn.disabled = cancelBtn.disabled = true;
+            confirmBtn.textContent = 'Adding…';
+            try {
+              const rating    = starPicker.getValue();
+              const review    = ta.value.trim() || null;
+              const { date: addedAt,    precision: startedPrec  } = startedPicker.getDate();
+              const { date: finishedAt, precision: finishedPrec } = finishedPicker.getDate();
+              await addFinishedBook(user.uid, {
+                title, author, totalPages: pages, gbid, coverUrl: cover, releaseYear,
+                rating, review,
+                finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,
+                addedAt,    addedAtPrecision:    addedAt    ? startedPrec  : undefined,
+              }, profile.username);
+              showDone('Added to your finished books!');
+            } catch (e) {
+              confirmBtn.textContent = 'Add to finished';
+              confirmBtn.disabled = cancelBtn.disabled = false;
+            }
+          });
+        });
+      }
+
       const followingUids  = following.map(f => f.uid);
       const friendStatuses = await getFriendBookStatus(followingUids, gbid);
 
-      if (friendStatuses.length) {
+      if (myBook || friendStatuses.length) {
         document.getElementById('friends-title').style.display = '';
         const list = document.getElementById('friends-list');
+
+        if (myBook) {
+          const myStatus = myBook.status === 'reading'
+            ? myBook.totalPages
+              ? `Currently reading · page ${myBook.currentPage} of ${myBook.totalPages}`
+              : 'Currently reading'
+            : 'Finished';
+          const myStars  = (myBook.status === 'finished' && myBook.rating) ? renderStars(myBook.rating) : '';
+          const myReview = (myBook.status === 'finished' && myBook.review)
+            ? `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(myBook.review.slice(0, 150))}${myBook.review.length > 150 ? '…' : ''}</div>`
+            : '';
+          const myAvatarContent = profile.avatarUrl
+            ? `<img src="${esc(profile.avatarUrl)}" alt="">`
+            : esc(profile.username[0].toUpperCase());
+          const myEl = document.createElement('div');
+          myEl.className = 'card';
+          myEl.innerHTML = `<div class="friend-item">
+            <a class="friend-avatar" href="../profile/" style="text-decoration:none;color:inherit">${myAvatarContent}</a>
+            <div style="flex:1;min-width:0">
+              <a href="../profile/" style="font-weight:600;font-size:.9rem;color:inherit;text-decoration:none">${esc(profile.username)}</a>
+              <div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">${myStatus}</div>
+              ${myStars}
+              ${myReview}
+            </div>
+          </div>`;
+          list.appendChild(myEl);
+        }
+
         for (const { username, avatarUrl, book } of friendStatuses) {
           const status = book.status === 'reading'
             ? book.totalPages
