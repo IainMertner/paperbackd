@@ -122,7 +122,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating, updateBookDates, updateBookCover, updateShelf, getProfileByUsername } from '../js/firebase.js';
+    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername } from '../js/firebase.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -130,12 +130,24 @@
 
     function makeBookListRow(book) {
       const el = document.createElement('div');
+      el.className = 'books-list-row';
       el.dataset.title  = (book.title  || '').toLowerCase();
       el.dataset.author = (book.author || '').toLowerCase();
-      el.style.cssText  = 'display:flex;align-items:center;padding:.35rem 0;border-bottom:1px solid var(--border);cursor:pointer;min-width:0;overflow:hidden';
-      const author  = book.author ? `<span style="color:var(--text-muted);font-weight:400"> · ${esc(book.author)}</span>` : '';
-      const stars   = book.rating ? `<span style="flex-shrink:0;margin-left:.5rem">${renderStars(book.rating)}</span>` : '';
-      el.innerHTML  = `<div style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:.875rem;font-weight:600">${esc(book.title)}${author}</div>${stars}`;
+      const author = book.author ? `<span style="color:var(--text-muted);font-weight:400"> · ${esc(book.author)}</span>` : '';
+      let rightHtml = '';
+      if (book.rating) {
+        let s = '';
+        for (let i = 1; i <= 5; i++) {
+          if (book.rating >= i)          s += '<span class="star-char full">★</span>';
+          else if (book.rating >= i-0.5) s += '<span class="star-char half">★</span>';
+          else                           s += '<span class="star-char">★</span>';
+        }
+        rightHtml = `<span style="flex-shrink:0;margin-left:.5rem;display:inline-flex;gap:.05rem;line-height:1">${s}</span>`;
+      } else if (book.status === 'reading' && book.totalPages) {
+        const pct = Math.round((book.currentPage / book.totalPages) * 100);
+        rightHtml = `<span style="flex-shrink:0;margin-left:.5rem;font-size:.75rem;color:var(--text-muted)">${pct}%</span>`;
+      }
+      el.innerHTML = `<div style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:.875rem;font-weight:600">${esc(book.title)}${author}</div>${rightHtml}`;
       return el;
     }
 
@@ -307,6 +319,7 @@
         let overlay;
         const card = renderReading(book, cell, () => overlay?.remove());
         overlay = createBookModal(card);
+        card.querySelector('.page-input:not(.page-total)')?.select();
       });
     }
 
@@ -594,7 +607,10 @@
         saveBtn.addEventListener('click', async () => {
           const { date, precision: newPrec } = picker.getDate();
           if (!date) {
-            editorWrap.replaceWith(makeDateEl(label, ts, field, book, withActivity));
+            await clearBookDate(user.uid, book.id, field);
+            book[field] = null;
+            book[field + 'Precision'] = null;
+            editorWrap.replaceWith(makeDateEl(label, null, field, book, withActivity));
             return;
           }
           const updates = {
@@ -636,7 +652,7 @@
           <div class="progress-bar-track">
             <div class="progress-bar-fill" style="width:${pct}%"></div>
           </div>
-          <div class="progress-label">${book.totalPages ? `Page ${book.currentPage} of ${book.totalPages}` : `Page ${book.currentPage}`}</div>
+          <div class="progress-label">${book.totalPages ? `Page ${book.currentPage} of ${book.totalPages} · ${pct}%` : `Page ${book.currentPage}`}</div>
           <div class="progress-controls">
             <input class="page-input" type="number" value="${book.currentPage}" min="0" max="9999" aria-label="Current page">
             <span class="page-sep">/</span>
@@ -856,10 +872,11 @@
 
     function renderFinishedView(book) {
       const fmt = (ts, prec) => {
-        if (!ts?.toDate || !prec) return null;
+        if (!ts?.toDate) return null;
         const d = ts.toDate();
-        if (prec === 'year') return String(d.getFullYear());
-        if (prec === 'day')  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+        const p = prec || 'month';
+        if (p === 'year') return String(d.getFullYear());
+        if (p === 'day')  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
         return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
       };
       const whenStarted  = fmt(book.addedAt, book.addedAtPrecision);
@@ -932,7 +949,7 @@
 
         const renderFinishedSorted = () => {
           finishedList.innerHTML = '';
-          finishedList.style.display = viewMode === 'list' ? 'block' : '';
+          finishedList.className = viewMode === 'list' ? 'books-list' : 'books-grid';
           const { key, dir } = sortState;
           const asc = dir === 'asc';
           const sorted = [...finished];
@@ -1008,12 +1025,12 @@
 
         renderReadingFn = () => {
           readingList.innerHTML = '';
-          readingList.style.display = viewMode === 'list' ? 'block' : '';
+          readingList.className = viewMode === 'list' ? 'books-list' : 'books-grid';
           if (!reading.length) { showEmpty(readingList, 'reading-empty', 'Nothing in progress.'); return; }
           reading.forEach(b => {
             if (viewMode === 'list') {
               const row = makeBookListRow(b);
-              row.addEventListener('click', () => { let ov; const c = renderReading(b, row, () => ov?.remove()); ov = createBookModal(c); });
+              row.addEventListener('click', () => { let ov; const c = renderReading(b, row, () => ov?.remove()); ov = createBookModal(c); c.querySelector('.page-input:not(.page-total)')?.select(); });
               readingList.appendChild(row);
             } else {
               const cell = makeBookCoverCell(b);
@@ -1042,7 +1059,7 @@
 
           renderReadingFn = () => {
             readingList.innerHTML = '';
-            readingList.style.display = viewMode === 'list' ? 'block' : '';
+            readingList.className = viewMode === 'list' ? 'books-list' : 'books-grid';
             if (!reading.length) { showEmpty(readingList, 'reading-empty', 'Nothing in progress.'); return; }
             reading.forEach(b => {
               if (viewMode === 'list') {

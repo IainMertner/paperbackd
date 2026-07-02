@@ -256,18 +256,20 @@
 
       // Enrich with Hardcover data — batch GR ID + ISBN lookups, then individual title searches
       const total    = parsedBooks.length;
-      grStatus.textContent = `Matching with Hardcover — looking up IDs…`;
+      grStatus.textContent = `Don't close this tab — matching your books with Hardcover…`;
       const enrichedRaw = await enrichBatch(parsedBooks, (i, remaining, title) => {
-        grStatus.textContent = `Searching ${i + 1}/${remaining}: ${title}…`;
+        grStatus.textContent = `Don't close this tab — searching ${i + 1}/${remaining}: ${title}…`;
       });
       const matched  = enrichedRaw.filter(b => b._hardcoverMatched).length;
       // Strip private lookup fields before saving
       const enriched = enrichedRaw.map(({ _grId, _isbn13, _hardcoverMatched, ...b }) => b);
 
-      grStatus.textContent = `Matched ${matched}/${total} books on Hardcover. Importing…`;
+      grStatus.textContent = `Matched ${matched}/${total} books. Saving to library…`;
       try {
-        await importBooks(currentUser.uid, enriched);
-        grStatus.textContent = `Imported ${total} books (${matched} matched on Hardcover).`;
+        await importBooks(currentUser.uid, enriched, (saved, total) => {
+          grStatus.textContent = `Saving to library — ${saved}/${total} done…`;
+        });
+        grStatus.textContent = `All done! Imported ${total} books (${matched} matched with Hardcover).`;
         grStatus.style.color = 'var(--accent)';
         grPreview.style.display = 'none';
         parsedBooks = [];
@@ -455,11 +457,7 @@
       try {
         const books  = await getBooks(currentUser.uid);
         // Broken = missing gbid, missing cover (but not custom data-URL covers), or missing releaseYear
-        const broken = books.filter(b =>
-          !b.gbid ||
-          (!b.coverUrl || b.coverUrl === '') ||
-          b.releaseYear == null
-        ).filter(b => !b.coverUrl?.startsWith('data:'));
+        const broken = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
 
         if (!broken.length) {
           repairStatus.textContent = 'Nothing to repair — all books are matched.';
@@ -468,16 +466,13 @@
           return;
         }
 
-        repairStatus.textContent = `Found ${broken.length} book${broken.length !== 1 ? 's' : ''} to check…`;
         let fixed = 0;
 
-        const enrichedBroken = await enrichBatch(broken, (i, total, title) => {
-          repairStatus.textContent = `Searching ${i + 1}/${total}: ${title}…`;
-        });
-
         for (let i = 0; i < broken.length; i++) {
-          const book     = broken[i];
-          const enriched = enrichedBroken[i];
+          const book = broken[i];
+          repairStatus.textContent = `Checking ${i + 1}/${broken.length}: ${book.title}…`;
+
+          const enriched = await enrichFromHardcover(book);
           if (!enriched._hardcoverMatched) continue;
 
           const updates = {};

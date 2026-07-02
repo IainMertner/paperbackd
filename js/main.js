@@ -52,8 +52,10 @@ function setActiveNav() {
 
   // Determine which page we're on
   let page = 'home';
-  if (/\/search\/?/.test(path)) page = 'search';
+  if (/\/book\/?/.test(path))     page = 'search';
+  else if (/\/search\/?/.test(path)) page = 'search';
   else if (/\/library\/?/.test(path)) page = 'library';
+  else if (/\/friends\/?/.test(path)) page = 'profile';
   else if (/\/profile\/?/.test(path)) page = 'profile';
   else if (/\/settings\/?/.test(path)) page = 'settings';
 

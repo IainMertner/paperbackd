@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -8,7 +8,7 @@
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Following — Reading Log</title>
+  <title>Network — Reading Log</title>
   <link rel="stylesheet" href="../css/main.css">
   <script>
     (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
@@ -33,7 +33,6 @@
   <main class="page-content">
     <a class="back-link" id="back-link" href="../profile/">← Profile</a>
 
-
     <div class="add-friend card" id="follow-form">
       <div class="add-friend-label">Follow someone</div>
       <div class="join-club-row">
@@ -45,11 +44,17 @@
       <p class="auth-hint"  id="follow-ok"    hidden style="margin-top:.4rem;color:var(--accent)"></p>
     </div>
 
-    <p class="section-title">Following</p>
-    <div id="following-list"></div>
+    <div id="tab-bar" style="display:flex;border-bottom:2px solid var(--border);margin-bottom:.75rem">
+      <button id="tab-following" style="flex:1;padding:.5rem .25rem;background:none;border:none;border-bottom:2px solid var(--accent);margin-bottom:-2px;font-weight:600;font-size:.9rem;cursor:pointer;color:var(--fg);font-family:inherit">Following</button>
+      <button id="tab-followers" style="flex:1;padding:.5rem .25rem;background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;font-weight:400;font-size:.9rem;cursor:pointer;color:var(--text-muted);font-family:inherit">Followers</button>
+    </div>
 
-    <p class="section-title" style="margin-top:1.5rem">Followers</p>
-    <div id="followers-list"></div>
+    <div id="following-panel">
+      <div id="following-list"></div>
+    </div>
+    <div id="followers-panel" style="display:none">
+      <div id="followers-list"></div>
+    </div>
 
   </main>
 
@@ -98,20 +103,23 @@
     import { getFollowing, getFollowers, followUser, unfollowUser, getProfileByUsername } from '../js/firebase.js';
 
     const { user } = await requireAuth();
-    const followingList = document.getElementById('following-list');
-    const followersList = document.getElementById('followers-list');
+    const followingList  = document.getElementById('following-list');
+    const followersList  = document.getElementById('followers-list');
+    const tabFollowing   = document.getElementById('tab-following');
+    const tabFollowers   = document.getElementById('tab-followers');
+    const followingPanel = document.getElementById('following-panel');
+    const followersPanel = document.getElementById('followers-panel');
 
-    // Support ?u=username to view another user's connections
     const params      = new URLSearchParams(location.search);
     const targetParam = params.get('u')?.toLowerCase();
     let viewUid = user.uid;
+    const isOwn = !targetParam;
 
     if (targetParam) {
       const targetProfile = await getProfileByUsername(targetParam);
       if (targetProfile) {
         viewUid = targetProfile.uid;
-        const back = document.getElementById('back-link');
-        back.href = `../profile/?u=${encodeURIComponent(targetProfile.username)}`;
+        document.getElementById('back-link').href = `../profile/?u=${encodeURIComponent(targetProfile.username)}`;
       }
       document.getElementById('follow-form').style.display = 'none';
     }
@@ -134,9 +142,66 @@
         : esc((profile.username[0] || '?').toUpperCase());
     }
 
-    function renderFollowing(profile) {
+    // Updates the tab label to include count
+    function setTabCount(tab, label, n) {
+      tab.textContent = `${label} · ${n}`;
+    }
+
+    function switchTab(which) {
+      const onFollowing = which === 'following';
+      followingPanel.style.display = onFollowing ? '' : 'none';
+      followersPanel.style.display = onFollowing ? 'none' : '';
+      tabFollowing.style.fontWeight       = onFollowing ? '600' : '400';
+      tabFollowing.style.color            = onFollowing ? 'var(--fg)' : 'var(--text-muted)';
+      tabFollowing.style.borderBottomColor = onFollowing ? 'var(--accent)' : 'transparent';
+      tabFollowers.style.fontWeight       = onFollowing ? '400' : '600';
+      tabFollowers.style.color            = onFollowing ? 'var(--text-muted)' : 'var(--fg)';
+      tabFollowers.style.borderBottomColor = onFollowing ? 'transparent' : 'var(--accent)';
+    }
+
+    tabFollowing.addEventListener('click', () => switchTab('following'));
+    tabFollowers.addEventListener('click', () => switchTab('followers'));
+
+    // Render a person with optional follow button
+    function renderPerson(profile, myFollowingUids) {
       const card = document.createElement('div');
-      card.className   = 'card';
+      card.className = 'card';
+      card.dataset.uid = profile.uid;
+      const isMe        = profile.uid === user.uid;
+      const alreadyFollow = myFollowingUids.includes(profile.uid);
+      card.innerHTML = `<div class="friend-item">
+        <a class="friend-avatar" href="../profile/?u=${esc(profile.username)}" style="text-decoration:none;color:inherit">${avatarHtml(profile)}</a>
+        <a class="friend-name" href="../profile/?u=${esc(profile.username)}">${esc(profile.username)}</a>
+        ${!isMe && !alreadyFollow ? `<button class="join-club-btn follow-back-btn" style="margin-left:auto;font-size:.75rem;padding:.3rem .75rem">Follow</button>` : ''}
+      </div>`;
+      if (!isMe && !alreadyFollow) {
+        const btn = card.querySelector('.follow-back-btn');
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          btn.textContent = 'Following…';
+          try {
+            await followUser(user.uid, profile.username);
+            myFollowingUids.push(profile.uid);
+            btn.textContent = 'Following';
+            btn.className = 'btn-update follow-back-btn';
+            // Also add to following list if own view
+            if (isOwn) {
+              document.getElementById('following-empty')?.remove();
+              followingList.appendChild(renderOwnFollowing(profile, myFollowingUids));
+            }
+          } catch (e) {
+            btn.disabled = false;
+            btn.textContent = 'Follow';
+          }
+        });
+      }
+      return card;
+    }
+
+    // Render own following entry (with Unfollow button)
+    function renderOwnFollowing(profile, myFollowingUids) {
+      const card = document.createElement('div');
+      card.className = 'card';
       card.dataset.uid = profile.uid;
       card.innerHTML = `<div class="friend-item">
         <a class="friend-avatar" href="../profile/?u=${esc(profile.username)}" style="text-decoration:none;color:inherit">${avatarHtml(profile)}</a>
@@ -145,36 +210,67 @@
       </div>`;
       card.querySelector('.btn-unfollow').addEventListener('click', async () => {
         await unfollowUser(user.uid, profile.uid);
+        const idx = myFollowingUids.indexOf(profile.uid);
+        if (idx !== -1) myFollowingUids.splice(idx, 1);
         card.remove();
         if (!followingList.querySelector('.card')) {
           showEmpty(followingList, 'following-empty', 'Not following anyone yet.');
+        }
+        // Update follow button in followers list if visible
+        const followerCard = followersList.querySelector(`[data-uid="${profile.uid}"]`);
+        if (followerCard && !followerCard.querySelector('.follow-back-btn')) {
+          const btn = document.createElement('button');
+          btn.className = 'join-club-btn follow-back-btn';
+          btn.style.cssText = 'margin-left:auto;font-size:.75rem;padding:.3rem .75rem';
+          btn.textContent = 'Follow';
+          followerCard.querySelector('.friend-item').appendChild(btn);
+          btn.addEventListener('click', async () => {
+            btn.disabled = true; btn.textContent = 'Following…';
+            try {
+              await followUser(user.uid, profile.username);
+              myFollowingUids.push(profile.uid);
+              btn.textContent = 'Following';
+              btn.className = 'btn-update follow-back-btn';
+              document.getElementById('following-empty')?.remove();
+              followingList.appendChild(renderOwnFollowing(profile, myFollowingUids));
+            } catch(e) { btn.disabled = false; btn.textContent = 'Follow'; }
+          });
         }
       });
       return card;
     }
 
-    function renderFollower(profile) {
-      const card = document.createElement('div');
-      card.className   = 'card';
-      card.dataset.uid = profile.uid;
-      card.innerHTML = `<div class="friend-item">
-        <a class="friend-avatar" href="../profile/?u=${esc(profile.username)}" style="text-decoration:none;color:inherit">${avatarHtml(profile)}</a>
-        <a class="friend-name" href="../profile/?u=${esc(profile.username)}">${esc(profile.username)}</a>
-      </div>`;
-      return card;
-    }
-
     try {
-      const [following, followers] = await Promise.all([
-        getFollowing(viewUid),
-        getFollowers(viewUid)
-      ]);
+      let following, followers, myFollowingUids;
 
-      if (following.length === 0) showEmpty(followingList, 'following-empty', 'Not following anyone yet.');
-      else following.forEach(f => followingList.appendChild(targetParam ? renderFollower(f) : renderFollowing(f)));
+      if (isOwn) {
+        [following, followers] = await Promise.all([getFollowing(viewUid), getFollowers(viewUid)]);
+        myFollowingUids = following.map(f => f.uid);
 
-      if (followers.length === 0) showEmpty(followersList, 'followers-empty', 'No followers yet.');
-      else followers.forEach(f => followersList.appendChild(renderFollower(f)));
+        setTabCount(tabFollowing, 'Following', following.length);
+        setTabCount(tabFollowers, 'Followers', followers.length);
+
+        if (following.length === 0) showEmpty(followingList, 'following-empty', 'Not following anyone yet.');
+        else following.forEach(f => followingList.appendChild(renderOwnFollowing(f, myFollowingUids)));
+
+        if (followers.length === 0) showEmpty(followersList, 'followers-empty', 'No followers yet.');
+        else followers.forEach(f => followersList.appendChild(renderPerson(f, myFollowingUids)));
+      } else {
+        [following, followers, myFollowingUids] = await Promise.all([
+          getFollowing(viewUid),
+          getFollowers(viewUid),
+          getFollowing(user.uid).then(f => f.map(x => x.uid))
+        ]);
+
+        setTabCount(tabFollowing, 'Following', following.length);
+        setTabCount(tabFollowers, 'Followers', followers.length);
+
+        if (following.length === 0) showEmpty(followingList, 'following-empty', 'Not following anyone yet.');
+        else following.forEach(f => followingList.appendChild(renderPerson(f, myFollowingUids)));
+
+        if (followers.length === 0) showEmpty(followersList, 'followers-empty', 'No followers yet.');
+        else followers.forEach(f => followersList.appendChild(renderPerson(f, myFollowingUids)));
+      }
     } finally {
       document.body.classList.remove('auth-loading');
     }
@@ -185,34 +281,33 @@
     const errorEl = document.getElementById('follow-error');
     const okEl    = document.getElementById('follow-ok');
 
-    btn.addEventListener('click', async () => {
-      const username = input.value.trim().toLowerCase();
-      if (!username) return;
-
-      errorEl.hidden  = true;
-      okEl.hidden     = true;
-      btn.disabled    = true;
-      btn.textContent = 'Following…';
-
-      try {
-        const followed = await followUser(user.uid, username);
-
-        document.getElementById('following-empty')?.remove();
-        followingList.appendChild(renderFollowing(followed));
-
-        okEl.textContent = `Now following ${followed.username}!`;
-        okEl.hidden      = false;
-        input.value      = '';
-      } catch (err) {
-        errorEl.textContent = err.message;
-        errorEl.hidden      = false;
-      } finally {
-        btn.disabled    = false;
-        btn.textContent = 'Follow';
-      }
-    });
-
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
+    if (input) {
+      btn.addEventListener('click', async () => {
+        const username = input.value.trim().toLowerCase();
+        if (!username) return;
+        errorEl.hidden  = true;
+        okEl.hidden     = true;
+        btn.disabled    = true;
+        btn.textContent = 'Following…';
+        try {
+          const followed = await followUser(user.uid, username);
+          document.getElementById('following-empty')?.remove();
+          const myFollowingUids = Array.from(followingList.querySelectorAll('.card')).map(c => c.dataset.uid);
+          myFollowingUids.push(followed.uid);
+          followingList.appendChild(renderOwnFollowing(followed, myFollowingUids));
+          okEl.textContent = `Now following ${followed.username}!`;
+          okEl.hidden      = false;
+          input.value      = '';
+        } catch (err) {
+          errorEl.textContent = err.message;
+          errorEl.hidden      = false;
+        } finally {
+          btn.disabled    = false;
+          btn.textContent = 'Follow';
+        }
+      });
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
+    }
   </script>
 </body>
 </html>

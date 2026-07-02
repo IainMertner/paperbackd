@@ -189,7 +189,7 @@ export function updateBookCover(uid, bookId, coverUrl) {
   return updateDoc(doc(db, 'users', uid, 'books', bookId), { coverUrl });
 }
 
-export async function importBooks(uid, books) {
+export async function importBooks(uid, books, onProgress) {
   const col = collection(db, 'users', uid, 'books');
   for (let i = 0; i < books.length; i += 20) {
     await Promise.all(books.slice(i, i + 20).map(b => {
@@ -197,6 +197,7 @@ export async function importBooks(uid, books) {
       if (!data.addedAt) data.addedAt = serverTimestamp();
       return addDoc(col, data);
     }));
+    if (onProgress) onProgress(Math.min(i + 20, books.length), books.length);
   }
 }
 
