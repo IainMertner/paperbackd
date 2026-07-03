@@ -289,7 +289,7 @@ export function updateBookProgress(uid, bookId, currentPage) {
 }
 
 export function finishBook(uid, bookId, { title, author, gbid, rating, review, coverUrl } = {}, username) {
-  const bookUpdate = { status: 'finished', finishedAt: serverTimestamp() };
+  const bookUpdate = { status: 'finished', finishedAt: serverTimestamp(), finishedAtPrecision: 'day' };
   if (rating != null) bookUpdate.rating = rating;
   if (review)         bookUpdate.review = review;
   return Promise.all([
@@ -488,6 +488,19 @@ export async function removeBookFromList(uid, listId, gbid) {
 
 export async function renameList(uid, listId, name) {
   await updateDoc(doc(db, 'users', uid, 'lists', listId), { name });
+}
+
+export async function removeActivityEvent(uid, activityId, gbid, dateField) {
+  await deleteDoc(doc(db, 'activity', activityId));
+  if (gbid && dateField) {
+    const book = await getBookByGbid(uid, gbid);
+    if (book?.id) {
+      await updateDoc(doc(db, 'users', uid, 'books', book.id), {
+        [dateField]: deleteField(),
+        [`${dateField}Precision`]: deleteField()
+      });
+    }
+  }
 }
 
 export async function getFeed(currentUid, followingUids) {

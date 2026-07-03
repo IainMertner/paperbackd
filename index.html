@@ -77,7 +77,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from './js/auth.js';
-    import { getFollowing, getFeed, getProfile, getBookByGbid } from './js/firebase.js';
+    import { getFollowing, getFeed, getProfile, getBookByGbid, removeActivityEvent } from './js/firebase.js';
 
     const { user } = await requireAuth();
     const main = document.querySelector('main.page-content');
@@ -212,6 +212,34 @@
           }
         });
       }
+
+      if (event.uid === user.uid) {
+        const dateField = event.type === 'started' ? 'addedAt' : 'finishedAt';
+        const dateLabel = event.type === 'started' ? 'start date' : 'finished date';
+        const dateStr   = event.timestamp?.seconds
+          ? new Date(event.timestamp.seconds * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+          : 'unknown date';
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.textContent = '×';
+        removeBtn.style.cssText = 'position:absolute;top:.35rem;right:.5rem;background:none;border:none;font-size:1.1rem;line-height:1;cursor:pointer;color:var(--text-muted);padding:.1rem .3rem;opacity:.55';
+        removeBtn.title = 'Remove from feed';
+        removeBtn.addEventListener('click', async () => {
+          if (!confirm(`Remove this event from your feed?\n\nThis will also clear the ${dateLabel} (${dateStr}) from "${event.bookTitle}" in your library.`)) return;
+          removeBtn.disabled = true;
+          try {
+            await removeActivityEvent(user.uid, event.id, event.gbid, dateField);
+            card.remove();
+          } catch (e) {
+            console.error(e);
+            removeBtn.disabled = false;
+          }
+        });
+        card.style.position = 'relative';
+        card.appendChild(removeBtn);
+      }
+
       return card;
     }
 
