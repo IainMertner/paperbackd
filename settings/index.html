@@ -97,7 +97,7 @@
       <div class="settings-list">
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
           <span class="settings-row-label">Repair imports</span>
-          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Re-matches books that are missing Hardcover data — covers, page counts, and release years.</p>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Re-matches books missing Hardcover data, and fills in any blank metadata fields (cover, page count, release year, author) for books already matched.</p>
           <button class="btn-update" id="repair-btn" type="button">Repair library</button>
           <div id="repair-status" style="display:none;font-size:.85rem"></div>
         </div>
@@ -455,12 +455,19 @@
       repairStatus.textContent = 'Loading library…';
 
       try {
-        const books  = await getBooks(currentUser.uid);
-        // Broken = missing gbid, missing cover (but not custom data-URL covers), or missing releaseYear
-        const broken = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
+        const books = await getBooks(currentUser.uid);
 
-        if (!broken.length) {
-          repairStatus.textContent = 'Nothing to repair — all books are matched.';
+        // Phase 1: books with no Hardcover match at all
+        const unmatched = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
+
+        // Phase 2: books already matched (non-numeric slug) but missing fillable fields
+        const incomplete = books.filter(b =>
+          b.gbid && !/^\d+$/.test(b.gbid) &&
+          (b.releaseYear == null || !b.totalPages || !b.author)
+        );
+
+        if (!unmatched.length && !incomplete.length) {
+          repairStatus.textContent = 'Nothing to repair — all books are matched and complete.';
           repairStatus.style.color = 'var(--accent)';
           repairBtn.disabled = false;
           return;
@@ -468,15 +475,16 @@
 
         let fixed = 0;
 
-        for (let i = 0; i < broken.length; i++) {
-          const book = broken[i];
-          repairStatus.textContent = `Checking ${i + 1}/${broken.length}: ${book.title}…`;
+        // ── Phase 1: match unmatched books via Hardcover ──────────────────
+        for (let i = 0; i < unmatched.length; i++) {
+          const book = unmatched[i];
+          repairStatus.textContent = `Matching ${i + 1}/${unmatched.length}: ${book.title}…`;
 
           const enriched = await enrichFromHardcover(book);
           if (!enriched._hardcoverMatched) continue;
 
           const updates = {};
-          if (!book.gbid && enriched.gbid)                                   updates.gbid        = enriched.gbid;
+          if (!book.gbid && enriched.gbid)                                    updates.gbid        = enriched.gbid;
           if ((!book.coverUrl || book.coverUrl === '') && enriched.coverUrl)  updates.coverUrl    = enriched.coverUrl;
           if (book.releaseYear == null && enriched.releaseYear)               updates.releaseYear = enriched.releaseYear;
           if (!book.totalPages && enriched.totalPages)                        updates.totalPages  = enriched.totalPages;
@@ -488,7 +496,40 @@
           }
         }
 
-        repairStatus.textContent = `Done — repaired ${fixed} of ${broken.length} books.`;
+        // ── Phase 2: fill gaps for already-matched books via slug batch ───
+        if (incomplete.length) {
+          repairStatus.textContent = `Filling gaps for ${incomplete.length} matched book${incomplete.length === 1 ? '' : 's'}…`;
+          const CHUNK = 50;
+          for (let c = 0; c < incomplete.length; c += CHUNK) {
+            const chunk = incomplete.slice(c, c + CHUNK);
+            const slugs = chunk.map(b => b.gbid);
+            try {
+              const data = await hcQuery(
+                `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:${CHUNK}){slug pages release_year contributions{author{name}}}}`,
+                { slugs }
+              );
+              const bySlug = new Map((data?.data?.books || []).map(b => [b.slug, b]));
+              for (const book of chunk) {
+                const hc = bySlug.get(book.gbid);
+                if (!hc) continue;
+                const updates = {};
+                if (book.releaseYear == null && hc.release_year) updates.releaseYear = hc.release_year;
+                if (!book.totalPages && hc.pages)                updates.totalPages  = hc.pages;
+                if (!book.author) {
+                  const name = hc.contributions?.[0]?.author?.name;
+                  if (name) updates.author = name;
+                }
+                if (Object.keys(updates).length) {
+                  await updateBookMeta(currentUser.uid, book.id, updates);
+                  fixed++;
+                }
+              }
+            } catch (e) { console.warn('Slug batch failed', e); }
+          }
+        }
+
+        const total = unmatched.length + incomplete.length;
+        repairStatus.textContent = `Done — updated ${fixed} of ${total} book${total === 1 ? '' : 's'}.`;
         repairStatus.style.color = 'var(--accent)';
       } catch (err) {
         console.error(err);

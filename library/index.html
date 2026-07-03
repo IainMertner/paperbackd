@@ -122,7 +122,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername } from '../js/firebase.js';
+    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta } from '../js/firebase.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -635,6 +635,88 @@
       return el;
     }
 
+    const COUNTRIES = ['Afghanistan','Albania','Algeria','Andorra','Angola','Antigua and Barbuda','Argentina','Armenia','Australia','Austria','Azerbaijan','Bahamas','Bahrain','Bangladesh','Barbados','Belarus','Belgium','Belize','Benin','Bhutan','Bolivia','Bosnia and Herzegovina','Botswana','Brazil','Brunei','Bulgaria','Burkina Faso','Burundi','Cabo Verde','Cambodia','Cameroon','Canada','Central African Republic','Chad','Chile','China','Colombia','Comoros','Congo','Costa Rica','Croatia','Cuba','Cyprus','Czech Republic','Denmark','Djibouti','Dominica','Dominican Republic','Ecuador','Egypt','El Salvador','Equatorial Guinea','Eritrea','Estonia','Eswatini','Ethiopia','Fiji','Finland','France','Gabon','Gambia','Georgia','Germany','Ghana','Greece','Grenada','Guatemala','Guinea','Guinea-Bissau','Guyana','Haiti','Honduras','Hungary','Iceland','India','Indonesia','Iran','Iraq','Ireland','Israel','Italy','Jamaica','Japan','Jordan','Kazakhstan','Kenya','Kiribati','Kuwait','Kyrgyzstan','Laos','Latvia','Lebanon','Lesotho','Liberia','Libya','Liechtenstein','Lithuania','Luxembourg','Madagascar','Malawi','Malaysia','Maldives','Mali','Malta','Marshall Islands','Mauritania','Mauritius','Mexico','Micronesia','Moldova','Monaco','Mongolia','Montenegro','Morocco','Mozambique','Myanmar','Namibia','Nauru','Nepal','Netherlands','New Zealand','Nicaragua','Niger','Nigeria','North Korea','North Macedonia','Norway','Oman','Pakistan','Palau','Palestine','Panama','Papua New Guinea','Paraguay','Peru','Philippines','Poland','Portugal','Qatar','Romania','Russia','Rwanda','Saint Kitts and Nevis','Saint Lucia','Saint Vincent and the Grenadines','Samoa','San Marino','São Tomé and Príncipe','Saudi Arabia','Senegal','Serbia','Seychelles','Sierra Leone','Singapore','Slovakia','Slovenia','Solomon Islands','Somalia','South Africa','South Korea','South Sudan','Spain','Sri Lanka','Sudan','Suriname','Sweden','Switzerland','Syria','Taiwan','Tajikistan','Tanzania','Thailand','Timor-Leste','Togo','Tonga','Trinidad and Tobago','Tunisia','Turkey','Turkmenistan','Tuvalu','Uganda','Ukraine','United Arab Emirates','United Kingdom','United States','Uruguay','Uzbekistan','Vanuatu','Vatican City','Venezuela','Vietnam','Yemen','Zambia','Zimbabwe'];
+
+    function addDetailsEditor(card, book, coverCell, fieldDefs, onSave) {
+      const section = document.createElement('div');
+      section.style.cssText = 'border-top:1px solid var(--border);padding-top:.625rem;margin-top:.625rem';
+
+      const heading = document.createElement('div');
+      heading.style.cssText = 'font-size:.75rem;color:var(--text-muted);margin-bottom:.5rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em';
+      heading.textContent = 'Edit details';
+      section.appendChild(heading);
+
+      const inputs = {};
+      fieldDefs.forEach(({ label, key, type, options }) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem';
+        const lbl = document.createElement('label');
+        lbl.style.cssText = 'font-size:.75rem;color:var(--text-muted);min-width:90px';
+        lbl.textContent = label;
+        const inp = document.createElement('input');
+        inp.type = type;
+        inp.value = book[key] ?? '';
+        inp.className = 'page-input';
+        inp.style.cssText = 'flex:1;font-size:.8rem';
+        if (type === 'number') inp.min = '0';
+        if (options) {
+          const dlId = `dl-${book.id}-${key}`;
+          inp.setAttribute('list', dlId);
+          const dl = document.createElement('datalist');
+          dl.id = dlId;
+          options.forEach(v => { const o = document.createElement('option'); o.value = v; dl.appendChild(o); });
+          section.appendChild(dl);
+        }
+        inputs[key] = inp;
+        row.append(lbl, inp);
+        section.appendChild(row);
+      });
+
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.className = onSave ? 'join-club-btn' : 'btn-update';
+      saveBtn.style.cssText = 'width:100%;margin-top:.25rem';
+      saveBtn.textContent = 'Save';
+      section.appendChild(saveBtn);
+
+      saveBtn.addEventListener('click', async () => {
+        saveBtn.disabled = true;
+        const updates = {};
+        fieldDefs.forEach(({ key, type }) => {
+          const raw = inputs[key].value.trim();
+          const val = type === 'number' ? (parseInt(raw) || null) : (raw || null);
+          if (val !== (book[key] ?? null)) updates[key] = val;
+        });
+        if (Object.keys(updates).length) {
+          await updateBookMeta(user.uid, book.id, updates);
+          Object.assign(book, updates);
+          if (updates.title) {
+            const titleEl = card.querySelector('.book-title');
+            if (titleEl) titleEl.textContent = updates.title;
+            if (coverCell) {
+              coverCell.dataset.title = updates.title.toLowerCase();
+              const cellTitle = coverCell.querySelector('.library-cover-title');
+              if (cellTitle) cellTitle.textContent = updates.title;
+            }
+          }
+          if (Object.prototype.hasOwnProperty.call(updates, 'author')) {
+            const authorEl = card.querySelector('.book-author');
+            if (authorEl) authorEl.textContent = updates.author || '';
+            if (coverCell) coverCell.dataset.author = (updates.author || '').toLowerCase();
+          }
+        }
+        if (onSave) {
+          await onSave();
+        } else {
+          saveBtn.disabled = false;
+          saveBtn.textContent = '✓ Saved';
+          setTimeout(() => { saveBtn.textContent = 'Save'; }, 2000);
+        }
+      });
+
+      card.appendChild(section);
+    }
+
     function renderReading(book, coverCell, closeModal) {
       const pct  = book.totalPages ? Math.round((book.currentPage / book.totalPages) * 100) : 0;
       const card = document.createElement('div');
@@ -762,6 +844,13 @@
         }
       });
 
+      addDetailsEditor(card, book, coverCell, [
+        { label: 'Title',        key: 'title',       type: 'text'   },
+        { label: 'Author',       key: 'author',      type: 'text'   },
+        { label: 'Country',      key: 'country',     type: 'text',   options: COUNTRIES },
+        { label: 'Release year', key: 'releaseYear', type: 'number' },
+      ]);
+
       return card;
     }
 
@@ -806,20 +895,28 @@
       reviewTa.value = book.review || '';
       ratingEditor.appendChild(reviewTa);
 
-      const saveRatingBtn = document.createElement('button');
-      saveRatingBtn.type = 'button'; saveRatingBtn.className = 'join-club-btn';
-      saveRatingBtn.style.cssText = 'margin-top:.5rem;width:100%';
-      saveRatingBtn.textContent = 'Save';
-      ratingEditor.appendChild(saveRatingBtn);
+      card.querySelector('.btn-remove-x').addEventListener('click', async () => {
+        if (!confirm(`Remove "${book.title}" from your library?`)) return;
+        await deleteBook(user.uid, book.id, { title: book.title });
+        if (coverCell) coverCell.remove();
+        closeModal();
+        if (!finishedList.querySelector('[data-title]')) {
+          showEmpty(finishedList, 'finished-empty', 'No finished books yet.');
+        }
+      });
 
-      saveRatingBtn.addEventListener('click', async () => {
-        saveRatingBtn.disabled = true;
+      addDetailsEditor(card, book, coverCell, [
+        { label: 'Title',        key: 'title',       type: 'text'   },
+        { label: 'Author',       key: 'author',      type: 'text'   },
+        { label: 'Country',      key: 'country',     type: 'text',   options: COUNTRIES },
+        { label: 'Release year', key: 'releaseYear', type: 'number' },
+        { label: 'Total pages',  key: 'totalPages',  type: 'number' },
+      ], async () => {
         const rating = starPicker.getValue();
         const review = reviewTa.value.trim() || null;
         await updateBookRating(user.uid, book.id, { rating, review });
         book.rating = rating;
         book.review = review;
-        // Sync rating badge on the grid cell
         if (coverCell) {
           let badge = coverCell.querySelector('.library-cover-rating');
           if (rating) {
@@ -830,23 +927,13 @@
               badge.className = 'library-cover-rating';
               badge.innerHTML = html;
               const info = coverCell.querySelector('.library-cover-info');
-              info.insertBefore(badge, info.firstChild);
+              if (info) info.insertBefore(badge, info.firstChild);
             }
           } else if (badge) {
             badge.remove();
           }
         }
         closeModal();
-      });
-
-      card.querySelector('.btn-remove-x').addEventListener('click', async () => {
-        if (!confirm(`Remove "${book.title}" from your library?`)) return;
-        await deleteBook(user.uid, book.id, { title: book.title });
-        if (coverCell) coverCell.remove();
-        closeModal();
-        if (!finishedList.querySelector('[data-title]')) {
-          showEmpty(finishedList, 'finished-empty', 'No finished books yet.');
-        }
       });
 
       return card;
@@ -972,7 +1059,9 @@
           });
           const q = (document.getElementById('library-filter')?.value || '').trim().toLowerCase();
           if (q) finishedList.querySelectorAll('[data-title]').forEach(el => {
-            el.style.display = (el.dataset.title.includes(q) || el.dataset.author.includes(q)) ? '' : 'none';
+            const show = el.dataset.title.includes(q) || el.dataset.author.includes(q);
+            el.style.display = show ? '' : 'none';
+            el.classList.toggle('hidden', !show);
           });
         };
 
@@ -1093,7 +1182,9 @@
           const q = filterInput.value.trim().toLowerCase();
           [readingList, finishedList].forEach(container => {
             container.querySelectorAll('[data-title]').forEach(el => {
-              el.style.display = (!q || el.dataset.title.includes(q) || el.dataset.author.includes(q)) ? '' : 'none';
+              const show = !q || el.dataset.title.includes(q) || el.dataset.author.includes(q);
+              el.style.display = show ? '' : 'none';
+              el.classList.toggle('hidden', !show);
             });
           });
         }
