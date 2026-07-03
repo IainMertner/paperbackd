@@ -370,6 +370,20 @@ export async function getBookByGbid(uid, gbid) {
   return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
+export async function getFriendListStatus(following, gbid) {
+  if (!gbid || !following.length) return [];
+  const results = await Promise.all(
+    following.map(async friend => {
+      const snap = await getDocs(collection(db, 'users', friend.uid, 'lists'));
+      const lists = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const matched = lists.filter(l => (l.books || []).some(b => b.gbid === gbid));
+      if (!matched.length) return null;
+      return { ...friend, listNames: matched.map(l => l.name) };
+    })
+  );
+  return results.filter(Boolean);
+}
+
 export async function getFriendBookStatus(followingUids, gbid) {
   if (!gbid || !followingUids.length) return [];
   const results = await Promise.all(
@@ -410,6 +424,11 @@ export async function unfinishBook(uid, bookId, { title }) {
 }
 
 // ── Lists ─────────────────────────────────────────────────────────────────────
+
+export async function getListCount(uid) {
+  const snap = await getCountFromServer(collection(db, 'users', uid, 'lists'));
+  return snap.data().count;
+}
 
 export async function getLists(uid) {
   const snap = await getDocs(collection(db, 'users', uid, 'lists'));

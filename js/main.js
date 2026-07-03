@@ -57,6 +57,7 @@ function setActiveNav() {
   else if (/\/library\/?/.test(path)) page = 'library';
   else if (/\/friends\/?/.test(path)) page = 'profile';
   else if (/\/profile\/?/.test(path)) page = 'profile';
+  else if (/\/lists?\/?/.test(path))  page = 'profile';
   else if (/\/settings\/?/.test(path)) page = 'settings';
 
   document.querySelectorAll('[data-nav]').forEach(el => {

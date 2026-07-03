@@ -34,7 +34,24 @@
     <a class="back-link" href="../profile/" id="back-link">← Back</a>
     <div id="list-header"></div>
     <div id="list-add" style="display:none"></div>
-    <div id="list-books"></div>
+
+    <div id="list-filter-wrap" style="display:none;margin-bottom:.625rem">
+      <div style="display:flex;gap:.5rem;align-items:center">
+        <input type="text" id="list-filter" class="join-club-input" placeholder="Filter list…" autocomplete="off" spellcheck="false" style="flex:1;min-width:0;box-sizing:border-box">
+        <button id="view-grid-btn" class="btn-update" title="Grid view" style="padding:.35rem .5rem;flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></button>
+        <button id="view-list-btn" class="btn-update" title="List view" style="padding:.35rem .5rem;flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg></button>
+      </div>
+    </div>
+
+    <div class="section-header" id="sort-header" style="display:none;margin-bottom:.5rem">
+      <div id="list-sort" class="sort-options">
+        <button class="sort-btn" data-key="order"  data-default="asc" data-label="Order">Order</button>
+        <button class="sort-btn" data-key="alpha"  data-default="asc" data-label="A–Z">A–Z</button>
+        <button class="sort-btn" data-key="author" data-default="asc" data-label="Author">Author</button>
+      </div>
+    </div>
+
+    <div id="list-books" class="books-grid"></div>
   </main>
 
   <nav class="mobile-nav">
@@ -87,6 +104,8 @@
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
+    let viewMode = localStorage.getItem('list-view') || 'grid';
+
     (async () => {
       const { user } = await requireAuth();
       const params   = new URLSearchParams(location.search);
@@ -102,7 +121,7 @@
       } else {
         const target = await getProfileByUsername(targetU);
         if (!target) {
-          document.getElementById('list-header').innerHTML = '<p style="color:var(--text-muted)">User not found.</p>';
+          document.getElementById('list-books').innerHTML = '<p style="color:var(--text-muted)">User not found.</p>';
           document.body.classList.remove('auth-loading');
           return;
         }
@@ -115,7 +134,7 @@
       const list  = lists.find(l => l.id === listId);
 
       if (!list) {
-        document.getElementById('list-header').innerHTML = '<p style="color:var(--text-muted)">List not found.</p>';
+        document.getElementById('list-books').innerHTML = '<p style="color:var(--text-muted)">List not found.</p>';
         document.body.classList.remove('auth-loading');
         return;
       }
@@ -200,11 +219,7 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  query: `query Search($q: String!) {
-                    search(query: $q, query_type: "Book", per_page: 8, page: 1) {
-                      results
-                    }
-                  }`,
+                  query: `query Search($q: String!) { search(query: $q, query_type: "Book", per_page: 8, page: 1) { results } }`,
                   variables: { q }
                 })
               });
@@ -213,7 +228,7 @@
               suggestBox.innerHTML = '';
               if (!hits.length) { suggestBox.style.display = 'none'; return; }
               hits.forEach(hit => {
-                const doc = hit.document || {};
+                const doc      = hit.document || {};
                 const gbid     = doc.slug || String(doc.id || '');
                 const title    = doc.title || '';
                 const author   = doc.author_names?.[0] || '';
@@ -229,8 +244,6 @@
                   </div>
                 </div>`;
                 item.addEventListener('click', async () => {
-                  item.style.background = 'var(--accent)';
-                  item.style.color      = '#fff';
                   suggestBox.style.display = 'none';
                   searchInput.value = '';
                   await addBookToList(user.uid, list.id, { gbid, title, author, coverUrl });
@@ -259,41 +272,162 @@
       }
 
       // ── Books ─────────────────────────────────────────────────────────────────
-      const booksEl = document.getElementById('list-books');
+      const booksEl   = document.getElementById('list-books');
+      const filterWrap = document.getElementById('list-filter-wrap');
+      const filterInput = document.getElementById('list-filter');
+      const sortHeader = document.getElementById('sort-header');
+      const gridBtn    = document.getElementById('view-grid-btn');
+      const listBtn    = document.getElementById('view-list-btn');
+
+      let sortState = (() => { try { return JSON.parse(localStorage.getItem('list-sort')) || {}; } catch { return {}; } })();
+      if (!sortState.key) sortState = { key: 'order', dir: 'asc' };
+
+      const sortBtns = sortHeader.querySelectorAll('.sort-btn');
+
+      function updateSortUI() {
+        sortBtns.forEach(btn => {
+          const active = btn.dataset.key === sortState.key;
+          btn.classList.toggle('sort-btn-active', active);
+          if (active) {
+            btn.textContent = btn.dataset.key === 'alpha'
+              ? (sortState.dir === 'asc' ? 'A–Z' : 'Z–A')
+              : btn.dataset.key === 'author'
+              ? (sortState.dir === 'asc' ? 'Author ↑' : 'Author ↓')
+              : btn.dataset.label;
+          } else {
+            btn.textContent = btn.dataset.label;
+          }
+        });
+      }
+
+      function updateToggleUI() {
+        gridBtn.style.opacity = viewMode === 'grid' ? '1' : '0.45';
+        listBtn.style.opacity = viewMode === 'list' ? '1' : '0.45';
+      }
+
+      function applyFilter() {
+        const q = filterInput.value.trim().toLowerCase();
+        booksEl.querySelectorAll('[data-title]').forEach(el => {
+          el.style.display = (!q || el.dataset.title.includes(q) || (el.dataset.author || '').includes(q)) ? '' : 'none';
+        });
+      }
+
+      function makeBookCoverCell(book) {
+        const cell = document.createElement('a');
+        cell.className = 'library-cover-cell';
+        cell.href = `../book/?gbid=${encodeURIComponent(book.gbid)}`;
+        cell.dataset.title  = (book.title  || '').toLowerCase();
+        cell.dataset.author = (book.author || '').toLowerCase();
+        if (book.coverUrl) {
+          const img = document.createElement('img');
+          img.src = book.coverUrl; img.alt = '';
+          cell.appendChild(img);
+        } else {
+          const ph = document.createElement('div');
+          ph.className = 'library-cover-placeholder';
+          ph.textContent = '📖';
+          cell.appendChild(ph);
+        }
+        const info = document.createElement('div');
+        info.className = 'library-cover-info';
+        const titleEl = document.createElement('div');
+        titleEl.className = 'library-cover-title';
+        titleEl.textContent = book.title;
+        info.appendChild(titleEl);
+        cell.appendChild(info);
+        return cell;
+      }
+
+      function makeBookListRow(book) {
+        const el = document.createElement('div');
+        el.className = 'books-list-row';
+        el.dataset.title  = (book.title  || '').toLowerCase();
+        el.dataset.author = (book.author || '').toLowerCase();
+        const author = book.author ? `<span style="color:var(--text-muted);font-weight:400"> · ${esc(book.author)}</span>` : '';
+        const removeHtml = isOwn
+          ? `<button class="btn-danger list-remove-btn" data-gbid="${esc(book.gbid)}" style="margin-left:.5rem;font-size:.72rem;padding:.2rem .5rem;flex-shrink:0">Remove</button>`
+          : '';
+        el.innerHTML = `<a href="../book/?gbid=${encodeURIComponent(book.gbid)}" style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:.875rem;font-weight:600;color:inherit;text-decoration:none">${esc(book.title)}${author}</a>${removeHtml}`;
+        if (isOwn) {
+          el.querySelector('.list-remove-btn').addEventListener('click', async e => {
+            e.preventDefault();
+            await removeBookFromList(user.uid, list.id, book.gbid);
+            books = books.filter(b => b.gbid !== book.gbid);
+            renderBooks();
+          });
+        }
+        return el;
+      }
+
+      const alphaKey = t => (t || '').replace(/^the\s+/i, '');
+
+      function getSorted() {
+        const { key, dir } = sortState;
+        const asc = dir === 'asc';
+        if (key === 'order') return asc ? [...books] : [...books].reverse();
+        const sorted = [...books];
+        if (key === 'alpha')  sorted.sort((a, b) => asc ? alphaKey(a.title).localeCompare(alphaKey(b.title)) : alphaKey(b.title).localeCompare(alphaKey(a.title)));
+        if (key === 'author') sorted.sort((a, b) => asc ? (a.author||'').localeCompare(b.author||'') : (b.author||'').localeCompare(a.author||''));
+        return sorted;
+      }
 
       function renderBooks() {
         booksEl.innerHTML = '';
+        booksEl.className = viewMode === 'list' ? 'books-list' : 'books-grid';
+
         if (!books.length) {
           booksEl.innerHTML = `<p style="color:var(--text-muted);font-size:.875rem">${isOwn ? 'Search above to add books.' : 'No books yet.'}</p>`;
+          filterWrap.style.display = 'none';
+          sortHeader.style.display = 'none';
           return;
         }
-        books.forEach(book => {
-          const el = document.createElement('div');
-          el.className = 'card';
-          el.style.marginBottom = '.5rem';
-          el.innerHTML = `<div style="display:flex;gap:.75rem;align-items:center">
-            <a href="../book/?gbid=${encodeURIComponent(book.gbid)}" style="display:flex;flex-shrink:0">
-              ${book.coverUrl
-                ? `<img src="${esc(book.coverUrl)}" alt="" style="width:42px;border-radius:var(--radius-sm);display:block">`
-                : `<div style="width:42px;height:63px;background:var(--border);border-radius:var(--radius-sm)"></div>`}
-            </a>
-            <div style="flex:1;min-width:0">
-              <a href="../book/?gbid=${encodeURIComponent(book.gbid)}" style="font-weight:600;font-size:.9rem;color:inherit;text-decoration:none;line-height:1.3;display:block">${esc(book.title)}</a>
-              ${book.author ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.15rem">${esc(book.author)}</div>` : ''}
-            </div>
-            ${isOwn ? `<button class="btn-danger" data-gbid="${esc(book.gbid)}" style="font-size:.75rem;padding:.25rem .6rem;flex-shrink:0">Remove</button>` : ''}
-          </div>`;
-          if (isOwn) {
-            el.querySelector('[data-gbid]').addEventListener('click', async () => {
-              await removeBookFromList(user.uid, list.id, book.gbid);
-              books = books.filter(b => b.gbid !== book.gbid);
-              renderBooks();
-            });
+
+        filterWrap.style.display = '';
+        sortHeader.style.display = '';
+        updateSortUI();
+        updateToggleUI();
+
+        getSorted().forEach(book => {
+          if (viewMode === 'list') {
+            booksEl.appendChild(makeBookListRow(book));
+          } else {
+            booksEl.appendChild(makeBookCoverCell(book));
           }
-          booksEl.appendChild(el);
         });
+
+        applyFilter();
       }
+
       renderBooks();
+
+      // Sort buttons
+      sortBtns.forEach(btn => btn.addEventListener('click', () => {
+        if (btn.dataset.key === sortState.key) {
+          sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortState = { key: btn.dataset.key, dir: btn.dataset.default };
+        }
+        localStorage.setItem('list-sort', JSON.stringify(sortState));
+        updateSortUI();
+        renderBooks();
+      }));
+
+      // View toggle
+      gridBtn.addEventListener('click', () => {
+        if (viewMode === 'grid') return;
+        viewMode = 'grid';
+        localStorage.setItem('list-view', 'grid');
+        renderBooks();
+      });
+      listBtn.addEventListener('click', () => {
+        if (viewMode === 'list') return;
+        viewMode = 'list';
+        localStorage.setItem('list-view', 'list');
+        renderBooks();
+      });
+
+      // Filter
+      filterInput.addEventListener('input', applyFilter);
 
       document.body.classList.remove('auth-loading');
     })();

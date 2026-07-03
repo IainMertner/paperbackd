@@ -79,7 +79,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getFollowing, getBookByGbid, getFriendBookStatus, addBook, addFinishedBook, getLists, ensureDefaultList, addBookToList, removeBookFromList } from '../js/firebase.js';
+    import { getFollowing, getBookByGbid, getFriendBookStatus, getFriendListStatus, addBook, addFinishedBook, getLists, ensureDefaultList, addBookToList, removeBookFromList } from '../js/firebase.js';
 
     const params = new URLSearchParams(location.search);
     const gbid   = params.get('gbid');
@@ -383,12 +383,35 @@
       }
 
 
-      const followingUids  = following.map(f => f.uid);
-      const friendStatuses = await getFriendBookStatus(followingUids, gbid);
+      const followingUids = following.map(f => f.uid);
+      const [friendStatuses, listStatuses] = await Promise.all([
+        getFriendBookStatus(followingUids, gbid),
+        getFriendListStatus(following, gbid)
+      ]);
 
-      if (friendStatuses.length) {
+      const listUids = new Set(listStatuses.map(f => f.uid));
+      const readingListOnly = listStatuses.filter(f => !friendStatuses.some(s => s.uid === f.uid));
+
+      if (friendStatuses.length || readingListOnly.length) {
         document.getElementById('friends-title').style.display = '';
         const list = document.getElementById('friends-list');
+
+        function friendCard({ username, avatarUrl, avatarBorderColor }, statusHtml) {
+          const avatarContent = avatarUrl
+            ? `<img src="${esc(avatarUrl)}" alt="">`
+            : esc(username[0].toUpperCase());
+          const borderStyle = avatarBorderColor ? `border-color:${avatarBorderColor}` : '';
+          const el = document.createElement('div');
+          el.className = 'card';
+          el.innerHTML = `<div class="friend-item">
+            <a class="friend-avatar" href="../profile/?u=${esc(username)}" style="text-decoration:none;color:inherit;${borderStyle}">${avatarContent}</a>
+            <div style="flex:1;min-width:0">
+              <a href="../profile/?u=${esc(username)}" style="font-weight:600;font-size:.9rem;color:inherit;text-decoration:none">${esc(username)}</a>
+              ${statusHtml}
+            </div>
+          </div>`;
+          return el;
+        }
 
         for (const { username, avatarUrl, avatarBorderColor, book } of friendStatuses) {
           const status = book.status === 'reading'
@@ -400,22 +423,18 @@
           const friendReview = (book.status === 'finished' && book.review)
             ? `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(book.review.slice(0, 150))}${book.review.length > 150 ? '…' : ''}</div>`
             : '';
-          const avatarContent = avatarUrl
-            ? `<img src="${esc(avatarUrl)}" alt="">`
-            : esc(username[0].toUpperCase());
-          const borderStyle = avatarBorderColor ? `border-color:${avatarBorderColor}` : '';
-          const el = document.createElement('div');
-          el.className = 'card';
-          el.innerHTML = `<div class="friend-item">
-            <a class="friend-avatar" href="../profile/?u=${esc(username)}" style="text-decoration:none;color:inherit;${borderStyle}">${avatarContent}</a>
-            <div style="flex:1;min-width:0">
-              <a href="../profile/?u=${esc(username)}" style="font-weight:600;font-size:.9rem;color:inherit;text-decoration:none">${esc(username)}</a>
-              <div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">${status}</div>
-              ${friendStars}
-              ${friendReview}
-            </div>
-          </div>`;
-          list.appendChild(el);
+          list.appendChild(friendCard(
+            { username, avatarUrl, avatarBorderColor },
+            `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">${status}</div>${friendStars}${friendReview}`
+          ));
+        }
+
+        for (const { username, avatarUrl, avatarBorderColor, listNames } of readingListOnly) {
+          const label = listNames.length === 1 ? esc(listNames[0]) : listNames.map(esc).join(', ');
+          list.appendChild(friendCard(
+            { username, avatarUrl, avatarBorderColor },
+            `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">On list: ${label}</div>`
+          ));
         }
       }
     } finally {
