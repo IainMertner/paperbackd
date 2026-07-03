@@ -1303,9 +1303,96 @@
       }
     }
 
+    function showManualEntryForm(prefill) {
+      suggestBox.innerHTML = '';
+      suggestBox.style.display = '';
+
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'padding:.625rem .75rem;display:flex;flex-direction:column;gap:.4rem';
+
+      const mkRow = (labelText, inp) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.5rem';
+        const lbl = document.createElement('label');
+        lbl.style.cssText = 'font-size:.75rem;color:var(--text-muted);min-width:80px';
+        lbl.textContent = labelText;
+        row.append(lbl, inp);
+        return row;
+      };
+
+      const titleInp = document.createElement('input');
+      titleInp.type = 'text'; titleInp.value = prefill; titleInp.placeholder = 'Required';
+      titleInp.className = 'page-input'; titleInp.style.cssText = 'flex:1;font-size:.85rem';
+
+      const authorInp = document.createElement('input');
+      authorInp.type = 'text'; authorInp.placeholder = 'Optional';
+      authorInp.className = 'page-input'; authorInp.style.cssText = 'flex:1;font-size:.85rem';
+
+      const pagesInp = document.createElement('input');
+      pagesInp.type = 'number'; pagesInp.min = '0'; pagesInp.placeholder = 'Optional';
+      pagesInp.className = 'page-input'; pagesInp.style.cssText = 'flex:1;font-size:.85rem';
+
+      const yearInp = document.createElement('input');
+      yearInp.type = 'number'; yearInp.min = '0'; yearInp.placeholder = 'Optional';
+      yearInp.className = 'page-input'; yearInp.style.cssText = 'flex:1;font-size:.85rem';
+
+      const btns = document.createElement('div');
+      btns.style.cssText = 'display:flex;gap:.5rem;margin-top:.2rem';
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button'; addBtn.className = 'join-club-btn'; addBtn.style.cssText = 'flex:1;font-size:.82rem';
+      addBtn.textContent = 'Add to library';
+      const cancelBtn2 = document.createElement('button');
+      cancelBtn2.type = 'button'; cancelBtn2.className = 'btn-update'; cancelBtn2.style.cssText = 'font-size:.82rem';
+      cancelBtn2.textContent = 'Cancel';
+      btns.append(addBtn, cancelBtn2);
+
+      wrap.append(
+        mkRow('Title', titleInp),
+        mkRow('Author', authorInp),
+        mkRow('Pages', pagesInp),
+        mkRow('Year', yearInp),
+        btns
+      );
+      suggestBox.appendChild(wrap);
+      titleInp.focus();
+
+      addBtn.addEventListener('mousedown', e => e.preventDefault());
+      addBtn.addEventListener('click', () => {
+        const title = titleInp.value.trim();
+        if (!title) { titleInp.style.outline = '1px solid var(--danger, #d44)'; return; }
+        selectedBook = {
+          title,
+          author: authorInp.value.trim(),
+          pages: parseInt(pagesInp.value) || 0,
+          gbid: '',
+          cover: '',
+          releaseYear: parseInt(yearInp.value) || null,
+        };
+        searchInput.value        = title;
+        suggestBox.innerHTML     = '';
+        suggestBox.style.display = 'none';
+        setAddEnabled(true);
+      });
+
+      cancelBtn2.addEventListener('mousedown', e => e.preventDefault());
+      cancelBtn2.addEventListener('click', () => {
+        suggestBox.innerHTML     = '';
+        suggestBox.style.display = 'none';
+      });
+    }
+
     function renderSuggestions(items) {
       suggestBox.innerHTML = '';
-      if (!items.length) { suggestBox.style.display = 'none'; return; }
+      if (!items.length) {
+        suggestBox.style.display = '';
+        const prompt = document.createElement('div');
+        prompt.className = 'book-suggestion-item';
+        prompt.style.cssText = 'font-size:.85rem;color:var(--text-muted);padding:.6rem .75rem;cursor:pointer';
+        prompt.textContent = `No results — add "${searchInput.value.trim()}" manually`;
+        prompt.addEventListener('mousedown', e => { e.preventDefault(); showManualEntryForm(searchInput.value.trim()); });
+        suggestBox.appendChild(prompt);
+        return;
+      }
 
       items.forEach(doc => {
         const title       = doc.title || '';
@@ -1340,6 +1427,13 @@
 
         suggestBox.appendChild(el);
       });
+
+      const manualPrompt = document.createElement('div');
+      manualPrompt.className = 'book-suggestion-item';
+      manualPrompt.style.cssText = 'font-size:.82rem;color:var(--text-muted);padding:.5rem .75rem;cursor:pointer;border-top:1px solid var(--border)';
+      manualPrompt.textContent = 'Add manually…';
+      manualPrompt.addEventListener('mousedown', e => { e.preventDefault(); showManualEntryForm(searchInput.value.trim()); });
+      suggestBox.appendChild(manualPrompt);
 
       suggestBox.style.display = 'block';
     }
