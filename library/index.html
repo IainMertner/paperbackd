@@ -36,7 +36,11 @@
 
     <div id="library-filter-wrap" style="display:none;margin-bottom:.625rem">
       <div style="display:flex;gap:.5rem;align-items:center">
-        <input type="text" id="library-filter" class="join-club-input" placeholder="Filter library…" autocomplete="off" spellcheck="false" style="flex:1;min-width:0;box-sizing:border-box">
+        <input type="text" id="library-filter" class="join-club-input" placeholder="Search library…" autocomplete="off" spellcheck="false" style="flex:1;min-width:0;box-sizing:border-box">
+        <div style="position:relative;flex-shrink:0">
+          <button id="filter-dropdown-btn" class="btn-update" style="padding:.35rem .6rem;font-size:.8rem">Filters</button>
+          <div id="filter-dropdown" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:100;min-width:180px;padding:.5rem 0"></div>
+        </div>
         <button id="view-grid-btn" class="btn-update" title="Grid view" style="padding:.35rem .5rem;flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></button>
         <button id="view-list-btn" class="btn-update" title="List view" style="padding:.35rem .5rem;flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg></button>
       </div>
@@ -121,7 +125,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta } from '../js/firebase.js';
+    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, getLists } from '../js/firebase.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -130,8 +134,13 @@
     function makeBookListRow(book) {
       const el = document.createElement('div');
       el.className = 'books-list-row';
-      el.dataset.title  = (book.title  || '').toLowerCase();
-      el.dataset.author = (book.author || '').toLowerCase();
+      el.dataset.title    = (book.title    || '').toLowerCase();
+      el.dataset.author   = (book.author   || '').toLowerCase();
+      el.dataset.language = (book.language || '').toLowerCase();
+      el.dataset.format   = (book.format   || '').toLowerCase();
+      el.dataset.country  = (book.country  || '').toLowerCase();
+      el.dataset.lists    = book._listIds || '';
+      el.dataset.gbid     = book.gbid || '';
       const author = book.author ? `<span style="color:var(--text-muted);font-weight:400"> · ${esc(book.author)}</span>` : '';
       let rightHtml = '';
       if (book.rating) {
@@ -259,9 +268,14 @@
     function makeBookCoverCell(book) {
       const cell = document.createElement('div');
       cell.className = 'library-cover-cell';
-      cell.dataset.id     = book.id;
-      cell.dataset.title  = (book.title  || '').toLowerCase();
-      cell.dataset.author = (book.author || '').toLowerCase();
+      cell.dataset.id       = book.id;
+      cell.dataset.title    = (book.title    || '').toLowerCase();
+      cell.dataset.author   = (book.author   || '').toLowerCase();
+      cell.dataset.language = (book.language || '').toLowerCase();
+      cell.dataset.format   = (book.format   || '').toLowerCase();
+      cell.dataset.country  = (book.country  || '').toLowerCase();
+      cell.dataset.lists    = book._listIds || '';
+      cell.dataset.gbid     = book.gbid || '';
       if (book.coverUrl) {
         const img = document.createElement('img');
         img.src = book.coverUrl; img.alt = '';
@@ -1131,9 +1145,29 @@
 
       let renderReadingFn    = () => {};
       let reRenderFinishedFn = () => {};
+      let allBooks = [];
+      let allLists = [];
 
       if (isOwn) {
-        const { reading, finished } = sortBooks(await getBooks(user.uid));
+        const [booksData, lists] = await Promise.all([
+          getBooks(user.uid).then(sortBooks),
+          getLists(user.uid).catch(() => [])
+        ]);
+        const { reading, finished } = booksData;
+        allLists = lists;
+
+        // Enrich books with list membership so data-lists persists across re-renders
+        const gbidToLists = new Map();
+        lists.forEach(l => {
+          (l.books || []).forEach(b => {
+            if (!b.gbid) return;
+            if (!gbidToLists.has(b.gbid)) gbidToLists.set(b.gbid, []);
+            gbidToLists.get(b.gbid).push(l.id);
+          });
+        });
+        [...reading, ...finished].forEach(b => { b._listIds = (gbidToLists.get(b.gbid) || []).join(','); });
+
+        allBooks = [...reading, ...finished];
         setTitles(reading, finished);
 
         renderReadingFn = () => {
@@ -1168,6 +1202,7 @@
         const target = await getProfileByUsername(viewUser);
         if (target) {
           const { reading, finished } = sortBooks(await getBooks(target.uid));
+          allBooks = [...reading, ...finished];
           setTitles(reading, finished);
 
           renderReadingFn = () => {
@@ -1202,17 +1237,87 @@
         const listBtn     = document.getElementById('view-list-btn');
         filterWrap.style.display = '';
 
+        const activeFilters = { format: new Set(), language: new Set(), country: new Set(), lists: new Set() };
+
+        const filterDropdownBtn = document.getElementById('filter-dropdown-btn');
+        const filterDropdown    = document.getElementById('filter-dropdown');
+
         function applyFilter() {
           const q = filterInput.value.trim().toLowerCase();
           [readingList, finishedList].forEach(container => {
             container.querySelectorAll('[data-title]').forEach(el => {
-              const show = !q || el.dataset.title.includes(q) || el.dataset.author.includes(q);
+              let show = !q || el.dataset.title.includes(q) || el.dataset.author.includes(q);
+              if (show && activeFilters.format.size)   show = activeFilters.format.has(el.dataset.format || '');
+              if (show && activeFilters.language.size) show = activeFilters.language.has(el.dataset.language || '');
+              if (show && activeFilters.country.size)  show = activeFilters.country.has(el.dataset.country || '');
+              if (show && activeFilters.lists.size) {
+                const bookLists = (el.dataset.lists || '').split(',').filter(Boolean);
+                show = bookLists.some(l => activeFilters.lists.has(l));
+              }
               el.style.display = show ? '' : 'none';
               el.classList.toggle('hidden', !show);
             });
           });
+          const total = Object.values(activeFilters).reduce((n, s) => n + s.size, 0);
+          filterDropdownBtn.textContent = total ? `Filters (${total})` : 'Filters';
+          filterDropdownBtn.style.color = total ? 'var(--accent)' : '';
         }
         filterInput.addEventListener('input', applyFilter);
+
+        // Dropdown open/close
+        filterDropdownBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          filterDropdown.style.display = filterDropdown.style.display === 'none' ? '' : 'none';
+        });
+        document.addEventListener('click', () => { filterDropdown.style.display = 'none'; });
+        filterDropdown.addEventListener('click', e => e.stopPropagation());
+
+        function addSection(heading, key, entries) {
+          if (!entries.length) return;
+          const section = document.createElement('div');
+          const hdr = document.createElement('div');
+          hdr.style.cssText = 'font-size:.7rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;padding:.4rem .75rem .2rem';
+          hdr.textContent = heading;
+          section.appendChild(hdr);
+          entries.forEach(({ val, label }) => {
+            const row = document.createElement('label');
+            row.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.3rem .75rem;cursor:pointer;font-size:.85rem';
+            row.addEventListener('mouseenter', () => row.style.background = 'var(--bg-alt)');
+            row.addEventListener('mouseleave', () => row.style.background = '');
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.style.accentColor = 'var(--accent)';
+            cb.addEventListener('change', () => {
+              if (cb.checked) activeFilters[key].add(val);
+              else activeFilters[key].delete(val);
+              applyFilter();
+            });
+            row.append(cb, document.createTextNode(label));
+            section.appendChild(row);
+          });
+          if (filterDropdown.children.length) {
+            const div = document.createElement('div');
+            div.style.cssText = 'border-top:1px solid var(--border);margin:.3rem 0';
+            filterDropdown.appendChild(div);
+          }
+          filterDropdown.appendChild(section);
+        }
+
+        const formats   = [...new Set(allBooks.map(b => b.format).filter(Boolean))].sort();
+        const languages = [...new Set(allBooks.map(b => b.language).filter(Boolean))].sort();
+        const countries = [...new Set(allBooks.map(b => b.country).filter(Boolean))].sort();
+
+        addSection('Format',   'format',   formats.map(v => ({ val: v.toLowerCase(), label: v })));
+        addSection('Language', 'language', languages.map(v => ({ val: v.toLowerCase(), label: v })));
+        addSection('Country',  'country',  countries.map(v => ({ val: v.toLowerCase(), label: v })));
+
+        if (isOwn && allLists.length) {
+          const libraryGbids = new Set(allBooks.map(b => b.gbid).filter(Boolean));
+          const relevantLists = allLists.filter(l => (l.books || []).some(b => b.gbid && libraryGbids.has(b.gbid)));
+          addSection('Lists', 'lists', relevantLists.map(l => ({ val: l.id, label: l.name })));
+        }
+
+        if (!filterDropdown.children.length) filterDropdownBtn.style.display = 'none';
 
         function updateToggleUI() {
           gridBtn.style.opacity = viewMode === 'grid' ? '1' : '0.45';
