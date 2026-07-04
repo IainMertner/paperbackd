@@ -171,6 +171,13 @@
             saveBtn.addEventListener('click', async () => {
               const name = inp.value.trim();
               if (!name) return;
+              if (lists.some(l => l.name.toLowerCase() === name.toLowerCase())) {
+                inp.style.outline = '2px solid #ef4444';
+                inp.setCustomValidity('A list with this name already exists');
+                inp.reportValidity();
+                inp.style.outline = '';
+                return;
+              }
               saveBtn.disabled = true;
               const list = await createList(user.uid, name);
               lists = [...lists, list];

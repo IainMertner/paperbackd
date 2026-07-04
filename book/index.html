@@ -265,14 +265,26 @@
         alreadyBtn.className = 'btn-update';
         alreadyBtn.textContent = 'Mark as finished';
 
-        const listBtn = document.createElement('button');
-        listBtn.className = 'btn-update';
-        listBtn.textContent = 'Reading list';
-        listBtn.disabled = true;
+        const addToListWrap = document.createElement('div');
+        addToListWrap.style.cssText = 'position:relative;display:flex';
+        const addToListBtn = document.createElement('button');
+        addToListBtn.className = 'btn-update';
+        addToListBtn.textContent = 'Lists ▾';
+        addToListBtn.disabled = true;
+        const addToListDrop = document.createElement('div');
+        addToListDrop.style.cssText = 'display:none;position:absolute;left:0;top:calc(100% + 4px);background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:100;min-width:160px;padding:.25rem 0';
+        addToListWrap.append(addToListBtn, addToListDrop);
 
-        btnRow.append(startBtn, alreadyBtn, listBtn);
+        btnRow.append(startBtn, alreadyBtn, addToListWrap);
         actionsCard.appendChild(btnRow);
         detail.appendChild(actionsCard);
+
+        addToListBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          addToListDrop.style.display = addToListDrop.style.display === 'none' ? '' : 'none';
+        });
+        document.addEventListener('click', () => { addToListDrop.style.display = 'none'; });
+        addToListDrop.addEventListener('click', e => e.stopPropagation());
 
         (async () => {
           try {
@@ -281,26 +293,45 @@
               await ensureDefaultList(user.uid);
               lists = await getLists(user.uid);
             }
-            const defaultList = lists.find(l => l.isDefault);
-            if (!defaultList) return;
-            let inList = (defaultList.books || []).some(b => b.gbid === gbid);
-            function updateListBtn() {
-              listBtn.textContent = inList ? '✓ Reading list' : 'Reading list';
-              listBtn.style.color = inList ? 'var(--accent)' : '';
-              listBtn.disabled = false;
+            const sortedLists = [
+              ...lists.filter(l => l.isDefault),
+              ...lists.filter(l => !l.isDefault),
+            ];
+            const membership = {};
+            sortedLists.forEach(l => { membership[l.id] = (l.books || []).some(b => b.gbid === gbid); });
+
+            function buildAddToListDrop() {
+              addToListDrop.innerHTML = '';
+              sortedLists.forEach(l => {
+                const item = document.createElement('div');
+                item.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.4rem .75rem;cursor:pointer;font-size:.85rem';
+                item.addEventListener('mouseenter', () => item.style.background = 'var(--bg-alt)');
+                item.addEventListener('mouseleave', () => item.style.background = '');
+                const check = document.createElement('span');
+                check.style.cssText = 'color:var(--accent);width:1em;flex-shrink:0';
+                check.textContent = membership[l.id] ? '✓' : '';
+                const name = document.createElement('span');
+                name.textContent = l.isDefault ? 'Reading list' : l.name;
+                item.append(check, name);
+                item.addEventListener('click', async e => {
+                  e.stopPropagation();
+                  item.style.opacity = '.5';
+                  if (membership[l.id]) {
+                    await removeBookFromList(user.uid, l.id, gbid);
+                    membership[l.id] = false;
+                  } else {
+                    await addBookToList(user.uid, l.id, { gbid, title, author, coverUrl: cover });
+                    membership[l.id] = true;
+                  }
+                  item.style.opacity = '';
+                  buildAddToListDrop();
+                });
+                addToListDrop.appendChild(item);
+              });
             }
-            updateListBtn();
-            listBtn.addEventListener('click', async () => {
-              listBtn.disabled = true;
-              if (inList) {
-                await removeBookFromList(user.uid, defaultList.id, gbid);
-                inList = false;
-              } else {
-                await addBookToList(user.uid, defaultList.id, { gbid, title, author, coverUrl: cover });
-                inList = true;
-              }
-              updateListBtn();
-            });
+
+            buildAddToListDrop();
+            addToListBtn.disabled = false;
           } catch (e) { console.error('lists:', e); }
         })();
 
