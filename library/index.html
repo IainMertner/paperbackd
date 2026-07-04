@@ -775,28 +775,85 @@
       const titleHtml = book.gbid
         ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
-      card.innerHTML = `<div class="book-entry">
-        ${bookCoverHtml(book)}
-        <div class="book-info">
-          ${titleHtml}
-          ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
-          <div class="book-started-date"></div>
-          <div class="progress-bar-track">
-            <div class="progress-bar-fill" style="width:${pct}%"></div>
+      card.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
+          <div style="flex:1;min-width:0">
+            ${titleHtml}
+            ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
           </div>
-          <div class="progress-label">${book.totalPages ? `Page ${book.currentPage} of ${book.totalPages} · ${pct}%` : `Page ${book.currentPage}`}</div>
-          <div class="progress-controls">
-            <input class="page-input" type="number" value="${book.currentPage}" min="0" max="9999" aria-label="Current page">
-            <span class="page-sep">/</span>
-            <input class="page-input page-total" type="number" value="${book.totalPages || ''}" min="1" max="9999" aria-label="Total pages" placeholder="?">
-            <button class="btn-update btn-pg-update" style="display:none">Update</button>
-            <button class="btn-finished">Finished</button>
-          </div>
+          <button class="btn-remove-x" aria-label="Remove" title="Remove">${TRASH_ICON}</button>
         </div>
-        <button class="btn-remove-x" aria-label="Remove" title="Remove">${TRASH_ICON}</button>
-      </div>`;
-      card.querySelector('.book-cover-wrap').addEventListener('click', () => openCoverPicker(book, card.querySelector('.book-cover-wrap'), coverCell));
+        <div class="book-entry">
+          <div class="book-info">
+            <div class="book-started-date"></div>
+            <div class="book-reading-meta" style="display:flex;flex-direction:column;gap:.2rem;margin:.2rem 0"></div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" style="width:${pct}%"></div>
+            </div>
+            <div class="progress-label">${book.totalPages ? `Page ${book.currentPage} of ${book.totalPages} · ${pct}%` : `Page ${book.currentPage}`}</div>
+            <div class="progress-controls">
+              <input class="page-input" type="number" value="${book.currentPage}" min="0" max="9999" aria-label="Current page">
+              <span class="page-sep">/</span>
+              <input class="page-input page-total" type="number" value="${book.totalPages || ''}" min="1" max="9999" aria-label="Total pages" placeholder="?">
+              <button class="btn-update btn-pg-update" style="display:none">Update</button>
+              <button class="btn-finished">Finished</button>
+            </div>
+          </div>
+          ${bookCoverHtml(book)}
+        </div>`;
+      const coverWrap = card.querySelector('.book-cover-wrap');
+      const coverImg  = coverWrap.querySelector('.book-cover, .book-cover-img');
+      if (coverImg) { coverImg.style.width = '72px'; coverImg.style.height = '108px'; }
+      coverWrap.addEventListener('click', () => openCoverPicker(book, coverWrap, coverCell));
       card.querySelector('.book-started-date').replaceWith(makeDateEl('Started', book.addedAt, 'addedAt', book));
+
+      // Inline Language / Format rows (click-to-edit, same style as finished card)
+      const readingMeta = card.querySelector('.book-reading-meta');
+      function textToggleRowR(labelText, displayVal, buildControl, onSave) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.4rem';
+        const lbl = document.createElement('span');
+        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+        lbl.textContent = labelText;
+        const textEl = document.createElement('span');
+        textEl.style.cssText = 'font-size:.8rem;cursor:pointer;color:var(--text)';
+        textEl.textContent = displayVal || '—';
+        const ctrl = buildControl();
+        ctrl.style.display = 'none';
+        textEl.addEventListener('click', () => { textEl.style.display = 'none'; ctrl.style.display = ''; ctrl.focus?.(); });
+        ctrl.addEventListener('blur', () => { textEl.textContent = ctrl.value || '—'; ctrl.style.display = 'none'; textEl.style.display = ''; onSave(ctrl.value || null); });
+        row.append(lbl, textEl, ctrl);
+        return row;
+      }
+
+      const langDlId = `dl-rlang-${book.id}`;
+      const langDl = document.createElement('datalist');
+      langDl.id = langDlId;
+      LANGUAGES.forEach(v => { const o = document.createElement('option'); o.value = v; langDl.appendChild(o); });
+      card.appendChild(langDl);
+
+      readingMeta.appendChild(textToggleRowR('Language', book.language || 'English', () => {
+        const inp = document.createElement('input');
+        inp.type = 'text'; inp.className = 'page-input';
+        inp.style.cssText = 'font-size:.8rem;width:auto';
+        inp.value = book.language || 'English';
+        inp.setAttribute('list', langDlId);
+        return inp;
+      }, val => { book.language = val; updateBookMeta(user.uid, book.id, { language: val }); }));
+
+      readingMeta.appendChild(textToggleRowR('Format', book.format || '—', () => {
+        const sel = document.createElement('select');
+        sel.className = 'page-input';
+        sel.style.cssText = 'font-size:.8rem;width:auto';
+        ['', 'Physical', 'E-reader', 'Audiobook'].forEach(v => {
+          const o = document.createElement('option');
+          o.value = v; o.textContent = v || '—';
+          if (v === (book.format || '')) o.selected = true;
+          sel.appendChild(o);
+        });
+        sel.addEventListener('change', () => sel.blur());
+        return sel;
+      }, val => { book.format = val; updateBookMeta(user.uid, book.id, { format: val }); }));
 
       const inputs    = card.querySelectorAll('.page-input');
       const fillEl    = card.querySelector('.progress-bar-fill');
@@ -926,14 +983,30 @@
         }
       });
 
-      addDetailsEditor(card, book, coverCell, [
-        { label: 'Title',        key: 'title',       type: 'text',   groupLabel: 'Book' },
+      const detailsSection = addDetailsEditor(card, book, coverCell, [
+        { label: 'Title',        key: 'title',       type: 'text'   },
         { label: 'Author',       key: 'author',      type: 'text'   },
         { label: 'Country',      key: 'country',     type: 'text',   options: COUNTRIES },
         { label: 'Release year', key: 'releaseYear', type: 'number' },
-        { label: 'Language',     key: 'language',    type: 'text',   options: LANGUAGES, groupLabel: 'Reading info' },
-        { label: 'Format',       key: 'format',      type: 'select', options: ['Physical', 'E-reader', 'Audiobook'] },
       ]);
+      detailsSection.style.cssText = 'display:none;padding-top:.6rem;margin-top:.5rem;border-top:1px solid var(--border)';
+      detailsSection.querySelectorAll('.page-input').forEach(el => el.style.background = 'var(--bg)');
+
+      const bookInfoWrap = document.createElement('div');
+      bookInfoWrap.style.cssText = 'margin-top:.75rem;padding:.5rem .625rem;background:var(--bg-alt);border-radius:var(--radius-sm);border:1px solid var(--border);overflow:hidden';
+
+      const bookInfoBtn = document.createElement('button');
+      bookInfoBtn.style.cssText = 'font-size:.75rem;font-weight:600;width:calc(100% + 1.25rem);text-align:left;background:none;border:none;display:flex;align-items:center;padding:.5rem .625rem;margin:-.5rem -.625rem;cursor:pointer;color:var(--text-muted);letter-spacing:.02em;text-transform:uppercase';
+      bookInfoBtn.textContent = 'Book info ▾';
+      bookInfoBtn.addEventListener('click', () => {
+        const open = detailsSection.style.display === 'none';
+        detailsSection.style.display = open ? '' : 'none';
+        bookInfoBtn.textContent = `Book info ${open ? '▴' : '▾'}`;
+      });
+
+      bookInfoWrap.appendChild(bookInfoBtn);
+      bookInfoWrap.appendChild(detailsSection);
+      card.appendChild(bookInfoWrap);
 
       return card;
     }
