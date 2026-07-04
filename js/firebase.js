@@ -23,7 +23,9 @@ import {
   getCountFromServer,
   query,
   orderBy,
-  where
+  where,
+  limit,
+  startAfter
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -506,14 +508,18 @@ export async function removeActivityEvent(uid, activityId, gbid, dateField) {
   }
 }
 
-export async function getFeed(currentUid, followingUids) {
+export async function getFeed(currentUid, followingUids, cursor = null, pageSize = 20) {
   const uids = [...new Set([currentUid, ...followingUids])];
-  if (!uids.length) return [];
-  // 'in' supports up to 30 values; slice just in case
-  const q    = query(collection(db, 'activity'), where('uid', 'in', uids.slice(0, 30)));
-  const snap = await getDocs(q);
-  return snap.docs
-    .map(d => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
-    .slice(0, 50);
+  if (!uids.length) return { events: [], lastDoc: null };
+  const constraints = [
+    where('uid', 'in', uids.slice(0, 30)),
+    orderBy('timestamp', 'desc'),
+    limit(pageSize),
+  ];
+  if (cursor) constraints.push(startAfter(cursor));
+  const snap = await getDocs(query(collection(db, 'activity'), ...constraints));
+  return {
+    events: snap.docs.map(d => ({ id: d.id, ...d.data() })),
+    lastDoc: snap.docs[snap.docs.length - 1] ?? null,
+  };
 }

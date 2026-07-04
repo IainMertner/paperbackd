@@ -165,7 +165,7 @@
       const initial    = (username?.[0] || '?').toUpperCase();
       const avatarUrl  = avatarMap[event.uid];
       const avatarContent = avatarUrl
-        ? `<img src="${esc(avatarUrl)}" alt="">`
+        ? `<img src="${esc(avatarUrl)}" alt="" loading="lazy">`
         : esc(initial);
       const borderColor = borderColorMap[event.uid];
       const borderStyle = borderColor ? `border-color:${borderColor};` : '';
@@ -185,7 +185,7 @@
         ? `<div style="margin-top:.2rem;display:flex;align-items:center;gap:.5rem">${renderStars(event.rating)}${reviewBtn}</div>`
         : '';
       const coverThumb = event.coverUrl && event.gbid
-        ? `<a href="book/?gbid=${esc(event.gbid)}" style="position:absolute;bottom:-4px;right:-7px;z-index:1;display:block"><img src="${esc(event.coverUrl)}" alt="" style="width:22px;border-radius:2px;display:block;box-shadow:0 1px 4px rgba(0,0,0,.4)"></a>`
+        ? `<a href="book/?gbid=${esc(event.gbid)}" style="position:absolute;bottom:-4px;right:-7px;z-index:1;display:block"><img src="${esc(event.coverUrl)}" alt="" loading="lazy" style="width:22px;border-radius:2px;display:block;box-shadow:0 1px 4px rgba(0,0,0,.4)"></a>`
         : '';
       card.innerHTML = `<div class="friend-item">
         <div style="position:relative;flex-shrink:0;width:36px;height:36px">
@@ -255,39 +255,61 @@
         borderColorMap[f.uid] = f.avatarBorderColor || null;
         usernameMap[f.uid]    = f.username || null;
       });
-      const feed          = (await getFeed(user.uid, followingUids))
-        .filter(e => e.uid === user.uid || !mutedUids.includes(e.uid));
 
-      // Backfill coverUrl for old entries that predate storing it in activity
-      const coverless = feed.filter(e => !e.coverUrl && e.gbid);
-      if (coverless.length) {
-        await Promise.all(coverless.map(async e => {
-          const book = await getBookByGbid(e.uid, e.gbid);
-          if (book?.coverUrl) e.coverUrl = book.coverUrl;
-        }));
+      let lastDoc = null;
+      let lastDay = null;
+      let loading = false;
+
+      const sentinel = document.createElement('div');
+      sentinel.style.cssText = 'height:1px';
+
+      async function loadPage() {
+        if (loading) return;
+        loading = true;
+        const { events, lastDoc: newCursor } = await getFeed(user.uid, followingUids, lastDoc);
+        const visible = events.filter(e => e.uid === user.uid || !mutedUids.includes(e.uid));
+
+        // Backfill coverUrl for old entries that predate storing it in activity
+        const coverless = visible.filter(e => !e.coverUrl && e.gbid);
+        if (coverless.length) {
+          await Promise.all(coverless.map(async e => {
+            const book = await getBookByGbid(e.uid, e.gbid);
+            if (book?.coverUrl) e.coverUrl = book.coverUrl;
+          }));
+        }
+
+        if (visible.length === 0 && !lastDoc) {
+          const p = document.createElement('p');
+          p.style.cssText = 'color:var(--text-muted);font-size:.9rem;margin-top:.25rem';
+          p.textContent   = followingUids.length === 0
+            ? 'Follow some readers to see their activity here.'
+            : 'No activity yet.';
+          main.appendChild(p);
+        } else {
+          main.removeChild(sentinel);
+          visible.forEach(e => {
+            const label = dayLabel(e.timestamp);
+            if (label !== lastDay) {
+              lastDay = label;
+              const div = document.createElement('div');
+              div.className = 'feed-day-divider';
+              div.textContent = label || '';
+              main.appendChild(div);
+            }
+            main.appendChild(renderEvent(e));
+          });
+          lastDoc = newCursor;
+          if (newCursor) main.appendChild(sentinel);
+        }
+        loading = false;
       }
 
-      if (feed.length === 0) {
-        const p = document.createElement('p');
-        p.style.cssText = 'color:var(--text-muted);font-size:.9rem;margin-top:.25rem';
-        p.textContent   = followingUids.length === 0
-          ? 'Follow some readers to see their activity here.'
-          : 'No activity yet.';
-        main.appendChild(p);
-      } else {
-        let lastDay = null;
-        feed.forEach(e => {
-          const label = dayLabel(e.timestamp);
-          if (label !== lastDay) {
-            lastDay = label;
-            const div = document.createElement('div');
-            div.className = 'feed-day-divider';
-            div.textContent = label || '';
-            main.appendChild(div);
-          }
-          main.appendChild(renderEvent(e));
-        });
-      }
+      main.appendChild(sentinel);
+      const observer = new IntersectionObserver(entries => {
+        if (entries[0].isIntersecting) loadPage();
+      }, { rootMargin: '200px' });
+      observer.observe(sentinel);
+
     } finally {
       document.body.classList.remove('auth-loading');
     }
