@@ -68,6 +68,7 @@
 }
 
 /* ── Base ──────────────────────────────────────────────────── */
+html { scrollbar-gutter: stable; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
@@ -917,7 +918,8 @@ a { color: inherit; }
 .friend-name { font-size: 0.9rem; font-weight: 500; }
 
 /* ── Auth (login / register) ───────────────────────────────── */
-body.auth-loading { visibility: hidden; animation: auth-reveal 0s 8s forwards; }
+body.auth-loading .page-content,
+body.auth-loading .mobile-nav { visibility: hidden; animation: auth-reveal 0s 8s forwards; }
 @keyframes auth-reveal { to { visibility: visible; } }
 
 .auth-page {

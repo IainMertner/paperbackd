@@ -1,4 +1,4 @@
-const CACHE = 'paperbackd-v2';
+const CACHE = 'paperbackd-v3';
 
 // Firebase API hosts — never intercept these
 const PASS_THROUGH = [
@@ -10,8 +10,10 @@ const PASS_THROUGH = [
 
 // HTML shells to pre-cache on install
 const PRECACHE = [
-  '/',
-  '/index.html',
+  '/library/',
+  '/library/index.html',
+  '/feed/',
+  '/feed/index.html',
   '/library/',
   '/library/index.html',
   '/login/',

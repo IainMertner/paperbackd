@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -8,7 +8,7 @@
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Activity - paperbackd</title>
+  <title>Feed - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
   <script>
     (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
@@ -20,7 +20,7 @@
     <div class="header-inner">
       <a class="logo" href="/library/">paperbackd</a>
       <nav class="desktop-nav">
-        <a href="../feed/" data-nav="feed">Feed</a>
+        <a href="./"           data-nav="feed">Feed</a>
         <a href="../search/"   data-nav="search">Search</a>
         <a href="../library/"  data-nav="library">Library</a>
         <a href="../profile/"  data-nav="profile">Profile</a>
@@ -31,12 +31,12 @@
   </header>
 
   <main class="page-content">
-    <a class="back-link" id="back-link" href="../profile/">← Back</a>
-    <div id="feed-container"></div>
+
+
   </main>
 
   <nav class="mobile-nav">
-    <a class="mobile-nav-item" href="../feed/" data-nav="feed">
+    <a class="mobile-nav-item" href="./" data-nav="feed">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
       </svg>
@@ -76,13 +76,10 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getProfileByUsername, getFeed, getBookByGbid } from '../js/firebase.js';
+    import { getFollowing, getFeed, getProfile, getBookByGbid, removeActivityEvent } from '../js/firebase.js';
 
-    (async () => {
     const { user } = await requireAuth();
-    const params  = new URLSearchParams(location.search);
-    const targetU = params.get('u')?.toLowerCase();
-    const main    = document.getElementById('feed-container');
+    const main = document.querySelector('main.page-content');
 
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -128,11 +125,15 @@
       return d.toLocaleDateString('en-GB', opts);
     }
 
+    let avatarMap = {};
+    let borderColorMap = {};
+    let usernameMap = {};
+
     function showReviewModal(reviewText, bookTitle, username, rating) {
       const overlay = document.createElement('div');
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;box-sizing:border-box';
       const modal = document.createElement('div');
-      modal.style.cssText = 'background:var(--bg-card);border-radius:var(--radius);padding:1.25rem;max-width:480px;width:100%;max-height:80vh;overflow-y:auto;position:relative;box-shadow:0 8px 32px rgba(0,0,0,.3)';
+      modal.style.cssText = 'background:var(--bg-card);border-radius:var(--radius);padding:1.25rem 1.25rem 1.25rem 1.25rem;max-width:480px;width:100%;max-height:80vh;overflow-y:auto;position:relative;box-shadow:0 8px 32px rgba(0,0,0,.3)';
       const closeBtn = document.createElement('button');
       closeBtn.textContent = '×';
       closeBtn.style.cssText = 'position:absolute;top:.6rem;right:.75rem;background:none;border:none;font-size:1.4rem;line-height:1;cursor:pointer;color:var(--text-muted);padding:0';
@@ -141,7 +142,6 @@
       title.style.cssText = 'font-weight:700;font-size:.95rem;margin-bottom:.15rem;padding-right:1.5rem';
       title.textContent = bookTitle;
       const byline = document.createElement('div');
-      byline.style.cssText = 'font-size:.78rem;color:var(--text-muted);margin-bottom:.75rem';
       byline.style.cssText = 'font-size:.78rem;color:var(--text-muted);margin-bottom:.5rem';
       byline.textContent = `${username}'s review`;
       const starsRow = document.createElement('div');
@@ -156,21 +156,24 @@
       document.body.appendChild(overlay);
     }
 
-    function renderEvent(event, avatarUrl, borderColor) {
-      const card = document.createElement('div');
+    function renderEvent(event) {
+      const card   = document.createElement('div');
       card.className = 'card';
-      const initial = (event.username?.[0] || '?').toUpperCase();
+      const username   = usernameMap[event.uid] || event.username;
+      const initial    = (username?.[0] || '?').toUpperCase();
+      const avatarUrl  = avatarMap[event.uid];
       const avatarContent = avatarUrl
-        ? `<img src="${esc(avatarUrl)}" alt="">`
+        ? `<img src="${esc(avatarUrl)}" alt="" loading="lazy">`
         : esc(initial);
+      const borderColor = borderColorMap[event.uid];
       const borderStyle = borderColor ? `border-color:${borderColor};` : '';
       const bookLink = event.gbid
         ? `<a href="../book/?gbid=${esc(event.gbid)}" style="font-style:italic;color:inherit;text-decoration:none">${esc(event.bookTitle)}</a>`
         : `<em>${esc(event.bookTitle)}</em>`;
-      const action = event.type === 'started'
+      const action  = event.type === 'started'
         ? `started reading ${bookLink}`
         : `finished ${bookLink}`;
-      const author = event.bookAuthor
+      const author  = event.bookAuthor
         ? `<span style="color:var(--text-muted)"> by ${esc(event.bookAuthor)}</span>`
         : '';
       const reviewBtn = event.hasReview && event.gbid
@@ -180,15 +183,15 @@
         ? `<div style="margin-top:.2rem;display:flex;align-items:center;gap:.5rem">${renderStars(event.rating)}${reviewBtn}</div>`
         : '';
       const coverThumb = event.coverUrl && event.gbid
-        ? `<a href="../book/?gbid=${esc(event.gbid)}" style="position:absolute;bottom:-4px;right:-7px;z-index:1;display:block"><img src="${esc(event.coverUrl)}" alt="" style="width:22px;border-radius:2px;display:block;box-shadow:0 1px 4px rgba(0,0,0,.4)"></a>`
+        ? `<a href="../book/?gbid=${esc(event.gbid)}" style="position:absolute;bottom:-4px;right:-7px;z-index:1;display:block"><img src="${esc(event.coverUrl)}" alt="" loading="lazy" style="width:22px;border-radius:2px;display:block;box-shadow:0 1px 4px rgba(0,0,0,.4)"></a>`
         : '';
       card.innerHTML = `<div class="friend-item">
         <div style="position:relative;flex-shrink:0;width:36px;height:36px">
-          <a class="friend-avatar" href="../profile/?u=${esc(event.username)}" style="text-decoration:none;color:inherit;${borderStyle}">${avatarContent}</a>
+          <a class="friend-avatar" href="../profile/?u=${esc(username)}" style="text-decoration:none;color:inherit;${borderStyle}">${avatarContent}</a>
           ${coverThumb}
         </div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:.9rem;line-height:1.4"><a href="../profile/?u=${esc(event.username)}" style="font-weight:600;color:inherit;text-decoration:none">${esc(event.username)}</a> ${action}${author}</div>
+          <div style="font-size:.9rem;line-height:1.4"><a href="../profile/?u=${esc(username)}" style="font-weight:600;color:inherit;text-decoration:none">${esc(username)}</a> ${action}${author}</div>
           ${ratingRow}
           <div class="book-finished-meta">${timeAgo(event.timestamp)}</div>
         </div>
@@ -200,67 +203,114 @@
           btn.disabled = true;
           try {
             const book = await getBookByGbid(event.uid, event.gbid);
-            if (book?.review) showReviewModal(book.review, event.bookTitle, event.username, event.rating);
+            if (book?.review) showReviewModal(book.review, event.bookTitle, username, event.rating);
           } finally {
             btn.textContent = 'Read review';
             btn.disabled = false;
           }
         });
       }
+
+      if (event.uid === user.uid) {
+        const dateField = event.type === 'started' ? 'addedAt' : 'finishedAt';
+        const dateLabel = event.type === 'started' ? 'start date' : 'finished date';
+        const dateStr   = event.timestamp?.seconds
+          ? new Date(event.timestamp.seconds * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+          : 'unknown date';
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.textContent = '×';
+        removeBtn.style.cssText = 'position:absolute;top:.35rem;right:.5rem;background:none;border:none;font-size:1.1rem;line-height:1;cursor:pointer;color:var(--text-muted);padding:.1rem .3rem;opacity:.55';
+        removeBtn.title = 'Remove from feed';
+        removeBtn.addEventListener('click', async () => {
+          if (!confirm(`Remove this event from your feed?\n\nThis will also clear the ${dateLabel} (${dateStr}) from "${event.bookTitle}" in your library.`)) return;
+          removeBtn.disabled = true;
+          try {
+            await removeActivityEvent(user.uid, event.id, event.gbid, dateField);
+            card.remove();
+          } catch (e) {
+            console.error(e);
+            removeBtn.disabled = false;
+          }
+        });
+        card.style.position = 'relative';
+        card.appendChild(removeBtn);
+      }
+
       return card;
     }
 
     try {
-      if (!targetU) {
-        main.innerHTML = '<p style="color:var(--text-muted)">No user specified.</p>';
-        document.body.classList.remove('auth-loading');
-        return;
+      const [following, myProfile] = await Promise.all([getFollowing(user.uid), getProfile(user.uid)]);
+      const followingUids = following.map(f => f.uid);
+      const mutedUids     = myProfile?.muted || [];
+      avatarMap[user.uid]      = myProfile?.avatarUrl || null;
+      borderColorMap[user.uid] = myProfile?.avatarBorderColor || null;
+      usernameMap[user.uid]    = myProfile?.username || null;
+      following.forEach(f => {
+        avatarMap[f.uid]      = f.avatarUrl || null;
+        borderColorMap[f.uid] = f.avatarBorderColor || null;
+        usernameMap[f.uid]    = f.username || null;
+      });
+
+      let lastDoc = null;
+      let lastDay = null;
+      let loading = false;
+
+      const sentinel = document.createElement('div');
+      sentinel.style.cssText = 'height:1px';
+
+      async function loadPage() {
+        if (loading) return;
+        loading = true;
+        const { events, lastDoc: newCursor } = await getFeed(user.uid, followingUids, lastDoc);
+        const visible = events.filter(e => e.uid === user.uid || !mutedUids.includes(e.uid));
+
+        // Backfill coverUrl for old entries that predate storing it in activity
+        const coverless = visible.filter(e => !e.coverUrl && e.gbid);
+        if (coverless.length) {
+          await Promise.all(coverless.map(async e => {
+            const book = await getBookByGbid(e.uid, e.gbid);
+            if (book?.coverUrl) e.coverUrl = book.coverUrl;
+          }));
+        }
+
+        if (visible.length === 0 && !lastDoc) {
+          const p = document.createElement('p');
+          p.style.cssText = 'color:var(--text-muted);font-size:.9rem;margin-top:.25rem';
+          p.textContent   = followingUids.length === 0
+            ? 'Follow some readers to see their activity here.'
+            : 'No activity yet.';
+          main.appendChild(p);
+        } else {
+          main.removeChild(sentinel);
+          visible.forEach(e => {
+            const label = dayLabel(e.timestamp);
+            if (label !== lastDay) {
+              lastDay = label;
+              const div = document.createElement('div');
+              div.className = 'feed-day-divider';
+              div.textContent = label || '';
+              main.appendChild(div);
+            }
+            main.appendChild(renderEvent(e));
+          });
+          lastDoc = newCursor;
+          if (newCursor) main.appendChild(sentinel);
+        }
+        loading = false;
       }
 
-      const target = await getProfileByUsername(targetU);
-      if (!target) {
-        main.innerHTML = '<p style="color:var(--text-muted)">User not found.</p>';
-        document.body.classList.remove('auth-loading');
-        return;
-      }
+      main.appendChild(sentinel);
+      const observer = new IntersectionObserver(entries => {
+        if (entries[0].isIntersecting) loadPage();
+      }, { rootMargin: '200px' });
+      observer.observe(sentinel);
 
-      document.title = `${target.username}'s Activity - paperbackd`;
-      document.getElementById('back-link').href = `../profile/?u=${encodeURIComponent(target.username)}`;
-
-      const avatarUrl   = target.avatarUrl || null;
-      const borderColor = target.avatarBorderColor || null;
-
-      const feed = await getFeed(target.uid, []);
-
-      // Backfill coverUrl for old entries
-      const coverless = feed.filter(e => !e.coverUrl && e.gbid);
-      if (coverless.length) {
-        await Promise.all(coverless.map(async e => {
-          const book = await getBookByGbid(e.uid, e.gbid);
-          if (book?.coverUrl) e.coverUrl = book.coverUrl;
-        }));
-      }
-
-      if (!feed.length) {
-        main.innerHTML = '<p style="color:var(--text-muted);font-size:.9rem">No activity yet.</p>';
-      } else {
-        let lastDay = null;
-        feed.forEach(e => {
-          const label = dayLabel(e.timestamp);
-          if (label !== lastDay) {
-            lastDay = label;
-            const div = document.createElement('div');
-            div.className = 'feed-day-divider';
-            div.textContent = label || '';
-            main.appendChild(div);
-          }
-          main.appendChild(renderEvent(e, avatarUrl, borderColor));
-        });
-      }
     } finally {
       document.body.classList.remove('auth-loading');
     }
-    })();
   </script>
   <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
 </body>
