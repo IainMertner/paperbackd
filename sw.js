@@ -14,8 +14,6 @@ const PRECACHE = [
   '/library/index.html',
   '/feed/',
   '/feed/index.html',
-  '/library/',
-  '/library/index.html',
   '/login/',
   '/login/index.html',
   '/settings/',

@@ -16,6 +16,7 @@ import {
   deleteField,
   arrayUnion,
   arrayRemove,
+  Timestamp,
   serverTimestamp,
   collection,
   addDoc,
@@ -242,6 +243,14 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, co
   if (rating != null) data.rating         = rating;
   if (review)         data.review         = review;
   if (releaseYear)    data.releaseYear    = releaseYear;
+  data.reads = [{
+    startedAt:           addedAt instanceof Date ? Timestamp.fromDate(addedAt) : (addedAt?.toDate ? Timestamp.fromDate(addedAt.toDate()) : null),
+    startedAtPrecision:  addedAt ? (addedAtPrecision || null) : null,
+    finishedAt:          finishedAt instanceof Date ? Timestamp.fromDate(finishedAt) : Timestamp.fromDate(new Date()),
+    finishedAtPrecision: finishedAt ? (finishedAtPrecision || null) : null,
+    rating: rating ?? null,
+    review: review || null,
+  }];
   const bookRef = await addDoc(collection(db, 'users', uid, 'books'), data);
   if (finishedAt && finishedAtPrecision === 'day') {
     await addDoc(collection(db, 'activity'), {
@@ -293,8 +302,19 @@ export function updateBookProgress(uid, bookId, currentPage) {
   return updateDoc(doc(db, 'users', uid, 'books', bookId), { currentPage });
 }
 
-export function finishBook(uid, bookId, { title, author, gbid, rating, review, coverUrl } = {}, username) {
-  const bookUpdate = { status: 'finished', finishedAt: serverTimestamp(), finishedAtPrecision: 'day' };
+export function finishBook(uid, bookId, { title, author, gbid, rating, review, language, format, coverUrl, startedAt, startedAtPrecision, finishedAt, finishedAtPrecision } = {}, username) {
+  const toTS = d => d instanceof Date ? Timestamp.fromDate(d) : (d?.toDate ? Timestamp.fromDate(d.toDate()) : null);
+  const newRead = {
+    startedAt:           toTS(startedAt) || null,
+    startedAtPrecision:  startedAt  ? (startedAtPrecision  || null) : null,
+    finishedAt:          toTS(finishedAt) || Timestamp.fromDate(new Date()),
+    finishedAtPrecision: finishedAt ? (finishedAtPrecision || null) : 'day',
+    language: language || null,
+    format:   format   || null,
+    rating: rating ?? null,
+    review: review || null,
+  };
+  const bookUpdate = { status: 'finished', finishedAt: serverTimestamp(), finishedAtPrecision: 'day', reads: arrayUnion(newRead) };
   if (rating != null) bookUpdate.rating = rating;
   if (review)         bookUpdate.review = review;
   return Promise.all([
@@ -361,6 +381,28 @@ export function updateBookMeta(uid, bookId, updates) {
   return updateDoc(doc(db, 'users', uid, 'books', bookId), updates);
 }
 
+export function updateBookReads(uid, bookId, reads) {
+  const toTS = ts => {
+    if (!ts) return null;
+    if (ts instanceof Timestamp) return ts;
+    if (ts?.toDate) return Timestamp.fromDate(ts.toDate());
+    return null;
+  };
+  const cleaned = reads
+    .map(r => ({
+      startedAt:           toTS(r.startedAt),
+      startedAtPrecision:  r.startedAtPrecision  || null,
+      finishedAt:          toTS(r.finishedAt),
+      finishedAtPrecision: r.finishedAtPrecision || null,
+      language: r.language || null,
+      format:   r.format   || null,
+      rating: r.rating ?? null,
+      review: r.review || null,
+    }))
+    .sort((a, b) => (a.finishedAt?.seconds ?? 0) - (b.finishedAt?.seconds ?? 0));
+  return updateDoc(doc(db, 'users', uid, 'books', bookId), { reads: cleaned });
+}
+
 export function updateBookRating(uid, bookId, { rating, review }) {
   return updateDoc(doc(db, 'users', uid, 'books', bookId), {
     rating: rating != null ? rating : deleteField(),
@@ -412,6 +454,15 @@ async function deleteActivityForBook(uid, bookTitle, type) {
       .filter(d => d.data().bookTitle === bookTitle && (type == null || d.data().type === type))
       .map(d => deleteDoc(d.ref))
   );
+}
+
+export async function clearLibrary(uid) {
+  const booksSnap = await getDocs(collection(db, 'users', uid, 'books'));
+  const activitySnap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
+  await Promise.all([
+    ...booksSnap.docs.map(d => deleteDoc(d.ref)),
+    ...activitySnap.docs.map(d => deleteDoc(d.ref)),
+  ]);
 }
 
 export async function deleteBook(uid, bookId, { title }) {

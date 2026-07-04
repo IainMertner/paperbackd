@@ -108,6 +108,10 @@
       <div class="settings-group-label">Danger zone</div>
       <div class="settings-list">
         <div class="settings-row">
+          <span class="settings-row-label">Clear library</span>
+          <button class="btn-danger" id="clear-library-btn">Clear</button>
+        </div>
+        <div class="settings-row">
           <span class="settings-row-label">Delete account</span>
           <button class="btn-danger">Delete</button>
         </div>
@@ -157,7 +161,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, changeUsername } from '../js/firebase.js';
+    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, changeUsername, clearLibrary } from '../js/firebase.js';
 
     let currentUser = null;
 
@@ -536,6 +540,23 @@
         repairStatus.style.color = 'var(--danger, #d44)';
       } finally {
         repairBtn.disabled = false;
+      }
+    });
+
+    // ── Clear library ─────────────────────────────────────────────────────────
+    document.getElementById('clear-library-btn').addEventListener('click', async () => {
+      if (!currentUser) return;
+      if (!confirm('This will permanently delete every book and activity event from your library. Are you sure?')) return;
+      const btn = document.getElementById('clear-library-btn');
+      btn.disabled = true;
+      btn.textContent = 'Clearing…';
+      try {
+        await clearLibrary(currentUser.uid);
+        btn.textContent = 'Cleared';
+      } catch (err) {
+        console.error(err);
+        btn.textContent = 'Failed';
+        btn.disabled = false;
       }
     });
 

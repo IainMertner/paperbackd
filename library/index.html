@@ -125,7 +125,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, getLists } from '../js/firebase.js';
+    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists } from '../js/firebase.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -143,12 +143,13 @@
       el.dataset.gbid     = book.gbid || '';
       const author = book.author ? `<span style="color:var(--text-muted);font-weight:400"> · ${esc(book.author)}</span>` : '';
       let rightHtml = '';
-      if (book.rating) {
+      const listRating = getDisplayRating(book);
+      if (listRating) {
         let s = '';
         for (let i = 1; i <= 5; i++) {
-          if (book.rating >= i)          s += '<span class="star-char full">★</span>';
-          else if (book.rating >= i-0.5) s += '<span class="star-char half">★</span>';
-          else                           s += '<span class="star-char">★</span>';
+          if (listRating >= i)          s += '<span class="star-char full">★</span>';
+          else if (listRating >= i-0.5) s += '<span class="star-char half">★</span>';
+          else                          s += '<span class="star-char">★</span>';
         }
         rightHtml = `<span style="flex-shrink:0;margin-left:.5rem;display:inline-flex;gap:.05rem;line-height:1">${s}</span>`;
       } else if (book.status === 'reading' && book.totalPages) {
@@ -235,6 +236,7 @@
       });
 
       wrap.getValue = () => value || null;
+      wrap.setValue = v => update(v || 0);
       update(value);
       return wrap;
     }
@@ -298,10 +300,11 @@
       }
       const info = document.createElement('div');
       info.className = 'library-cover-info';
-      if (book.rating) {
+      const coverRating = getDisplayRating(book);
+      if (coverRating) {
         const badge = document.createElement('div');
         badge.className = 'library-cover-rating';
-        badge.innerHTML = cellRatingHtml(book.rating);
+        badge.innerHTML = cellRatingHtml(coverRating);
         info.appendChild(badge);
       }
       const titleEl = document.createElement('div');
@@ -313,15 +316,28 @@
     }
 
     function createBookModal(cardEl) {
+      const scrollbarW = window.innerWidth - document.documentElement.clientWidth;
+      document.body.style.overflow = 'hidden';
+      document.body.style.paddingRight = scrollbarW + 'px';
+
       const overlay = document.createElement('div');
       overlay.className = 'book-modal-overlay';
       const inner = document.createElement('div');
       inner.className = 'book-modal-inner';
       inner.appendChild(cardEl);
       overlay.appendChild(inner);
-      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+      const nativeRemove = overlay.remove.bind(overlay);
+      function dismiss() {
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+        nativeRemove();
+      }
+      overlay.remove = dismiss;
+
+      overlay.addEventListener('click', e => { if (e.target === overlay) dismiss(); });
       document.addEventListener('keydown', function onEsc(e) {
-        if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', onEsc); }
+        if (e.key === 'Escape') { dismiss(); document.removeEventListener('keydown', onEsc); }
       });
       document.body.appendChild(overlay);
       return overlay;
@@ -652,7 +668,7 @@
 
     const COUNTRIES = ['Afghanistan','Albania','Algeria','Andorra','Angola','Antigua and Barbuda','Argentina','Armenia','Australia','Austria','Azerbaijan','Bahamas','Bahrain','Bangladesh','Barbados','Belarus','Belgium','Belize','Benin','Bhutan','Bolivia','Bosnia and Herzegovina','Botswana','Brazil','Brunei','Bulgaria','Burkina Faso','Burundi','Cabo Verde','Cambodia','Cameroon','Canada','Central African Republic','Chad','Chile','China','Colombia','Comoros','Congo','Costa Rica','Croatia','Cuba','Cyprus','Czech Republic','Denmark','Djibouti','Dominica','Dominican Republic','Ecuador','Egypt','El Salvador','Equatorial Guinea','Eritrea','Estonia','Eswatini','Ethiopia','Fiji','Finland','France','Gabon','Gambia','Georgia','Germany','Ghana','Greece','Grenada','Guatemala','Guinea','Guinea-Bissau','Guyana','Haiti','Honduras','Hungary','Iceland','India','Indonesia','Iran','Iraq','Ireland','Israel','Italy','Jamaica','Japan','Jordan','Kazakhstan','Kenya','Kiribati','Kuwait','Kyrgyzstan','Laos','Latvia','Lebanon','Lesotho','Liberia','Libya','Liechtenstein','Lithuania','Luxembourg','Madagascar','Malawi','Malaysia','Maldives','Mali','Malta','Marshall Islands','Mauritania','Mauritius','Mexico','Micronesia','Moldova','Monaco','Mongolia','Montenegro','Morocco','Mozambique','Myanmar','Namibia','Nauru','Nepal','Netherlands','New Zealand','Nicaragua','Niger','Nigeria','North Korea','North Macedonia','Norway','Oman','Pakistan','Palau','Palestine','Panama','Papua New Guinea','Paraguay','Peru','Philippines','Poland','Portugal','Qatar','Romania','Russia','Rwanda','Saint Kitts and Nevis','Saint Lucia','Saint Vincent and the Grenadines','Samoa','San Marino','São Tomé and Príncipe','Saudi Arabia','Senegal','Serbia','Seychelles','Sierra Leone','Singapore','Slovakia','Slovenia','Solomon Islands','Somalia','South Africa','South Korea','South Sudan','Spain','Sri Lanka','Sudan','Suriname','Sweden','Switzerland','Syria','Taiwan','Tajikistan','Tanzania','Thailand','Timor-Leste','Togo','Tonga','Trinidad and Tobago','Tunisia','Turkey','Turkmenistan','Tuvalu','Uganda','Ukraine','United Arab Emirates','United Kingdom','United States','Uruguay','Uzbekistan','Vanuatu','Vatican City','Venezuela','Vietnam','Yemen','Zambia','Zimbabwe'];
 
-    function addDetailsEditor(card, book, coverCell, fieldDefs, onSave) {
+    function addDetailsEditor(card, book, coverCell, fieldDefs) {
       const section = document.createElement('div');
       section.style.cssText = 'border-top:1px solid var(--border);padding-top:.625rem;margin-top:.625rem';
 
@@ -675,7 +691,7 @@
         if (type === 'select') {
           control = document.createElement('select');
           control.className = 'page-input';
-          control.style.cssText = 'flex:1;font-size:.8rem';
+          control.style.cssText = 'flex:1;font-size:.8rem;text-align:left';
           const blank = document.createElement('option');
           blank.value = ''; blank.textContent = '—';
           control.appendChild(blank);
@@ -688,9 +704,9 @@
         } else {
           control = document.createElement('input');
           control.type = type;
-          control.value = book[key] ?? '';
+          control.value = book[key] ?? (key === 'language' ? 'English' : '');
           control.className = 'page-input';
-          control.style.cssText = 'flex:1;font-size:.8rem';
+          control.style.cssText = 'flex:1;font-size:.8rem;text-align:left';
           if (type === 'number') control.min = '0';
           if (options) {
             const dlId = `dl-${book.id}-${key}`;
@@ -706,49 +722,54 @@
         section.appendChild(row);
       });
 
-      const saveBtn = document.createElement('button');
-      saveBtn.type = 'button';
-      saveBtn.className = onSave ? 'join-club-btn' : 'btn-update';
-      saveBtn.style.cssText = 'width:100%;margin-top:.25rem';
-      saveBtn.textContent = 'Save';
-      section.appendChild(saveBtn);
-
-      saveBtn.addEventListener('click', async () => {
-        saveBtn.disabled = true;
+      async function doSaveBookMeta() {
         const updates = {};
         fieldDefs.forEach(({ key, type }) => {
           const raw = inputs[key].value.trim();
           const val = type === 'number' ? (parseInt(raw) || null) : (raw || null);
           if (val !== (book[key] ?? null)) updates[key] = val;
         });
-        if (Object.keys(updates).length) {
-          await updateBookMeta(user.uid, book.id, updates);
-          Object.assign(book, updates);
-          if (updates.title) {
-            const titleEl = card.querySelector('.book-title');
-            if (titleEl) titleEl.textContent = updates.title;
-            if (coverCell) {
-              coverCell.dataset.title = updates.title.toLowerCase();
-              const cellTitle = coverCell.querySelector('.library-cover-title');
-              if (cellTitle) cellTitle.textContent = updates.title;
-            }
+        if (!Object.keys(updates).length) return;
+        const siblings = book.gbid ? allBooks.filter(b => b.id !== book.id && b.gbid === book.gbid) : [];
+        await Promise.all([
+          updateBookMeta(user.uid, book.id, updates),
+          ...siblings.map(sib => updateBookMeta(user.uid, sib.id, updates)),
+        ]);
+        [book, ...siblings].forEach(b => {
+          Object.assign(b, updates);
+          const el = readingList.querySelector(`[data-id="${b.id}"]`) || finishedList.querySelector(`[data-id="${b.id}"]`);
+          if (el) {
+            if (updates.title    != null) { el.dataset.title    = updates.title.toLowerCase(); }
+            if ('author'   in updates)    { el.dataset.author   = (updates.author   || '').toLowerCase(); }
+            if ('country'  in updates)    { el.dataset.country  = (updates.country  || '').toLowerCase(); }
+            const titleEl  = el.querySelector('.book-title');
+            const authorEl = el.querySelector('.book-author');
+            if (titleEl  && updates.title  != null) titleEl.textContent  = updates.title;
+            if (authorEl && 'author' in updates)    authorEl.textContent = updates.author || '';
           }
-          if (Object.prototype.hasOwnProperty.call(updates, 'author')) {
-            const authorEl = card.querySelector('.book-author');
-            if (authorEl) authorEl.textContent = updates.author || '';
-            if (coverCell) coverCell.dataset.author = (updates.author || '').toLowerCase();
+        });
+        if (updates.title) {
+          const titleEl = card.querySelector('.book-title');
+          if (titleEl) titleEl.textContent = updates.title;
+          if (coverCell) {
+            coverCell.dataset.title = updates.title.toLowerCase();
+            const cellTitle = coverCell.querySelector('.library-cover-title');
+            if (cellTitle) cellTitle.textContent = updates.title;
           }
         }
-        if (onSave) {
-          await onSave();
-        } else {
-          saveBtn.disabled = false;
-          saveBtn.textContent = '✓ Saved';
-          setTimeout(() => { saveBtn.textContent = 'Save'; }, 2000);
+        if (Object.prototype.hasOwnProperty.call(updates, 'author')) {
+          const authorEl = card.querySelector('.book-author');
+          if (authorEl) authorEl.textContent = updates.author || '';
+          if (coverCell) coverCell.dataset.author = (updates.author || '').toLowerCase();
         }
+      }
+
+      fieldDefs.forEach(({ key, type }) => {
+        inputs[key].addEventListener(type === 'select' ? 'change' : 'blur', doSaveBookMeta);
       });
 
       card.appendChild(section);
+      return section;
     }
 
     function renderReading(book, coverCell, closeModal) {
@@ -847,23 +868,55 @@
         actions.querySelector('.btn-do-finish').addEventListener('click', async () => {
           const rating = picker.getValue();
           const review = ta.value.trim() || null;
-          await finishBook(user.uid, book.id, { title: book.title, author: book.author, gbid: book.gbid, rating, review, coverUrl: book.coverUrl }, profile.username);
-          book.status     = 'finished';
-          book.finishedAt = { toDate: () => new Date() };
-          book.rating     = rating;
-          book.review     = review;
-          if (coverCell) coverCell.remove();
-          closeModal();
-          if (!readingList.querySelector('[data-title]')) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
-          document.getElementById('finished-empty')?.remove();
-          if (viewMode === 'list') {
-            const newRow = makeBookListRow(book);
-            newRow.addEventListener('click', () => { let ov; const c = renderFinished(book, newRow, () => ov?.remove()); ov = createBookModal(c); });
-            finishedList.prepend(newRow);
+          const newReadLocal = { startedAt: book.addedAt || null, finishedAt: { toDate: () => new Date() }, language: book.language || null, format: book.format || null, rating, review };
+
+          // Match by gbid first, then fall back to title for books added before gbid was tracked
+          const existingFinished =
+            (book.gbid  && allBooks.find(b => b.gbid  === book.gbid                              && b.id !== book.id && b.status === 'finished')) ||
+            (book.title && allBooks.find(b => b.title?.toLowerCase() === book.title?.toLowerCase() && b.id !== book.id && b.status === 'finished'));
+
+          if (existingFinished) {
+            await finishBook(user.uid, existingFinished.id, { title: existingFinished.title, author: existingFinished.author, gbid: existingFinished.gbid, rating, review, language: book.language, format: book.format, coverUrl: existingFinished.coverUrl }, profile.username);
+            await deleteBook(user.uid, book.id, { title: book.title });
+            existingFinished.rating = rating;
+            existingFinished.review = review;
+            existingFinished.reads  = (existingFinished.reads || []).concat([newReadLocal]);
+            if (coverCell) coverCell.remove();
+            finishedList.querySelector(`[data-gbid="${book.gbid}"]`)?.remove();
+            closeModal();
+            if (!readingList.querySelector('[data-title]')) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
+            document.getElementById('finished-empty')?.remove();
+            if (viewMode === 'list') {
+              const newRow = makeBookListRow(existingFinished);
+              newRow.addEventListener('click', () => { let ov; const c = renderFinished(existingFinished, newRow, () => ov?.remove()); ov = createBookModal(c); });
+              finishedList.prepend(newRow);
+            } else {
+              const newCell = makeBookCoverCell(existingFinished);
+              attachFinishedCell(newCell, existingFinished);
+              finishedList.prepend(newCell);
+            }
+            updateCounts();
           } else {
-            const newCell = makeBookCoverCell(book);
-            attachFinishedCell(newCell, book);
-            finishedList.prepend(newCell);
+            await finishBook(user.uid, book.id, { title: book.title, author: book.author, gbid: book.gbid, rating, review, language: book.language, format: book.format, coverUrl: book.coverUrl, startedAt: book.addedAt?.toDate?.() }, profile.username);
+            book.status     = 'finished';
+            book.finishedAt = { toDate: () => new Date() };
+            book.rating     = rating;
+            book.review     = review;
+            book.reads      = (book.reads || []).concat([newReadLocal]);
+            if (coverCell) coverCell.remove();
+            closeModal();
+            if (!readingList.querySelector('[data-title]')) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
+            document.getElementById('finished-empty')?.remove();
+            if (viewMode === 'list') {
+              const newRow = makeBookListRow(book);
+              newRow.addEventListener('click', () => { let ov; const c = renderFinished(book, newRow, () => ov?.remove()); ov = createBookModal(c); });
+              finishedList.prepend(newRow);
+            } else {
+              const newCell = makeBookCoverCell(book);
+              attachFinishedCell(newCell, book);
+              finishedList.prepend(newCell);
+            }
+            updateCounts();
           }
         });
       });
@@ -897,39 +950,178 @@
       const titleHtml = book.gbid
         ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
-      card.innerHTML = `<div class="book-entry">
-        ${bookCoverHtml(book)}
-        <div class="book-info">
-          ${titleHtml}
-          ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
-          <div class="book-date-range"></div>
-          <div class="book-rating-editor"></div>
+      card.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
+          <div style="flex:1;min-width:0">
+            ${titleHtml}
+            ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
+          </div>
+          <button class="btn-remove-x" aria-label="Remove" title="Remove">${TRASH_ICON}</button>
         </div>
-        <button class="btn-remove-x" aria-label="Remove" title="Remove">${TRASH_ICON}</button>
-      </div>`;
+        <div class="book-entry">
+          <div class="book-info">
+            <div class="book-date-range"></div>
+            <div class="book-rating-editor"></div>
+          </div>
+          ${bookCoverHtml(book)}
+        </div>`;
 
-      card.querySelector('.book-cover-wrap').addEventListener('click', () => openCoverPicker(book, card.querySelector('.book-cover-wrap'), coverCell));
+      const coverWrap = card.querySelector('.book-cover-wrap');
+      const coverImg  = coverWrap.querySelector('.book-cover, .book-cover-img');
+      if (coverImg) { coverImg.style.width = '72px'; coverImg.style.height = '108px'; }
+      coverWrap.addEventListener('click', () => openCoverPicker(book, coverWrap, coverCell));
 
+      // Reads array drives all per-read fields
+      const reads = getReads(book);
+      const tsVal = ts => ts?.seconds ?? (ts?.toDate ? ts.toDate().getTime() / 1000 : 0);
+      reads.sort((a, b) => tsVal(b.finishedAt) - tsVal(a.finishedAt));
+      let selectedReadIdx = 0;
+
+      // Per-read date pickers (replace static book-level date range)
       const rangeEl = card.querySelector('.book-date-range');
-      rangeEl.className = 'book-finished-meta book-date-range';
-      const sepSpan = document.createElement('span');
-      sepSpan.textContent = '–';
-      rangeEl.append(
-        makeDateEl(null, book.addedAt,    'addedAt',    book),
-        sepSpan,
-        makeDateEl(null, book.finishedAt, 'finishedAt', book)
-      );
+      rangeEl.className = 'book-date-range';
+      rangeEl.style.cssText = 'display:flex;flex-direction:column;gap:.2rem;margin:.2rem 0';
+
+      // Add language datalist once (reused by rebuilt rows)
+      const langDl = document.createElement('datalist');
+      langDl.id = `dl-lang-${book.id}`;
+      LANGUAGES.forEach(v => { const o = document.createElement('option'); o.value = v; langDl.appendChild(o); });
+      card.appendChild(langDl);
+
+      let startedPicker, finishedPicker, langInput, fmtSel;
+      function buildDatePickers(r) {
+        rangeEl.innerHTML = '';
+        function dateRow(labelText, ts, prec, getPicker) {
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;align-items:center;gap:.4rem';
+          const lbl = document.createElement('span');
+          lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+          lbl.textContent = labelText;
+
+          const picker = createPartialDatePicker(ts || null, prec || null);
+          picker.style.display = 'none';
+
+          const textEl = document.createElement('span');
+          textEl.style.cssText = 'font-size:.8rem;cursor:pointer;color:var(--text)';
+          textEl.textContent = (ts && prec) ? formatDateTs(ts, prec) : '—';
+
+          function collapseDateRow() {
+            const { date: d, precision: p } = picker.getDate();
+            textEl.textContent = d ? formatDateTs({ toDate: () => d }, p) : '—';
+            picker.style.display = 'none';
+            textEl.style.display = '';
+          }
+
+          textEl.addEventListener('click', () => {
+            textEl.style.display = 'none';
+            picker.style.display = '';
+            picker.querySelector('select, input')?.focus();
+            function onOutside(e) {
+              if (picker.contains(e.target)) return;
+              collapseDateRow();
+              document.removeEventListener('mousedown', onOutside);
+            }
+            document.addEventListener('mousedown', onOutside);
+          });
+          picker.addEventListener('focusout', e => {
+            if (picker.contains(e.relatedTarget)) return;
+            collapseDateRow();
+          });
+
+          getPicker(picker);
+          row.append(lbl, textEl, picker);
+          return row;
+        }
+
+        const sd = dateRow('Started',  r?.startedAt,  r?.startedAtPrecision,  p => startedPicker  = p);
+        const fd = dateRow('Finished', r?.finishedAt, r?.finishedAtPrecision, p => finishedPicker = p);
+
+        function labelRow(labelText) {
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;align-items:center;gap:.4rem';
+          const lbl = document.createElement('span');
+          lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+          lbl.textContent = labelText;
+          return { row, lbl };
+        }
+        function textToggleRow(labelText, displayVal, buildControl) {
+          const { row, lbl } = labelRow(labelText);
+          const textEl = document.createElement('span');
+          textEl.style.cssText = 'font-size:.8rem;cursor:pointer;color:var(--text)';
+          textEl.textContent = displayVal || '—';
+          const ctrl = buildControl();
+          ctrl.style.display = 'none';
+          textEl.addEventListener('click', () => { textEl.style.display = 'none'; ctrl.style.display = ''; ctrl.focus?.(); });
+          ctrl.addEventListener('blur', () => { textEl.textContent = ctrl.value || '—'; ctrl.style.display = 'none'; textEl.style.display = ''; });
+          row.append(lbl, textEl, ctrl);
+          return row;
+        }
+
+        const ll = textToggleRow('Language', r?.language || 'English', () => {
+          langInput = document.createElement('input');
+          langInput.type = 'text'; langInput.className = 'page-input';
+          langInput.style.cssText = 'font-size:.8rem;width:auto';
+          langInput.value = r?.language || 'English';
+          langInput.setAttribute('list', langDl.id);
+          return langInput;
+        });
+
+        const fl = textToggleRow('Format', r?.format || '—', () => {
+          fmtSel = document.createElement('select');
+          fmtSel.className = 'page-input';
+          fmtSel.style.cssText = 'font-size:.8rem;width:auto';
+          ['', 'Physical', 'E-reader', 'Audiobook'].forEach(v => {
+            const o = document.createElement('option');
+            o.value = v; o.textContent = v || '—';
+            if (v === (r?.format || '')) o.selected = true;
+            fmtSel.appendChild(o);
+          });
+          fmtSel.addEventListener('change', () => fmtSel.blur());
+          return fmtSel;
+        });
+
+        rangeEl.append(sd, fd, ll, fl);
+      }
+      buildDatePickers(reads[selectedReadIdx]);
 
       const ratingEditor = card.querySelector('.book-rating-editor');
-      const starPicker = createStarPicker(book.rating || 0);
+      const starPicker = createStarPicker(reads[selectedReadIdx]?.rating || book.rating || 0);
       ratingEditor.appendChild(starPicker);
+
+      const reviewWrap = document.createElement('div');
+      reviewWrap.style.cssText = 'margin-top:.5rem';
+
+      const reviewText = document.createElement('div');
+      reviewText.style.cssText = 'font-size:.82rem;cursor:pointer;line-height:1.4;white-space:pre-wrap;word-break:break-word;min-height:1.2em;font-style:italic';
 
       const reviewTa = document.createElement('textarea');
       reviewTa.className   = 'review-input';
       reviewTa.placeholder = 'Write a review…';
       reviewTa.rows = 3;
-      reviewTa.value = book.review || '';
-      ratingEditor.appendChild(reviewTa);
+      reviewTa.style.display = 'none';
+      reviewTa.style.marginTop = '0';
+
+      function setReviewDisplay(val) {
+        if (val) {
+          reviewText.textContent = '“' + val + '”';
+          reviewText.style.color = 'var(--text)';
+        } else {
+          reviewText.textContent = 'Write a review…';
+          reviewText.style.color = 'var(--text-muted)';
+        }
+      }
+
+      setReviewDisplay(reads[selectedReadIdx]?.review || book.review || '');
+      reviewTa.value = reads[selectedReadIdx]?.review || book.review || '';
+
+      reviewText.addEventListener('click', () => {
+        reviewText.style.display = 'none';
+        reviewTa.style.display = '';
+        reviewTa.focus();
+      });
+
+      reviewWrap.append(reviewText, reviewTa);
+      ratingEditor.appendChild(reviewWrap);
 
       card.querySelector('.btn-remove-x').addEventListener('click', async () => {
         if (!confirm(`Remove "${book.title}" from your library?`)) return;
@@ -941,24 +1133,32 @@
         }
       });
 
-      addDetailsEditor(card, book, coverCell, [
-        { label: 'Title',        key: 'title',       type: 'text',   groupLabel: 'Book' },
-        { label: 'Author',       key: 'author',      type: 'text'   },
-        { label: 'Country',      key: 'country',     type: 'text',   options: COUNTRIES },
-        { label: 'Release year', key: 'releaseYear', type: 'number' },
-        { label: 'Total pages',  key: 'totalPages',  type: 'number' },
-        { label: 'Language',     key: 'language',    type: 'text',   options: LANGUAGES, groupLabel: 'Reading info' },
-        { label: 'Format',       key: 'format',      type: 'select', options: ['Physical', 'E-reader', 'Audiobook'] },
-      ], async () => {
-        const rating = starPicker.getValue();
-        const review = reviewTa.value.trim() || null;
-        await updateBookRating(user.uid, book.id, { rating, review });
-        book.rating = rating;
-        book.review = review;
+
+      async function saveCurrentRead() {
+        if (!reads.length) return;
+        const { date: startedAtDate,  precision: startedAtPrec  } = startedPicker.getDate();
+        const { date: finishedAtDate, precision: finishedAtPrec } = finishedPicker.getDate();
+        reads[selectedReadIdx] = {
+          startedAt:           startedAtDate  ? { toDate: () => startedAtDate  } : null,
+          startedAtPrecision:  startedAtDate  ? startedAtPrec  : null,
+          finishedAt:          finishedAtDate ? { toDate: () => finishedAtDate } : (reads[selectedReadIdx].finishedAt || null),
+          finishedAtPrecision: finishedAtDate ? finishedAtPrec : (reads[selectedReadIdx].finishedAtPrecision || null),
+          language: langInput.value.trim() || null,
+          format:   fmtSel.value           || null,
+          rating:   starPicker.getValue(),
+          review:   reviewTa.value.trim()  || null,
+        };
+        book.reads = reads;
+        await updateBookReads(user.uid, book.id, reads);
+        const mostRecent = reads[0];
+        book.rating     = mostRecent?.rating;
+        book.review     = mostRecent?.review;
+        book.finishedAt = mostRecent?.finishedAt;
         if (coverCell) {
           let badge = coverCell.querySelector('.library-cover-rating');
-          if (rating) {
-            const html = cellRatingHtml(rating);
+          const displayRating = mostRecent?.rating;
+          if (displayRating) {
+            const html = cellRatingHtml(displayRating);
             if (badge) { badge.innerHTML = html; }
             else {
               badge = document.createElement('div');
@@ -971,9 +1171,152 @@
             badge.remove();
           }
         }
-        closeModal();
+        buildHistList();
+      }
+
+      let saveTimer;
+      function debouncedSave() { clearTimeout(saveTimer); saveTimer = setTimeout(saveCurrentRead, 700); }
+
+      // Auto-save per-read fields
+      rangeEl.addEventListener('change',   debouncedSave);
+      rangeEl.addEventListener('focusout', debouncedSave);
+      starPicker.addEventListener('click',  () => saveCurrentRead());
+      reviewTa.addEventListener('blur',    () => { setReviewDisplay(reviewTa.value.trim()); reviewTa.style.display = 'none'; reviewText.style.display = ''; saveCurrentRead(); });
+      reviewTa.addEventListener('input',   debouncedSave);
+
+      const detailsSection = addDetailsEditor(card, book, coverCell, [
+        { label: 'Title',        key: 'title',       type: 'text'   },
+        { label: 'Author',       key: 'author',      type: 'text'   },
+        { label: 'Country',      key: 'country',     type: 'text',   options: COUNTRIES },
+        { label: 'Release year', key: 'releaseYear', type: 'number' },
+        { label: 'Total pages',  key: 'totalPages',  type: 'number' },
+      ]);
+      detailsSection.style.cssText = 'display:none;padding-top:.6rem;margin-top:.5rem;border-top:1px solid var(--border)';
+      detailsSection.querySelectorAll('.page-input').forEach(el => el.style.background = 'var(--bg)');
+
+      const bookInfoWrap = document.createElement('div');
+      bookInfoWrap.style.cssText = 'margin-top:.75rem;padding:.5rem .625rem;background:var(--bg-alt);border-radius:var(--radius-sm);border:1px solid var(--border);overflow:hidden';
+
+      const bookInfoBtn = document.createElement('button');
+      bookInfoBtn.style.cssText = 'font-size:.75rem;font-weight:600;width:calc(100% + 1.25rem);text-align:left;background:none;border:none;display:flex;align-items:center;padding:.5rem .625rem;margin:-.5rem -.625rem;cursor:pointer;color:var(--text-muted);letter-spacing:.02em;text-transform:uppercase';
+      bookInfoBtn.textContent = 'Book info ▾';
+      bookInfoBtn.addEventListener('click', () => {
+        const open = detailsSection.style.display === 'none';
+        detailsSection.style.display = open ? '' : 'none';
+        bookInfoBtn.textContent = `Book info ${open ? '▴' : '▾'}`;
       });
 
+      bookInfoWrap.appendChild(bookInfoBtn);
+      bookInfoWrap.appendChild(detailsSection);
+      card.appendChild(bookInfoWrap);
+
+      // Reading history panel — same style as Book info, only shown when >1 reads
+      const histWrap = document.createElement('div');
+      histWrap.style.cssText = 'margin-top:.75rem;padding:.5rem .625rem;background:var(--bg-alt);border-radius:var(--radius-sm);border:1px solid var(--border);overflow:hidden';
+
+      const histToggleBtn = document.createElement('button');
+      histToggleBtn.style.cssText = 'font-size:.75rem;font-weight:600;width:calc(100% + 1.25rem);text-align:left;background:none;border:none;display:flex;align-items:center;padding:.5rem .625rem;margin:-.5rem -.625rem;cursor:pointer;color:var(--text-muted);letter-spacing:.02em;text-transform:uppercase';
+
+      const histList = document.createElement('div');
+      histList.style.display = 'none';
+
+      histToggleBtn.addEventListener('click', () => {
+        const open = histList.style.display === 'none';
+        histList.style.display = open ? '' : 'none';
+        histToggleBtn.textContent = `Reading history ${open ? '▴' : '▾'}`;
+        if (open) buildHistList();
+      });
+
+      histWrap.appendChild(histToggleBtn);
+      histWrap.appendChild(histList);
+      card.appendChild(histWrap);
+
+      const fmtR = (ts, prec) => {
+        if (!ts?.toDate) return '';
+        const d = ts.toDate();
+        if (!prec || prec === 'month') return d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+        if (prec === 'year') return String(d.getFullYear());
+        return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      };
+
+      function buildHistList() {
+        histWrap.style.display = reads.length > 1 ? '' : 'none';
+        histToggleBtn.textContent = `Reading history ${histList.style.display === 'none' ? '▾' : '▴'}`;
+        if (histList.style.display === 'none') { histList.innerHTML = ''; return; }
+
+        histList.innerHTML = '';
+        histList.style.cssText = 'padding-top:.5rem;margin-top:.5rem;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:.1rem';
+
+        reads.forEach((r, i) => {
+          const row = document.createElement('div');
+          const isSelected = i === selectedReadIdx;
+          row.style.cssText = `display:flex;align-items:center;gap:.4rem;padding:.3rem .4rem;border-radius:var(--radius-sm);cursor:pointer;transition:background .1s;${isSelected ? 'background:var(--bg);border:1px solid var(--border)' : ''}`;
+
+          const finished = fmtR(r.finishedAt, r.finishedAtPrecision);
+          const started  = fmtR(r.startedAt,  r.startedAtPrecision);
+          const dateStr  = finished || started || '—';
+
+          const dot = document.createElement('span');
+          dot.style.cssText = `flex-shrink:0;width:6px;height:6px;border-radius:50%;background:${isSelected ? 'var(--accent)' : 'var(--border)'};margin-right:.1rem`;
+
+          const dateEl = document.createElement('span');
+          dateEl.style.cssText = `flex:1;font-size:.82rem;color:${isSelected ? 'var(--text)' : 'var(--text-muted)'}`;
+          dateEl.textContent = dateStr;
+
+          const starsEl = document.createElement('span');
+          starsEl.style.cssText = 'font-size:.78rem';
+          if (r.rating) starsEl.innerHTML = cellRatingHtml(r.rating);
+
+          const delBtn = document.createElement('button');
+          delBtn.type = 'button';
+          delBtn.textContent = '×';
+          delBtn.style.cssText = 'background:none;border:none;color:var(--text-muted);font-size:1rem;line-height:1;padding:0 .15rem;cursor:pointer;opacity:.4;flex-shrink:0';
+          delBtn.addEventListener('mouseenter', () => delBtn.style.opacity = '1');
+          delBtn.addEventListener('mouseleave', () => delBtn.style.opacity = '.4');
+
+          row.addEventListener('mouseenter', () => { if (i !== selectedReadIdx) row.style.background = 'var(--bg)'; });
+          row.addEventListener('mouseleave', () => { if (i !== selectedReadIdx) row.style.background = ''; });
+
+          row.addEventListener('click', e => {
+            if (e.target === delBtn) return;
+            clearTimeout(saveTimer);
+            selectedReadIdx = i;
+            starPicker.setValue(r.rating || 0);
+            reviewTa.value = r.review || '';
+            setReviewDisplay(r.review || '');
+            buildDatePickers(r);
+            buildHistList();
+          });
+
+          delBtn.addEventListener('click', async e => {
+            e.stopPropagation();
+            if (reads.length === 1) {
+              if (!confirm(`Remove "${book.title}" from your library?`)) return;
+              await deleteBook(user.uid, book.id, { title: book.title });
+              if (coverCell) coverCell.remove();
+              closeModal();
+              if (!finishedList.querySelector('[data-title]')) showEmpty(finishedList, 'finished-empty', 'No finished books yet.');
+              return;
+            }
+            clearTimeout(saveTimer);
+            reads.splice(i, 1);
+            if (selectedReadIdx >= reads.length) selectedReadIdx = reads.length - 1;
+            book.reads = reads;
+            await updateBookReads(user.uid, book.id, reads);
+            const sel = reads[selectedReadIdx];
+            starPicker.setValue(sel?.rating || 0);
+            reviewTa.value = sel?.review || '';
+            setReviewDisplay(sel?.review || '');
+            buildDatePickers(sel);
+            buildHistList();
+          });
+
+          row.append(dot, dateEl, starsEl, delBtn);
+          histList.appendChild(row);
+        });
+      }
+
+      buildHistList();
       return card;
     }
 
@@ -1011,7 +1354,7 @@
       const titleHtml = book.gbid
         ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
-      const starsHtml  = renderStars(book.rating);
+      const starsHtml  = renderStars(getDisplayRating(book));
       const reviewHtml = book.review
         ? `<div class="review-preview">${esc(book.review.slice(0, 100))}${book.review.length > 100 ? '…' : ''}</div>`
         : '';
@@ -1026,6 +1369,31 @@
         </div>
       </div>`;
       return card;
+    }
+
+    let allBooks = [];
+
+    function updateCounts() {
+      const rc = allBooks.filter(b => b.status === 'reading').length;
+      const fc = allBooks.filter(b => b.status === 'finished').length;
+      document.getElementById('reading-title').textContent  = `Currently Reading · ${rc}`;
+      document.getElementById('finished-title').textContent = `Finished · ${fc}`;
+    }
+
+    function getReads(book) {
+      if (book.reads && book.reads.length > 0) return book.reads;
+      if (book.finishedAt) return [{ startedAt: book.addedAt || null, startedAtPrecision: book.addedAtPrecision || null, finishedAt: book.finishedAt, finishedAtPrecision: book.finishedAtPrecision || null, language: book.language || null, format: book.format || null, rating: book.rating || null, review: book.review || null }];
+      return [];
+    }
+
+    function getDisplayRating(book) {
+      if (book.reads && book.reads.length > 0) {
+        const tsVal = ts => ts?.seconds ?? (ts?.toDate ? ts.toDate().getTime() / 1000 : 0);
+        return book.reads.reduce((best, r) =>
+          tsVal(r.finishedAt) > tsVal(best.finishedAt) ? r : best, book.reads[0]
+        ).rating || null;
+      }
+      return book.rating || null;
     }
 
     try {
@@ -1145,7 +1513,6 @@
 
       let renderReadingFn    = () => {};
       let reRenderFinishedFn = () => {};
-      let allBooks = [];
       let allLists = [];
 
       if (isOwn) {
@@ -1641,24 +2008,61 @@
         const review = ta.value.trim() || null;
         const { date: addedAt,    precision: startedPrec  } = startedPicker.getDate();
         const { date: finishedAt, precision: finishedPrec } = datePicker.getDate();
-        const id = await addFinishedBook(user.uid, {
-          title, author, totalPages: pages, gbid, coverUrl: cover, rating, review, releaseYear,
-          finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,
-          addedAt,    addedAtPrecision:    addedAt    ? startedPrec  : undefined
-        }, profile.username);
-        const book = {
-          id, title, author, totalPages: pages, currentPage: pages, status: 'finished',
-          coverUrl:            cover,
-          addedAt:             addedAt    ? { toDate: () => addedAt }    : { toDate: () => new Date() },
-          addedAtPrecision:    addedAt    ? startedPrec  : null,
-          finishedAt:          finishedAt ? { toDate: () => finishedAt } : null,
-          finishedAtPrecision: finishedAt ? finishedPrec : null,
-          gbid, rating, review, releaseYear
-        };
-        document.getElementById('finished-empty')?.remove();
-        const newCell = makeBookCoverCell(book);
-        attachFinishedCell(newCell, book);
-        finishedList.prepend(newCell);
+
+        // Match by gbid first, then fall back to title for books added before gbid was tracked
+        const existingFinished =
+          (gbid   && allBooks.find(b => b.gbid  === gbid                             && b.status === 'finished')) ||
+          (title  && allBooks.find(b => b.title?.toLowerCase() === title.toLowerCase() && b.status === 'finished'));
+        if (existingFinished) {
+          const finishedAtDate = finishedAt || new Date();
+          const finishedAtDatePrec = finishedAt ? finishedPrec : 'day';
+          await finishBook(user.uid, existingFinished.id, { title: existingFinished.title, author: existingFinished.author, gbid: existingFinished.gbid, rating, review, coverUrl: existingFinished.coverUrl, startedAt: addedAt, startedAtPrecision: startedPrec, finishedAt: finishedAtDate, finishedAtPrecision: finishedAtDatePrec }, profile.username);
+          existingFinished.status = 'finished';
+          existingFinished.rating = rating;
+          existingFinished.review = review;
+          existingFinished.reads  = (existingFinished.reads || []).concat([{ startedAt: addedAt ? { toDate: () => addedAt } : null, startedAtPrecision: addedAt ? startedPrec : null, finishedAt: { toDate: () => finishedAtDate }, finishedAtPrecision: finishedAtDatePrec, rating, review }]);
+          readingList.querySelector(`[data-gbid="${gbid}"]`)?.remove();
+          finishedList.querySelector(`[data-title="${existingFinished.title.toLowerCase()}"]`)?.remove();
+          document.getElementById('finished-empty')?.remove();
+          if (viewMode === 'list') {
+            const newRow = makeBookListRow(existingFinished);
+            newRow.addEventListener('click', () => { let ov; const c = renderFinished(existingFinished, newRow, () => ov?.remove()); ov = createBookModal(c); });
+            finishedList.prepend(newRow);
+          } else {
+            const newCell = makeBookCoverCell(existingFinished);
+            attachFinishedCell(newCell, existingFinished);
+            finishedList.prepend(newCell);
+          }
+          updateCounts();
+        } else {
+          const id = await addFinishedBook(user.uid, {
+            title, author, totalPages: pages, gbid, coverUrl: cover, rating, review, releaseYear,
+            finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,
+            addedAt,    addedAtPrecision:    addedAt    ? startedPrec  : undefined
+          }, profile.username);
+          const book = {
+            id, title, author, totalPages: pages, currentPage: pages, status: 'finished',
+            coverUrl:            cover,
+            addedAt:             addedAt    ? { toDate: () => addedAt }    : { toDate: () => new Date() },
+            addedAtPrecision:    addedAt    ? startedPrec  : null,
+            finishedAt:          finishedAt ? { toDate: () => finishedAt } : null,
+            finishedAtPrecision: finishedAt ? finishedPrec : null,
+            gbid, rating, review, releaseYear,
+            reads: [{ startedAt: addedAt ? { toDate: () => addedAt } : null, startedAtPrecision: addedAt ? startedPrec : null, finishedAt: finishedAt ? { toDate: () => finishedAt } : { toDate: () => new Date() }, finishedAtPrecision: finishedAt ? finishedPrec : null, rating, review }],
+          };
+          allBooks.push(book);
+          document.getElementById('finished-empty')?.remove();
+          if (viewMode === 'list') {
+            const newRow = makeBookListRow(book);
+            newRow.addEventListener('click', () => { let ov; const c = renderFinished(book, newRow, () => ov?.remove()); ov = createBookModal(c); });
+            finishedList.prepend(newRow);
+          } else {
+            const newCell = makeBookCoverCell(book);
+            attachFinishedCell(newCell, book);
+            finishedList.prepend(newCell);
+          }
+          updateCounts();
+        }
         closeForm();
       });
     });
