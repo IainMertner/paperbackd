@@ -316,10 +316,6 @@
     }
 
     function createBookModal(cardEl) {
-      const scrollbarW = window.innerWidth - document.documentElement.clientWidth;
-      document.body.style.overflow = 'hidden';
-      document.body.style.paddingRight = scrollbarW + 'px';
-
       const overlay = document.createElement('div');
       overlay.className = 'book-modal-overlay';
       const inner = document.createElement('div');
@@ -329,8 +325,6 @@
 
       const nativeRemove = overlay.remove.bind(overlay);
       function dismiss() {
-        document.body.style.overflow = '';
-        document.body.style.paddingRight = '';
         nativeRemove();
       }
       overlay.remove = dismiss;
@@ -1085,6 +1079,7 @@
       buildDatePickers(reads[selectedReadIdx]);
 
       const ratingEditor = card.querySelector('.book-rating-editor');
+      ratingEditor.style.marginTop = '.5rem';
       const starPicker = createStarPicker(reads[selectedReadIdx]?.rating || book.rating || 0);
       ratingEditor.appendChild(starPicker);
 
@@ -1632,11 +1627,26 @@
         filterInput.addEventListener('input', applyFilter);
 
         // Dropdown open/close
+        const pageContent = document.querySelector('.page-content');
+        function closeFilterDropdown() {
+          filterDropdown.style.display = 'none';
+          pageContent.style.paddingBottom = '';
+        }
         filterDropdownBtn.addEventListener('click', e => {
           e.stopPropagation();
-          filterDropdown.style.display = filterDropdown.style.display === 'none' ? '' : 'none';
+          const opening = filterDropdown.style.display === 'none';
+          if (!opening) { closeFilterDropdown(); return; }
+          filterDropdown.style.display = '';
+          requestAnimationFrame(() => {
+            const rect = filterDropdown.getBoundingClientRect();
+            const overflow = rect.bottom - window.innerHeight + 16;
+            if (overflow > 0) {
+              pageContent.style.paddingBottom = overflow + 'px';
+              filterDropdown.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          });
         });
-        document.addEventListener('click', () => { filterDropdown.style.display = 'none'; });
+        document.addEventListener('click', closeFilterDropdown);
         filterDropdown.addEventListener('click', e => e.stopPropagation());
 
         function addSection(heading, key, entries) {
