@@ -8,7 +8,7 @@
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>List — paperbackd</title>
+  <title>List - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
   <script>
     (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
@@ -139,7 +139,7 @@
         return;
       }
 
-      document.title = `${list.name} — paperbackd`;
+      document.title = `${list.name} - paperbackd`;
       let books = [...(list.books || [])];
 
       // ── Header ───────────────────────────────────────────────────────────────
@@ -173,7 +173,7 @@
               if (!name) return;
               await renameList(user.uid, list.id, name);
               list.name = name;
-              document.title = `${name} — paperbackd`;
+              document.title = `${name} - paperbackd`;
               renderHeader();
             });
             inp.addEventListener('keydown', e => { if (e.key === 'Enter') card.querySelector('#rename-save').click(); });
@@ -231,7 +231,7 @@
                 const prompt = document.createElement('div');
                 prompt.className = 'book-suggestion-item';
                 prompt.style.cssText = 'font-size:.85rem;color:var(--text-muted);padding:.6rem .75rem;cursor:pointer';
-                prompt.textContent = `No results — add "${q}" manually`;
+                prompt.textContent = `No results - add "${q}" manually`;
                 prompt.addEventListener('click', () => {
                   suggestBox.innerHTML = '';
                   const wrap = document.createElement('div');

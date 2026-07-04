@@ -8,7 +8,7 @@
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Settings — paperbackd</title>
+  <title>Settings - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
   <script>
     (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
@@ -254,11 +254,11 @@
       grStatus.style.display = '';
       grStatus.style.color = 'var(--text-muted)';
 
-      // Enrich with Hardcover data — batch GR ID + ISBN lookups, then individual title searches
+      // Enrich with Hardcover data - batch GR ID + ISBN lookups, then individual title searches
       const total    = parsedBooks.length;
-      grStatus.textContent = `Don't close this tab — matching your books with Hardcover…`;
+      grStatus.textContent = `Don't close this tab - matching your books with Hardcover…`;
       const enrichedRaw = await enrichBatch(parsedBooks, (i, remaining, title) => {
-        grStatus.textContent = `Don't close this tab — searching ${i + 1}/${remaining}: ${title}…`;
+        grStatus.textContent = `Don't close this tab - searching ${i + 1}/${remaining}: ${title}…`;
       });
       const matched  = enrichedRaw.filter(b => b._hardcoverMatched).length;
       // Strip private lookup fields before saving
@@ -267,7 +267,7 @@
       grStatus.textContent = `Matched ${matched}/${total} books. Saving to library…`;
       try {
         await importBooks(currentUser.uid, enriched, (saved, total) => {
-          grStatus.textContent = `Saving to library — ${saved}/${total} done…`;
+          grStatus.textContent = `Saving to library - ${saved}/${total} done…`;
         });
         grStatus.textContent = `All done! Imported ${total} books (${matched} matched with Hardcover).`;
         grStatus.style.color = 'var(--accent)';
@@ -315,7 +315,7 @@
     }
 
     // Goodreads exports titles like "The Name of the Wind (The Kingkiller Chronicle, #1)"
-    // and authors like "Sanderson, Brandon" — clean both before searching.
+    // and authors like "Sanderson, Brandon" - clean both before searching.
     function cleanTitle(t)  { return (t || '').replace(/\s*\([^)]*#\s*\d+[^)]*\)/g, '').trim(); }
     function cleanAuthor(a) { return (a || '').replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim(); }
 
@@ -467,7 +467,7 @@
         );
 
         if (!unmatched.length && !incomplete.length) {
-          repairStatus.textContent = 'Nothing to repair — all books are matched and complete.';
+          repairStatus.textContent = 'Nothing to repair - all books are matched and complete.';
           repairStatus.style.color = 'var(--accent)';
           repairBtn.disabled = false;
           return;
@@ -529,7 +529,7 @@
         }
 
         const total = unmatched.length + incomplete.length;
-        repairStatus.textContent = `Done — updated ${fixed} of ${total} book${total === 1 ? '' : 's'}.`;
+        repairStatus.textContent = `Done - updated ${fixed} of ${total} book${total === 1 ? '' : 's'}.`;
         repairStatus.style.color = 'var(--accent)';
       } catch (err) {
         console.error(err);
