@@ -1,3 +1,96 @@
+// Normalize a Wikidata country label to a canonical country name
+function normalizeCountry(raw) {
+  if (!raw) return raw;
+
+  const overrides = {
+    // Historical states → modern successor
+    'Soviet Union': 'Russia',
+    'Union of Soviet Socialist Republics': 'Russia',
+    'Russian Empire': 'Russia',
+    'Russian Soviet Federative Socialist Republic': 'Russia',
+    'Nazi Germany': 'Germany',
+    'German Democratic Republic': 'Germany',
+    'West Germany': 'Germany',
+    'German Empire': 'Germany',
+    'Weimar Republic': 'Germany',
+    'Third Reich': 'Germany',
+    'Prussia': 'Germany',
+    'Cisleithania': 'Austria',
+    'Austria-Hungary': 'Austria',
+    'Austro-Hungarian Empire': 'Austria',
+    'Habsburg Monarchy': 'Austria',
+    'Czechoslovakia': 'Czech Republic',
+    'Ottoman Empire': 'Turkey',
+    'British Empire': 'United Kingdom',
+    'Kingdom of Great Britain': 'United Kingdom',
+    'England': 'United Kingdom',
+    'Scotland': 'United Kingdom',
+    'Wales': 'United Kingdom',
+    'Northern Ireland': 'United Kingdom',
+    'Republic of China': 'Taiwan',
+    'Socialist Federal Republic of Yugoslavia': 'Serbia',
+    'Kingdom of Yugoslavia': 'Serbia',
+    'Yugoslavia': 'Serbia',
+    'South Vietnam': 'Vietnam',
+    'North Vietnam': 'Vietnam',
+    'Republic of Korea': 'South Korea',
+    "Democratic People's Republic of Korea": 'North Korea',
+    "People's Republic of China": 'China',
+    'United States of America': 'United States',
+    'Federative Republic of Brazil': 'Brazil',
+    'United Mexican States': 'Mexico',
+    'Commonwealth of Australia': 'Australia',
+    "Lao People's Democratic Republic": 'Laos',
+    'Brunei Darussalam': 'Brunei',
+    'Hashemite Kingdom of Jordan': 'Jordan',
+    'Syrian Arab Republic': 'Syria',
+    'Hellenic Republic': 'Greece',
+    'Swaziland': 'Eswatini',
+    'Rhodesia': 'Zimbabwe',
+    'Northern Rhodesia': 'Zambia',
+    'Nyasaland': 'Malawi',
+    'Democratic Republic of the Congo': 'Congo',
+    'Republic of the Congo': 'Congo',
+    'Zaire': 'Congo',
+    'Independent State of Papua New Guinea': 'Papua New Guinea',
+    'Independent State of Samoa': 'Samoa',
+    'Federated States of Micronesia': 'Micronesia',
+    'Socialist Republic of Vietnam': 'Vietnam',
+    'Republic of the Union of Myanmar': 'Myanmar',
+    'Burma': 'Myanmar',
+    'Ceylon': 'Sri Lanka',
+    'Democratic Socialist Republic of Sri Lanka': 'Sri Lanka',
+    'Islamic Republic of Pakistan': 'Pakistan',
+    'Islamic Republic of Iran': 'Iran',
+    'Persia': 'Iran',
+    'State of Palestine': 'Palestine',
+    'Sultanate of Oman': 'Oman',
+    'State of Kuwait': 'Kuwait',
+    'State of Qatar': 'Qatar',
+  };
+
+  if (overrides[raw]) return overrides[raw];
+
+  // Strip common formal prefixes: "Kingdom of X" → "X", "Republic of X" → "X", etc.
+  const prefixes = [
+    'Kingdom of the ', 'Kingdom of ',
+    'Federal Republic of ', 'Islamic Republic of ', 'Democratic Republic of ',
+    "People's Republic of ", 'Democratic Socialist Republic of ',
+    'Bolivarian Republic of ', 'Oriental Republic of ', 'Plurinational State of ',
+    'Arab Republic of ', 'Federative Republic of ',
+    'Republic of the ', 'United Republic of ', 'Republic of ',
+    'Commonwealth of ', 'Principality of ', 'Grand Duchy of ',
+    'Sultanate of ', 'State of ', 'Federation of ',
+    'Independent State of ', 'Federated States of ', 'Socialist Republic of ',
+    'Hashemite Kingdom of ',
+  ];
+  for (const prefix of prefixes) {
+    if (raw.startsWith(prefix)) return raw.slice(prefix.length);
+  }
+
+  return raw;
+}
+
 // Apply stored theme before first paint (called inline in <head>)
 function applyStoredTheme() {
   const t = localStorage.getItem('theme');

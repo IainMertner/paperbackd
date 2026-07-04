@@ -469,7 +469,10 @@
           (b.releaseYear == null || !b.totalPages || !b.author)
         );
 
-        if (!unmatched.length && !incomplete.length) {
+        // Phase 3: books missing country (computed early so the guard below sees it)
+        const needsCountry = books.filter(b => !b.country && b.author);
+
+        if (!unmatched.length && !incomplete.length && !needsCountry.length) {
           repairStatus.textContent = 'Nothing to repair - all books are matched and complete.';
           repairStatus.style.color = 'var(--accent)';
           repairBtn.disabled = false;
@@ -532,7 +535,6 @@
         }
 
         // ── Phase 3: fill country via Wikidata for books missing it ─────────
-        const needsCountry = books.filter(b => !b.country && b.author);
         if (needsCountry.length) {
           repairStatus.textContent = `Looking up countries for ${needsCountry.length} book${needsCountry.length === 1 ? '' : 's'}…`;
 
@@ -557,7 +559,7 @@
               if (!lr.ok) continue;
               const ld = await lr.json();
               const country = ld.entities?.[countryQid]?.labels?.en?.value;
-              if (country) authorMap.set(authorName, country);
+              if (country) authorMap.set(authorName, normalizeCountry(country));
             } catch (e) { /* skip author */ }
           }
 

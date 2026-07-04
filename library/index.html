@@ -1948,7 +1948,7 @@
                   if (!lr.ok) return;
                   const ld = await lr.json();
                   const countryName = ld.entities?.[countryQid]?.labels?.en?.value;
-                  if (countryName) capturedBook.country = countryName;
+                  if (countryName) capturedBook.country = normalizeCountry(countryName);
                 } catch (e) { /* silently ignore */ }
               })();
             }
