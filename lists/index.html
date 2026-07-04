@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -8,7 +8,7 @@
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lists — Reading Log</title>
+  <title>Lists — Paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
   <script>
     (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
@@ -18,7 +18,7 @@
 
   <header class="site-header">
     <div class="header-inner">
-      <a class="logo" href="../">Reading Log</a>
+      <a class="logo" href="../">Paperbackd</a>
       <nav class="desktop-nav">
         <a href="../"          data-nav="home">Feed</a>
         <a href="../search/"   data-nav="search">Search</a>
@@ -107,7 +107,7 @@
           ownerUid      = target.uid;
           ownerUsername = target.username;
           document.getElementById('back-link').href = `../profile/?u=${encodeURIComponent(ownerUsername)}`;
-          document.title = `${ownerUsername}'s Lists — Reading Log`;
+          document.title = `${ownerUsername}'s Lists — Paperbackd`;
         }
 
         let lists = await getLists(ownerUid);

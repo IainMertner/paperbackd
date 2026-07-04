@@ -194,7 +194,8 @@ export async function importBooks(uid, books, onProgress) {
   for (let i = 0; i < books.length; i += 20) {
     await Promise.all(books.slice(i, i + 20).map(b => {
       const data = { ...b };
-      if (!data.addedAt) data.addedAt = serverTimestamp();
+      if (!data.addedAt)  data.addedAt  = serverTimestamp();
+      if (!data.language) data.language = 'English';
       return addDoc(col, data);
     }));
     if (onProgress) onProgress(Math.min(i + 20, books.length), books.length);
@@ -229,7 +230,8 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, co
     currentPage: totalPages || 0,
     status:      'finished',
     gbid:        gbid || '',
-    addedAt:     addedAt || serverTimestamp()
+    addedAt:     addedAt || serverTimestamp(),
+    language:    'English'
   };
   if (finishedAt)          data.finishedAt          = finishedAt;
   if (finishedAtPrecision) data.finishedAtPrecision = finishedAtPrecision;
@@ -264,7 +266,8 @@ export async function addBook(uid, { title, author, totalPages, gbid, coverUrl, 
     currentPage: 0,
     status:      'reading',
     gbid:        gbid || '',
-    addedAt:     serverTimestamp()
+    addedAt:     serverTimestamp(),
+    language:    'English'
   };
   if (coverUrl)    bookData.coverUrl    = coverUrl;
   if (releaseYear) bookData.releaseYear = releaseYear;
