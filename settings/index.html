@@ -531,7 +531,46 @@
           }
         }
 
-        const total = unmatched.length + incomplete.length;
+        // ── Phase 3: fill country via Wikidata for books missing it ─────────
+        const needsCountry = books.filter(b => !b.country && b.author);
+        if (needsCountry.length) {
+          repairStatus.textContent = `Looking up countries for ${needsCountry.length} book${needsCountry.length === 1 ? '' : 's'}…`;
+
+          // One Wikidata lookup per unique author name
+          const authorMap = new Map(); // authorName → country string
+          const uniqueAuthors = [...new Set(needsCountry.map(b => b.author))];
+
+          for (const authorName of uniqueAuthors) {
+            try {
+              const base = 'https://www.wikidata.org/w/api.php';
+              const sr = await fetch(`${base}?action=wbsearchentities&search=${encodeURIComponent(authorName)}&language=en&type=item&format=json&origin=*&limit=1`);
+              if (!sr.ok) continue;
+              const sd = await sr.json();
+              const qid = sd.search?.[0]?.id;
+              if (!qid) continue;
+              const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
+              if (!er.ok) continue;
+              const ed = await er.json();
+              const countryQid = ed.entities?.[qid]?.claims?.P27?.[0]?.mainsnak?.datavalue?.value?.id;
+              if (!countryQid) continue;
+              const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
+              if (!lr.ok) continue;
+              const ld = await lr.json();
+              const country = ld.entities?.[countryQid]?.labels?.en?.value;
+              if (country) authorMap.set(authorName, country);
+            } catch (e) { /* skip author */ }
+          }
+
+          for (const book of needsCountry) {
+            const country = authorMap.get(book.author);
+            if (country) {
+              await updateBookMeta(currentUser.uid, book.id, { country });
+              fixed++;
+            }
+          }
+        }
+
+        const total = unmatched.length + incomplete.length + needsCountry.length;
         repairStatus.textContent = `Done - updated ${fixed} of ${total} book${total === 1 ? '' : 's'}.`;
         repairStatus.style.color = 'var(--accent)';
       } catch (err) {

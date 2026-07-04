@@ -165,6 +165,7 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, variables })
       });
+      if (!r.ok) throw new Error(`Proxy error ${r.status}`);
       return r.json();
     }
 
@@ -1707,8 +1708,6 @@
           viewMode = 'grid';
           localStorage.setItem('library-view', 'grid');
           updateToggleUI();
-          readingList.innerHTML = '';
-          finishedList.innerHTML = '';
           renderReadingFn();
           reRenderFinishedFn?.();
           applyFilter();
@@ -1718,8 +1717,6 @@
           viewMode = 'list';
           localStorage.setItem('library-view', 'list');
           updateToggleUI();
-          readingList.innerHTML = '';
-          finishedList.innerHTML = '';
           renderReadingFn();
           reRenderFinishedFn?.();
           applyFilter();
@@ -1928,6 +1925,33 @@
             suggestBox.innerHTML     = '';
             suggestBox.style.display = 'none';
             setAddEnabled(true);
+            // Background country fetch via Wikidata (runs while user reviews selection)
+            if (author) {
+              const capturedBook = selectedBook;
+              (async () => {
+                try {
+                  const base = 'https://www.wikidata.org/w/api.php';
+                  // 1. Find author's Wikidata QID
+                  const sr = await fetch(`${base}?action=wbsearchentities&search=${encodeURIComponent(author)}&language=en&type=item&format=json&origin=*&limit=1`);
+                  if (!sr.ok) return;
+                  const sd = await sr.json();
+                  const qid = sd.search?.[0]?.id;
+                  if (!qid) return;
+                  // 2. Get P27 (country of citizenship) claim
+                  const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
+                  if (!er.ok) return;
+                  const ed = await er.json();
+                  const countryQid = ed.entities?.[qid]?.claims?.P27?.[0]?.mainsnak?.datavalue?.value?.id;
+                  if (!countryQid) return;
+                  // 3. Get country name label
+                  const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
+                  if (!lr.ok) return;
+                  const ld = await lr.json();
+                  const countryName = ld.entities?.[countryQid]?.labels?.en?.value;
+                  if (countryName) capturedBook.country = countryName;
+                } catch (e) { /* silently ignore */ }
+              })();
+            }
           }, 150);
         });
 
@@ -1948,13 +1972,13 @@
 
     saveBtn.addEventListener('click', async () => {
       if (!selectedBook) return;
-      const { title, author, pages, gbid, cover, releaseYear } = selectedBook;
+      const { title, author, pages, gbid, cover, releaseYear, country } = selectedBook;
 
       saveBtn.disabled    = true;
       saveBtn.textContent = 'Adding…';
 
-      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, coverUrl: cover, releaseYear }, profile.username);
-      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, addedAt: { toDate: () => new Date() } };
+      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, coverUrl: cover, releaseYear, country }, profile.username);
+      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, addedAt: { toDate: () => new Date() } };
 
       document.getElementById('reading-empty')?.remove();
       const newCell = makeBookCoverCell(book);
@@ -1968,7 +1992,7 @@
 
     finishedBtn.addEventListener('click', () => {
       if (!selectedBook) return;
-      const { title, author, pages, gbid, cover, releaseYear } = selectedBook;
+      const { title, author, pages, gbid, cover, releaseYear, country } = selectedBook;
 
       const fields     = form.querySelector('.add-book-fields');
       const actions    = form.querySelector('.add-book-actions');
@@ -2046,7 +2070,7 @@
           updateCounts();
         } else {
           const id = await addFinishedBook(user.uid, {
-            title, author, totalPages: pages, gbid, coverUrl: cover, rating, review, releaseYear,
+            title, author, totalPages: pages, gbid, coverUrl: cover, rating, review, releaseYear, country,
             finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,
             addedAt,    addedAtPrecision:    addedAt    ? startedPrec  : undefined
           }, profile.username);
@@ -2057,7 +2081,7 @@
             addedAtPrecision:    addedAt    ? startedPrec  : null,
             finishedAt:          finishedAt ? { toDate: () => finishedAt } : null,
             finishedAtPrecision: finishedAt ? finishedPrec : null,
-            gbid, rating, review, releaseYear,
+            gbid, rating, review, releaseYear, country,
             reads: [{ startedAt: addedAt ? { toDate: () => addedAt } : null, startedAtPrecision: addedAt ? startedPrec : null, finishedAt: finishedAt ? { toDate: () => finishedAt } : { toDate: () => new Date() }, finishedAtPrecision: finishedAt ? finishedPrec : null, rating, review }],
           };
           allBooks.push(book);
