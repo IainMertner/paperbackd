@@ -1392,51 +1392,253 @@
     function renderReadingView(book) {
       const pct  = book.totalPages ? Math.round((book.currentPage / book.totalPages) * 100) : 0;
       const card = document.createElement('div');
-      card.className = 'card';
+      card.className  = 'card';
+      card.dataset.id = book.id;
       const titleHtml = book.gbid
         ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
-      card.innerHTML = `<div class="book-entry">
-        ${bookCoverHtml(book)}
-        <div class="book-info">
-          ${titleHtml}
-          ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
-          ${book.totalPages ? `<div class="progress-bar-track"><div class="progress-bar-fill" style="width:${pct}%"></div></div><div class="progress-label">Page ${book.currentPage} of ${book.totalPages}</div>` : ''}
+      card.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
+          <div style="flex:1;min-width:0">
+            ${titleHtml}
+            ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
+          </div>
         </div>
-      </div>`;
+        <div class="book-entry">
+          <div class="book-info">
+            <div class="book-started-date"></div>
+            <div class="book-reading-meta" style="display:flex;flex-direction:column;gap:.2rem;margin:.2rem 0"></div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" style="width:${pct}%"></div>
+            </div>
+            <div class="progress-label">${book.totalPages ? `Page ${book.currentPage} of ${book.totalPages} · ${pct}%` : `Page ${book.currentPage}`}</div>
+          </div>
+          ${bookCoverHtml(book)}
+        </div>`;
+
+      const coverWrap = card.querySelector('.book-cover-wrap');
+      const coverImg  = coverWrap?.querySelector('.book-cover, .book-cover-img');
+      if (coverImg) { coverImg.style.width = '72px'; coverImg.style.height = '108px'; }
+
+      // Static started date
+      const startedStr = book.addedAt ? formatDateTs(book.addedAt, book.addedAtPrecision || 'month') : null;
+      const startedRow = document.createElement('div');
+      startedRow.style.cssText = 'display:flex;align-items:center;gap:.4rem';
+      const startedLbl = document.createElement('span');
+      startedLbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+      startedLbl.textContent = 'Started';
+      const startedVal = document.createElement('span');
+      startedVal.style.cssText = 'font-size:.8rem;color:var(--text)';
+      startedVal.textContent = startedStr || '—';
+      startedRow.append(startedLbl, startedVal);
+      card.querySelector('.book-started-date').replaceWith(startedRow);
+
+      // Static Language / Format rows
+      const readingMeta = card.querySelector('.book-reading-meta');
+      function staticMetaRow(labelText, val) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.4rem';
+        const lbl = document.createElement('span');
+        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+        lbl.textContent = labelText;
+        const textEl = document.createElement('span');
+        textEl.style.cssText = 'font-size:.8rem;color:var(--text)';
+        textEl.textContent = val || '—';
+        row.append(lbl, textEl);
+        return row;
+      }
+      readingMeta.appendChild(staticMetaRow('Language', book.language || 'English'));
+      readingMeta.appendChild(staticMetaRow('Format',   book.format   || null));
+
+      // Book info collapsible (same wrap/btn as owned card)
+      const detailsSection = document.createElement('div');
+      detailsSection.style.cssText = 'display:none;padding-top:.6rem;margin-top:.5rem;border-top:1px solid var(--border)';
+      [
+        ['Title',        book.title],
+        ['Author',       book.author],
+        ['Country',      book.country],
+        ['Release year', book.releaseYear],
+      ].forEach(([lbl, val]) => {
+        if (!val) return;
+        detailsSection.appendChild(staticMetaRow(lbl, String(val)));
+      });
+
+      const bookInfoWrap = document.createElement('div');
+      bookInfoWrap.style.cssText = 'margin-top:.75rem;padding:.5rem .625rem;background:var(--bg-alt);border-radius:var(--radius-sm);border:1px solid var(--border);overflow:hidden';
+      const bookInfoBtn = document.createElement('button');
+      bookInfoBtn.style.cssText = 'font-size:.75rem;font-weight:600;width:calc(100% + 1.25rem);text-align:left;background:none;border:none;display:flex;align-items:center;padding:.5rem .625rem;margin:-.5rem -.625rem;cursor:pointer;color:var(--text-muted);letter-spacing:.02em;text-transform:uppercase';
+      bookInfoBtn.textContent = 'Book info ▾';
+      bookInfoBtn.addEventListener('click', () => {
+        const open = detailsSection.style.display === 'none';
+        detailsSection.style.display = open ? '' : 'none';
+        bookInfoBtn.textContent = `Book info ${open ? '▴' : '▾'}`;
+      });
+      bookInfoWrap.appendChild(bookInfoBtn);
+      bookInfoWrap.appendChild(detailsSection);
+      card.appendChild(bookInfoWrap);
+
       return card;
     }
 
     function renderFinishedView(book) {
-      const fmt = (ts, prec) => {
-        if (!ts?.toDate) return null;
-        const d = ts.toDate();
-        const p = prec || 'month';
-        if (p === 'year') return String(d.getFullYear());
-        if (p === 'day')  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-        return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-      };
-      const whenStarted  = fmt(book.addedAt, book.addedAtPrecision);
-      const whenFinished = fmt(book.finishedAt, book.finishedAtPrecision);
       const card = document.createElement('div');
-      card.className = 'card';
+      card.className  = 'card';
+      card.dataset.id = book.id;
       const titleHtml = book.gbid
         ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
-      const starsHtml  = renderStars(getDisplayRating(book));
-      const reviewHtml = book.review
-        ? `<div class="review-preview">${esc(book.review.slice(0, 100))}${book.review.length > 100 ? '…' : ''}</div>`
-        : '';
-      card.innerHTML = `<div class="book-entry">
-        ${bookCoverHtml(book)}
-        <div class="book-info">
-          ${titleHtml}
-          ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
-          ${(whenStarted || whenFinished) ? `<div class="book-finished-meta">${whenStarted || 'Unknown'} – ${whenFinished || 'Unknown'}</div>` : ''}
-          ${starsHtml}
-          ${reviewHtml}
+      card.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
+          <div style="flex:1;min-width:0">
+            ${titleHtml}
+            ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
+          </div>
         </div>
-      </div>`;
+        <div class="book-entry">
+          <div class="book-info">
+            <div class="book-date-range"></div>
+            <div class="book-rating-editor"></div>
+          </div>
+          ${bookCoverHtml(book)}
+        </div>`;
+
+      const coverWrap = card.querySelector('.book-cover-wrap');
+      const coverImg  = coverWrap?.querySelector('.book-cover, .book-cover-img');
+      if (coverImg) { coverImg.style.width = '72px'; coverImg.style.height = '108px'; }
+
+      const reads = getReads(book);
+      const tsVal = ts => ts?.seconds ?? (ts?.toDate ? ts.toDate().getTime() / 1000 : 0);
+      reads.sort((a, b) => tsVal(b.finishedAt) - tsVal(a.finishedAt));
+      const r = reads[0] || {};
+
+      // Static date-range rows (same layout as buildDatePickers)
+      const rangeEl = card.querySelector('.book-date-range');
+      rangeEl.style.cssText = 'display:flex;flex-direction:column;gap:.2rem;margin:.2rem 0';
+
+      function staticDateRow(labelText, ts, prec) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.4rem';
+        const lbl = document.createElement('span');
+        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+        lbl.textContent = labelText;
+        const textEl = document.createElement('span');
+        textEl.style.cssText = 'font-size:.8rem;color:var(--text)';
+        textEl.textContent = (ts && prec) ? formatDateTs(ts, prec) : '—';
+        row.append(lbl, textEl);
+        return row;
+      }
+      function staticLabelRow(labelText, val) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.4rem';
+        const lbl = document.createElement('span');
+        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+        lbl.textContent = labelText;
+        const textEl = document.createElement('span');
+        textEl.style.cssText = 'font-size:.8rem;color:var(--text)';
+        textEl.textContent = val || '—';
+        row.append(lbl, textEl);
+        return row;
+      }
+
+      rangeEl.append(
+        staticDateRow('Started',  r.startedAt,  r.startedAtPrecision),
+        staticDateRow('Finished', r.finishedAt, r.finishedAtPrecision),
+        staticLabelRow('Language', r.language || 'English'),
+        staticLabelRow('Format',   r.format   || null),
+      );
+
+      // Static rating + review (same container as owned)
+      const ratingEditor = card.querySelector('.book-rating-editor');
+      ratingEditor.style.marginTop = '.5rem';
+      if (r.rating) {
+        const starsEl = document.createElement('div');
+        starsEl.innerHTML = renderStars(r.rating);
+        ratingEditor.appendChild(starsEl);
+      }
+      if (r.review) {
+        const reviewText = document.createElement('div');
+        reviewText.style.cssText = 'margin-top:.5rem;font-size:.82rem;line-height:1.4;white-space:pre-wrap;word-break:break-word;font-style:italic;color:var(--text)';
+        reviewText.textContent = '“' + r.review + '”';
+        ratingEditor.appendChild(reviewText);
+      }
+
+      // Book info collapsible
+      const detailsSection = document.createElement('div');
+      detailsSection.style.cssText = 'display:none;padding-top:.6rem;margin-top:.5rem;border-top:1px solid var(--border)';
+      [
+        ['Title',        book.title],
+        ['Author',       book.author],
+        ['Country',      book.country],
+        ['Release year', book.releaseYear],
+        ['Total pages',  book.totalPages],
+      ].forEach(([lbl, val]) => {
+        if (!val) return;
+        detailsSection.appendChild(staticLabelRow(lbl, String(val)));
+      });
+
+      const bookInfoWrap = document.createElement('div');
+      bookInfoWrap.style.cssText = 'margin-top:.75rem;padding:.5rem .625rem;background:var(--bg-alt);border-radius:var(--radius-sm);border:1px solid var(--border);overflow:hidden';
+      const bookInfoBtn = document.createElement('button');
+      bookInfoBtn.style.cssText = 'font-size:.75rem;font-weight:600;width:calc(100% + 1.25rem);text-align:left;background:none;border:none;display:flex;align-items:center;padding:.5rem .625rem;margin:-.5rem -.625rem;cursor:pointer;color:var(--text-muted);letter-spacing:.02em;text-transform:uppercase';
+      bookInfoBtn.textContent = 'Book info ▾';
+      bookInfoBtn.addEventListener('click', () => {
+        const open = detailsSection.style.display === 'none';
+        detailsSection.style.display = open ? '' : 'none';
+        bookInfoBtn.textContent = `Book info ${open ? '▴' : '▾'}`;
+      });
+      bookInfoWrap.appendChild(bookInfoBtn);
+      bookInfoWrap.appendChild(detailsSection);
+      card.appendChild(bookInfoWrap);
+
+      // Reading history collapsible (same structure as owned, no delete/click-to-switch)
+      if (reads.length > 1) {
+        const histWrap = document.createElement('div');
+        histWrap.style.cssText = 'margin-top:.75rem;padding:.5rem .625rem;background:var(--bg-alt);border-radius:var(--radius-sm);border:1px solid var(--border);overflow:hidden';
+        const histToggleBtn = document.createElement('button');
+        histToggleBtn.style.cssText = 'font-size:.75rem;font-weight:600;width:calc(100% + 1.25rem);text-align:left;background:none;border:none;display:flex;align-items:center;padding:.5rem .625rem;margin:-.5rem -.625rem;cursor:pointer;color:var(--text-muted);letter-spacing:.02em;text-transform:uppercase';
+        histToggleBtn.textContent = 'Reading history ▾';
+        const histList = document.createElement('div');
+        histList.style.display = 'none';
+
+        const fmtR = (ts, prec) => {
+          if (!ts?.toDate) return '';
+          const d = ts.toDate();
+          if (!prec || prec === 'month') return d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+          if (prec === 'year') return String(d.getFullYear());
+          return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        };
+
+        histToggleBtn.addEventListener('click', () => {
+          const open = histList.style.display === 'none';
+          histList.style.display = open ? '' : 'none';
+          histToggleBtn.textContent = `Reading history ${open ? '▴' : '▾'}`;
+          if (!open || histList.children.length) return;
+          histList.style.cssText = 'padding-top:.5rem;margin-top:.5rem;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:.1rem';
+          reads.forEach((rd, i) => {
+            const row = document.createElement('div');
+            const isSelected = i === 0;
+            row.style.cssText = `display:flex;align-items:center;gap:.4rem;padding:.3rem .4rem;border-radius:var(--radius-sm);${isSelected ? 'background:var(--bg);border:1px solid var(--border)' : ''}`;
+            const finished = fmtR(rd.finishedAt, rd.finishedAtPrecision);
+            const started  = fmtR(rd.startedAt,  rd.startedAtPrecision);
+            const dateStr  = finished || started || '—';
+            const dot = document.createElement('span');
+            dot.style.cssText = `flex-shrink:0;width:6px;height:6px;border-radius:50%;background:${isSelected ? 'var(--accent)' : 'var(--border)'};margin-right:.1rem`;
+            const dateEl = document.createElement('span');
+            dateEl.style.cssText = `flex:1;font-size:.82rem;color:${isSelected ? 'var(--text)' : 'var(--text-muted)'}`;
+            dateEl.textContent = dateStr;
+            const starsEl = document.createElement('span');
+            starsEl.style.cssText = 'font-size:.78rem';
+            if (rd.rating) starsEl.innerHTML = cellRatingHtml(rd.rating);
+            row.append(dot, dateEl, starsEl);
+            histList.appendChild(row);
+          });
+        });
+
+        histWrap.appendChild(histToggleBtn);
+        histWrap.appendChild(histList);
+        card.appendChild(histWrap);
+      }
+
       return card;
     }
 

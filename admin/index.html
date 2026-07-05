@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin - paperbackd</title>
+  <link rel="stylesheet" href="../css/main.css">
+  <script>
+    (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
+  </script>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/library/">paperbackd</a>
+      <nav class="desktop-nav">
+        <a href="../feed/"     data-nav="feed">Feed</a>
+        <a href="../search/"   data-nav="search">Search</a>
+        <a href="../library/"  data-nav="library">Library</a>
+        <a href="../profile/"  data-nav="profile">Profile</a>
+        <a href="../settings/" data-nav="settings">Settings</a>
+      </nav>
+      <button class="theme-toggle" aria-label="Toggle theme"></button>
+    </div>
+  </header>
+
+  <main class="page-content">
+
+    <div class="settings-group">
+      <div class="settings-group-label">Admin console</div>
+      <div class="settings-list">
+
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Target user</span>
+          <div style="display:flex;gap:.5rem;width:100%">
+            <input type="text" id="target-username" class="join-club-input" placeholder="Username" autocomplete="off" spellcheck="false" style="flex:1">
+            <button class="btn-update" id="lookup-btn" type="button">Look up</button>
+          </div>
+          <div id="lookup-status" style="display:none;font-size:.85rem"></div>
+          <div id="target-info" style="display:none;font-size:.85rem;color:var(--text-muted)"></div>
+        </div>
+
+        <div class="settings-row" id="export-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Export library</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Download their books and lists as a JSON file.</p>
+          <button class="btn-update" id="export-btn" type="button">Export</button>
+          <div id="export-status" style="display:none;font-size:.85rem"></div>
+        </div>
+
+        <div class="settings-row" id="repair-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Repair library</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Merge duplicate entries, re-match unmatched books, fill metadata gaps, look up missing countries.</p>
+          <button class="btn-update" id="repair-btn" type="button">Repair</button>
+          <div id="repair-status" style="display:none;font-size:.85rem"></div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <nav class="mobile-nav">
+    <a class="mobile-nav-item" href="../feed/" data-nav="feed">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+      </svg>
+      Feed
+    </a>
+    <a class="mobile-nav-item" href="../search/" data-nav="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      Search
+    </a>
+    <a class="mobile-nav-item" href="../library/" data-nav="library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
+        <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+      </svg>
+      Library
+    </a>
+    <a class="mobile-nav-item" href="../profile/" data-nav="profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      Profile
+    </a>
+    <a class="mobile-nav-item" href="../settings/" data-nav="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+      </svg>
+      Settings
+    </a>
+  </nav>
+
+  <script src="../js/main.js"></script>
+  <script>document.body.classList.add('auth-loading');</script>
+  <script type="module">
+    import { requireAuth } from '../js/auth.js';
+    import { ROOT, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData } from '../js/firebase.js';
+
+    const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
+
+    let currentUser = null;
+    let targetUid   = null;
+
+    try {
+      const { user, profile } = await requireAuth();
+      currentUser = user;
+      if (!profile?.isAdmin) {
+        document.querySelector('.page-content').innerHTML =
+          '<p style="padding:2rem;color:var(--text-muted)">Access denied.</p>';
+        document.body.classList.remove('auth-loading');
+        throw new Error('not admin');
+      }
+    } finally {
+      document.body.classList.remove('auth-loading');
+    }
+
+    // ── User lookup ───────────────────────────────────────────────────────────
+    const lookupBtn    = document.getElementById('lookup-btn');
+    const lookupStatus = document.getElementById('lookup-status');
+    const targetInfo   = document.getElementById('target-info');
+    const exportSection = document.getElementById('export-section');
+    const repairSection = document.getElementById('repair-section');
+
+    lookupBtn.addEventListener('click', async () => {
+      const username = document.getElementById('target-username').value.trim().toLowerCase();
+      if (!username) return;
+      lookupBtn.disabled = true;
+      lookupStatus.style.display = '';
+      lookupStatus.style.color = 'var(--text-muted)';
+      lookupStatus.textContent = 'Looking up…';
+      targetInfo.style.display = 'none';
+      exportSection.style.display = 'none';
+      repairSection.style.display = 'none';
+      targetUid = null;
+
+      try {
+        const profile = await getProfileByUsername(username);
+        if (!profile) {
+          lookupStatus.textContent = 'No user found with that username.';
+          lookupStatus.style.color = 'var(--danger, #d44)';
+          return;
+        }
+        targetUid = profile.uid;
+        const count = await getBookCount(targetUid);
+        lookupStatus.style.display = 'none';
+        targetInfo.style.display = '';
+        targetInfo.textContent = `${profile.username} · ${count} book${count === 1 ? '' : 's'} · uid: ${targetUid}`;
+        exportSection.style.display = '';
+        repairSection.style.display = '';
+        document.getElementById('export-status').style.display = 'none';
+        document.getElementById('repair-status').style.display = 'none';
+      } catch (err) {
+        console.error(err);
+        lookupStatus.textContent = 'Lookup failed.';
+        lookupStatus.style.color = 'var(--danger, #d44)';
+      } finally {
+        lookupBtn.disabled = false;
+      }
+    });
+
+    document.getElementById('target-username').addEventListener('keydown', e => {
+      if (e.key === 'Enter') lookupBtn.click();
+    });
+
+    // ── Export ────────────────────────────────────────────────────────────────
+    document.getElementById('export-btn').addEventListener('click', async () => {
+      if (!targetUid) return;
+      const btn    = document.getElementById('export-btn');
+      const status = document.getElementById('export-status');
+      btn.disabled = true;
+      status.style.display = '';
+      status.style.color = 'var(--text-muted)';
+      status.textContent = 'Exporting…';
+      try {
+        const data = await exportLibraryData(targetUid);
+        const json = JSON.stringify(data, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        const date = new Date().toISOString().slice(0, 10);
+        const name = document.getElementById('target-username').value.trim().toLowerCase();
+        a.href     = url;
+        a.download = `paperbackd-${name}-${date}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        status.textContent = `Exported ${data.books.length} book${data.books.length === 1 ? '' : 's'} and ${data.lists.length} list${data.lists.length === 1 ? '' : 's'}.`;
+        status.style.color = 'var(--accent)';
+      } catch (err) {
+        console.error(err);
+        status.textContent = 'Export failed.';
+        status.style.color = 'var(--danger, #d44)';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // ── Repair ────────────────────────────────────────────────────────────────
+    const repairBtn    = document.getElementById('repair-btn');
+    const repairStatus = document.getElementById('repair-status');
+
+    repairBtn.addEventListener('click', async () => {
+      if (!targetUid) return;
+      repairBtn.disabled = true;
+      repairStatus.style.display = '';
+      repairStatus.style.color = 'var(--text-muted)';
+      repairStatus.textContent = 'Loading library…';
+
+      try {
+        let books = await getBooks(targetUid);
+
+        function computeDupeGroups(bookList) {
+          const groups = new Map();
+          for (const book of bookList.filter(b => b.status === 'finished')) {
+            const key = book.gbid?.trim()
+              ? `g:${book.gbid.trim()}`
+              : (book.title && book.author)
+                ? `t:${book.title.toLowerCase().trim()}||${book.author.toLowerCase().trim()}`
+                : null;
+            if (!key) continue;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(book);
+          }
+          return [...groups.values()].filter(g => g.length > 1);
+        }
+
+        const dupeGroups   = computeDupeGroups(books);
+        let unmatched      = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
+        let incomplete     = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author));
+        let needsCountry   = books.filter(b => !b.country && b.author);
+
+        if (!dupeGroups.length && !unmatched.length && !incomplete.length && !needsCountry.length) {
+          repairStatus.textContent = 'Nothing to repair — all books are matched and complete.';
+          repairStatus.style.color = 'var(--accent)';
+          repairBtn.disabled = false;
+          return;
+        }
+
+        let fixed = 0;
+        const mergedGroupsCount = dupeGroups.length;
+
+        // ── Phase 0: merge duplicate finished entries ─────────────────────────
+        if (dupeGroups.length) {
+          repairStatus.textContent = `Merging ${dupeGroups.length} duplicate entr${dupeGroups.length === 1 ? 'y' : 'ies'}…`;
+
+          function bookToReads(book) {
+            if (book.reads?.length) return book.reads;
+            return [{
+              startedAt: book.addedAt || null, startedAtPrecision: book.addedAtPrecision || null,
+              finishedAt: book.finishedAt || null, finishedAtPrecision: book.finishedAtPrecision || null,
+              rating: book.rating ?? null, review: book.review || null,
+              language: book.language || null, format: book.format || null,
+            }];
+          }
+
+          const tsVal = ts => ts?.seconds ?? (ts?.toDate ? ts.toDate().getTime() / 1000 : 0);
+
+          for (const group of dupeGroups) {
+            const score = b =>
+              (b.coverUrl ? 3 : 0) + (b.totalPages > 0 ? 2 : 0) +
+              (b.author ? 1 : 0) + (b.releaseYear ? 1 : 0) + (b.country ? 1 : 0);
+            const sorted      = [...group].sort((a, b) => { const ds = score(b) - score(a); return ds !== 0 ? ds : tsVal(a.addedAt) - tsVal(b.addedAt); });
+            const primary     = sorted[0];
+            const secondaries = sorted.slice(1);
+
+            const allReads = bookToReads(primary).concat(...secondaries.map(bookToReads));
+            const seen = new Set();
+            const mergedReads = allReads.filter(r => {
+              const key = r.finishedAt?.seconds ?? r.finishedAt?.toDate?.()?.getTime?.();
+              if (key == null) return true;
+              if (seen.has(key)) return false;
+              seen.add(key); return true;
+            });
+
+            const metaUpdates = {};
+            for (const s of secondaries) {
+              if (!primary.coverUrl    && s.coverUrl)    metaUpdates.coverUrl    = s.coverUrl;
+              if (!primary.totalPages  && s.totalPages)  metaUpdates.totalPages  = s.totalPages;
+              if (!primary.author      && s.author)      metaUpdates.author      = s.author;
+              if (!primary.releaseYear && s.releaseYear) metaUpdates.releaseYear = s.releaseYear;
+              if (!primary.country     && s.country)     metaUpdates.country     = s.country;
+              if (!primary.gbid        && s.gbid)        metaUpdates.gbid        = s.gbid;
+            }
+
+            const mostRecent = [...mergedReads].sort((a, b) => tsVal(b.finishedAt) - tsVal(a.finishedAt))[0];
+            if (mostRecent?.rating != null) metaUpdates.rating     = mostRecent.rating;
+            if (mostRecent?.review)         metaUpdates.review     = mostRecent.review;
+            if (mostRecent?.finishedAt)     metaUpdates.finishedAt = mostRecent.finishedAt;
+
+            await updateBookReads(targetUid, primary.id, mergedReads);
+            if (Object.keys(metaUpdates).length) await updateBookMeta(targetUid, primary.id, metaUpdates);
+            for (const s of secondaries) await deleteBookDoc(targetUid, s.id);
+            fixed++;
+          }
+
+          books        = await getBooks(targetUid);
+          unmatched    = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
+          incomplete   = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author));
+          needsCountry = books.filter(b => !b.country && b.author);
+        }
+
+        // ── Phase 1: match unmatched books ────────────────────────────────────
+        for (let i = 0; i < unmatched.length; i++) {
+          const book = unmatched[i];
+          repairStatus.textContent = `Matching ${i + 1}/${unmatched.length}: ${book.title}…`;
+          const enriched = await enrichFromHardcover(book);
+          if (!enriched._hardcoverMatched) continue;
+          const updates = {};
+          if (!book.gbid && enriched.gbid)                                   updates.gbid        = enriched.gbid;
+          if ((!book.coverUrl || book.coverUrl === '') && enriched.coverUrl) updates.coverUrl    = enriched.coverUrl;
+          if (book.releaseYear == null && enriched.releaseYear)              updates.releaseYear = enriched.releaseYear;
+          if (!book.totalPages && enriched.totalPages)                       updates.totalPages  = enriched.totalPages;
+          if (book.status === 'finished' && !book.totalPages && enriched.totalPages) updates.currentPage = enriched.totalPages;
+          if (Object.keys(updates).length) { await updateBookMeta(targetUid, book.id, updates); fixed++; }
+        }
+
+        // ── Phase 2: fill gaps for matched books ──────────────────────────────
+        if (incomplete.length) {
+          repairStatus.textContent = `Filling gaps for ${incomplete.length} matched book${incomplete.length === 1 ? '' : 's'}…`;
+          const CHUNK = 50;
+          for (let c = 0; c < incomplete.length; c += CHUNK) {
+            const chunk = incomplete.slice(c, c + CHUNK);
+            const slugs = chunk.map(b => b.gbid);
+            try {
+              const data = await hcQuery(
+                `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:${CHUNK}){slug pages release_year contributions{author{name}}}}`,
+                { slugs }
+              );
+              const bySlug = new Map((data?.data?.books || []).map(b => [b.slug, b]));
+              for (const book of chunk) {
+                const hc = bySlug.get(book.gbid);
+                if (!hc) continue;
+                const updates = {};
+                if (book.releaseYear == null && hc.release_year) updates.releaseYear = hc.release_year;
+                if (!book.totalPages && hc.pages)                updates.totalPages  = hc.pages;
+                if (!book.author) { const name = hc.contributions?.[0]?.author?.name; if (name) updates.author = name; }
+                if (Object.keys(updates).length) { await updateBookMeta(targetUid, book.id, updates); fixed++; }
+              }
+            } catch (e) { console.warn('Slug batch failed', e); }
+          }
+        }
+
+        // ── Phase 3: fill country via Wikidata ────────────────────────────────
+        if (needsCountry.length) {
+          repairStatus.textContent = `Looking up countries for ${needsCountry.length} book${needsCountry.length === 1 ? '' : 's'}…`;
+          const authorMap   = new Map();
+          const uniqueAuthors = [...new Set(needsCountry.map(b => b.author))];
+          for (const authorName of uniqueAuthors) {
+            try {
+              const base = 'https://www.wikidata.org/w/api.php';
+              const sr = await fetch(`${base}?action=wbsearchentities&search=${encodeURIComponent(authorName)}&language=en&type=item&format=json&origin=*&limit=1`);
+              if (!sr.ok) continue;
+              const sd = await sr.json();
+              const qid = sd.search?.[0]?.id;
+              if (!qid) continue;
+              const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
+              if (!er.ok) continue;
+              const ed = await er.json();
+              const countryQid = ed.entities?.[qid]?.claims?.P27?.[0]?.mainsnak?.datavalue?.value?.id;
+              if (!countryQid) continue;
+              const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
+              if (!lr.ok) continue;
+              const ld = await lr.json();
+              const country = ld.entities?.[countryQid]?.labels?.en?.value;
+              if (country) authorMap.set(authorName, normalizeCountry(country));
+            } catch (e) { /* skip */ }
+          }
+          for (const book of needsCountry) {
+            const country = authorMap.get(book.author);
+            if (country) { await updateBookMeta(targetUid, book.id, { country }); fixed++; }
+          }
+        }
+
+        const total = mergedGroupsCount + unmatched.length + incomplete.length + needsCountry.length;
+        repairStatus.textContent = `Done — updated ${fixed} of ${total} book${total === 1 ? '' : 's'}.`;
+        repairStatus.style.color = 'var(--accent)';
+      } catch (err) {
+        console.error(err);
+        repairStatus.textContent = 'Repair failed. Check the console.';
+        repairStatus.style.color = 'var(--danger, #d44)';
+      } finally {
+        repairBtn.disabled = false;
+      }
+    });
+
+    // ── Hardcover helpers ─────────────────────────────────────────────────────
+    async function hcQuery(query, variables, retries = 3) {
+      const res = await fetch(HARDCOVER_PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, variables })
+      });
+      if (res.status === 429) {
+        if (retries > 0) { await new Promise(r => setTimeout(r, 1500)); return hcQuery(query, variables, retries - 1); }
+        throw new Error('HTTP 429');
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    function applyHardcoverBook(book, hc) {
+      if (!hc) return book;
+      const result = { ...book, gbid: hc.slug || book.gbid, coverUrl: hc.image?.url || book.coverUrl || '', totalPages: hc.pages || book.totalPages, currentPage: book.status === 'finished' ? (hc.pages || book.totalPages) : book.currentPage, _hardcoverMatched: true };
+      if (hc.release_year) result.releaseYear = hc.release_year;
+      return result;
+    }
+
+    function cleanTitle(t)  { return (t || '').replace(/\s*\([^)]*#\s*\d+[^)]*\)/g, '').trim(); }
+    function cleanAuthor(a) { return (a || '').replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim(); }
+
+    async function searchHardcover(q) {
+      const data = await hcQuery(`query($q:String!){search(query:$q,query_type:"Book",per_page:3){results}}`, { q });
+      const doc = data?.data?.search?.results?.hits?.[0]?.document;
+      return doc?.slug ? doc : null;
+    }
+
+    async function enrichBatch(books, onProgress) {
+      const results = books.map(b => ({ ...b }));
+      const byIdx   = new Map(results.map((b, i) => [i, b]));
+
+      const grIdEntries = results.map((b, i) => [i, parseInt(b._grId)]).filter(([, id]) => !isNaN(id));
+      if (grIdEntries.length) {
+        for (let c = 0; c < grIdEntries.length; c += 100) {
+          const chunk = grIdEntries.slice(c, c + 100);
+          try {
+            const data = await hcQuery(`query($ids:[Int!]!){books(where:{goodreads_id:{_in:$ids}},limit:100){goodreads_id slug pages release_year image{url}}}`, { ids: chunk.map(([, id]) => id) });
+            const byGrId = new Map((data?.data?.books || []).map(b => [b.goodreads_id, b]));
+            chunk.forEach(([i, id]) => { const hc = byGrId.get(id); if (hc?.slug) Object.assign(byIdx.get(i), applyHardcoverBook(byIdx.get(i), hc)); });
+          } catch (e) { console.warn('GR ID batch failed', e); }
+        }
+      }
+
+      const isbnEntries = results.map((b, i) => [i, b._isbn13]).filter(([i, isbn]) => isbn && !results[i]._hardcoverMatched);
+      if (isbnEntries.length) {
+        for (let c = 0; c < isbnEntries.length; c += 100) {
+          const chunk = isbnEntries.slice(c, c + 100);
+          try {
+            const data = await hcQuery(`query($isbns:[String!]!){editions(where:{isbn_13:{_in:$isbns}},limit:100){isbn_13 book{slug pages release_year image{url}}}}`, { isbns: chunk.map(([, isbn]) => isbn) });
+            const byIsbn = new Map((data?.data?.editions || []).map(e => [e.isbn_13, e.book]));
+            chunk.forEach(([i, isbn]) => { const hc = byIsbn.get(isbn); if (hc?.slug) Object.assign(byIdx.get(i), applyHardcoverBook(byIdx.get(i), hc)); });
+          } catch (e) { console.warn('ISBN batch failed', e); }
+        }
+      }
+
+      const unmatched = results.map((b, i) => [i, b]).filter(([, b]) => !b._hardcoverMatched);
+      for (let u = 0; u < unmatched.length; u++) {
+        const [i, book] = unmatched[u];
+        if (onProgress) onProgress(u, unmatched.length, book.title);
+        try {
+          const title = cleanTitle(book.title), author = cleanAuthor(book.author);
+          let doc = await searchHardcover(`${title} ${author}`.trim());
+          if (!doc && author) doc = await searchHardcover(title);
+          if (doc) Object.assign(byIdx.get(i), applyHardcoverBook(book, { slug: doc.slug, pages: doc.pages, release_year: doc.release_year, image: doc.image }));
+        } catch (e) { console.warn('Title search failed for', book.title, e); }
+      }
+
+      return results;
+    }
+
+    async function enrichFromHardcover(book) {
+      const [result] = await enrichBatch([book]);
+      return result;
+    }
+  </script>
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
+</body>
+</html>
