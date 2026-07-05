@@ -188,7 +188,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, changeUsername, clearLibrary } from '../js/firebase.js';
+    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary } from '../js/firebase.js';
 
     let currentUser = null;
 
@@ -775,6 +775,9 @@
             }
           }
         }
+
+        repairStatus.textContent = 'Merging duplicate lists…';
+        await mergeListsByName(currentUser.uid);
 
         const total = mergedGroupsCount + unmatched.length + incomplete.length + needsCountry.length;
         repairStatus.textContent = `Done - updated ${fixed} of ${total} book${total === 1 ? '' : 's'}.`;

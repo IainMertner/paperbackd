@@ -196,7 +196,7 @@
                 release_year
                 description
                 cached_image
-                contributions { author { name } }
+                contributions { author { name slug } }
                 editions { isbn_10 isbn_13 }
               }
             }`,
@@ -211,7 +211,9 @@
       const hcBook = hcData.data?.books?.[0] || {};
 
       const title       = hcBook.title  || myBook?.title  || 'Unknown title';
-      const author      = hcBook.contributions?.find(c => c.author)?.author?.name || myBook?.author || '';
+      const authorData  = hcBook.contributions?.find(c => c.author)?.author;
+      const author      = authorData?.name || myBook?.author || '';
+      const authorSlug  = authorData?.slug || author.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       const pages       = hcBook.pages  || myBook?.totalPages || 0;
       const cover       = hcBook.cached_image?.url || myBook?.coverUrl || '';
       const desc        = hcBook.description || '';
@@ -236,7 +238,7 @@
               ${gbid && !/^\d+$/.test(gbid) ? `<a href="https://hardcover.app/books/${gbid}" target="_blank" rel="noopener" title="View on Hardcover"><img src="https://www.google.com/s2/favicons?domain=hardcover.app&sz=32" width="16" height="16" alt="Hardcover" style="border-radius:2px;opacity:.75;display:block"></a>` : ''}
             </div>
           </div>
-          ${author ? `<div style="color:var(--text-muted);font-size:.875rem;margin-top:.2rem">${esc(author)}</div>` : ''}
+          ${author ? `<div style="color:var(--text-muted);font-size:.875rem;margin-top:.2rem"><a href="../author/?slug=${encodeURIComponent(authorSlug)}" style="color:inherit;text-decoration:none">${esc(author)}</a></div>` : ''}
           ${pages  ? `<div style="color:var(--text-muted);font-size:.78rem;margin-top:.15rem">${pages} pages</div>` : ''}
           ${desc   ? `<div class="book-desc" style="font-size:.825rem;color:var(--text-muted);margin-top:.75rem;line-height:1.55">${esc(desc.slice(0, 300))}${desc.length > 300 ? '<span class="book-desc-more" style="cursor:pointer">…</span>' : ''}</div>` : ''}
           ${myBook ? `<div style="margin-top:.625rem;font-size:.8rem;color:var(--accent);font-weight:500">${myBook.status === 'reading' ? (myBook.totalPages ? `You're reading this · page ${myBook.currentPage} of ${myBook.totalPages}` : `You're currently reading this`) : `You've finished this`}</div>${myBook.status === 'finished' ? renderStars(myBook.rating) : ''}${myBook.status === 'finished' && myBook.review ? `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(myBook.review.slice(0, 200))}${myBook.review.length > 200 ? '…' : ''}</div>` : ''}` : ''}

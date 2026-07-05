@@ -87,6 +87,9 @@
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
+    function toAuthorSlug(name) {
+      return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    }
 
     function timeAgo(ts) {
       if (!ts?.seconds) return '';
@@ -171,7 +174,7 @@
         ? `started reading ${bookLink}`
         : `finished ${bookLink}`;
       const author = event.bookAuthor
-        ? `<span style="color:var(--text-muted)"> by ${esc(event.bookAuthor)}</span>`
+        ? `<span style="color:var(--text-muted)"> by <a href="../author/?slug=${toAuthorSlug(event.bookAuthor)}" style="color:inherit;text-decoration:none">${esc(event.bookAuthor)}</a></span>`
         : '';
       const reviewBtn = event.hasReview && event.gbid
         ? `<button class="review-btn" style="font-size:.75rem;color:var(--accent);background:none;border:none;padding:0;cursor:pointer;font-family:inherit">Read review</button>`

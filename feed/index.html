@@ -84,6 +84,9 @@
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
+    function toAuthorSlug(name) {
+      return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    }
 
     function timeAgo(ts) {
       if (!ts?.seconds) return '';
@@ -174,7 +177,7 @@
         ? `started reading ${bookLink}`
         : `finished ${bookLink}`;
       const author  = event.bookAuthor
-        ? `<span style="color:var(--text-muted)"> by ${esc(event.bookAuthor)}</span>`
+        ? `<span style="color:var(--text-muted)"> by <a href="../author/?slug=${toAuthorSlug(event.bookAuthor)}" style="color:inherit;text-decoration:none">${esc(event.bookAuthor)}</a></span>`
         : '';
       const reviewBtn = event.hasReview && event.gbid
         ? `<button class="review-btn" style="font-size:.75rem;color:var(--accent);background:none;border:none;padding:0;cursor:pointer;font-family:inherit">Read review</button>`
@@ -258,15 +261,40 @@
         usernameMap[f.uid]    = f.username || null;
       });
 
-      // Filter bar
+      // Filter
       const allPeople = [
         { uid: user.uid, username: myProfile?.username || 'You' },
         ...following.map(f => ({ uid: f.uid, username: f.username || f.uid }))
       ];
       const activeUids = new Set(allPeople.map(p => p.uid));
 
-      const filterBar = document.createElement('div');
-      filterBar.style.cssText = 'margin-bottom:.75rem;display:flex;flex-wrap:wrap;gap:.35rem;align-items:center';
+      const filterWrap = document.createElement('div');
+      filterWrap.style.cssText = 'position:relative;margin-bottom:.75rem';
+
+      const filterBtn = document.createElement('button');
+      filterBtn.style.cssText = 'display:inline-flex;align-items:center;gap:.35rem;font-size:.8rem;padding:.3rem .65rem;border-radius:20px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-muted);cursor:pointer;font-family:inherit';
+      filterBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>Filter`;
+      const filterDot = document.createElement('span');
+      filterDot.style.cssText = 'width:6px;height:6px;border-radius:50%;background:var(--accent);display:none;flex-shrink:0';
+      filterBtn.appendChild(filterDot);
+
+      const filterPanel = document.createElement('div');
+      filterPanel.style.cssText = 'display:none;position:absolute;top:calc(100% + .4rem);left:0;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:.6rem .7rem;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:50;display:none;flex-wrap:wrap;gap:.35rem;min-width:180px';
+
+      let panelOpen = false;
+      filterBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        panelOpen = !panelOpen;
+        filterPanel.style.display = panelOpen ? 'flex' : 'none';
+      });
+      document.addEventListener('click', () => {
+        if (panelOpen) { panelOpen = false; filterPanel.style.display = 'none'; }
+      });
+      filterPanel.addEventListener('click', e => e.stopPropagation());
+
+      function updateFilterDot() {
+        filterDot.style.display = activeUids.size < allPeople.length ? 'block' : 'none';
+      }
 
       allPeople.forEach(person => {
         const label = document.createElement('label');
@@ -290,12 +318,14 @@
             label.style.color = 'var(--text-muted)';
             label.style.borderColor = 'var(--border)';
           }
+          updateFilterDot();
           resetFeed();
         });
-        filterBar.appendChild(label);
+        filterPanel.appendChild(label);
       });
 
-      main.appendChild(filterBar);
+      filterWrap.append(filterBtn, filterPanel);
+      main.appendChild(filterWrap);
 
       const feedContent = document.createElement('div');
       main.appendChild(feedContent);

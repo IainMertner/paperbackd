@@ -265,6 +265,9 @@
     const readingList  = document.getElementById('reading-list');
     const finishedList = document.getElementById('finished-list');
 
+    function toAuthorSlug(name) {
+      return (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    }
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
@@ -842,7 +845,7 @@
             const titleEl  = el.querySelector('.book-title');
             const authorEl = el.querySelector('.book-author');
             if (titleEl  && updates.title  != null) titleEl.textContent  = updates.title;
-            if (authorEl && 'author' in updates)    authorEl.textContent = updates.author || '';
+            if (authorEl && 'author' in updates) { authorEl.textContent = updates.author || ''; if (authorEl.tagName === 'A') authorEl.href = `../author/?slug=${toAuthorSlug(updates.author || '')}`; }
           }
         });
         if (updates.title) {
@@ -856,7 +859,7 @@
         }
         if (Object.prototype.hasOwnProperty.call(updates, 'author')) {
           const authorEl = card.querySelector('.book-author');
-          if (authorEl) authorEl.textContent = updates.author || '';
+          if (authorEl) { authorEl.textContent = updates.author || ''; if (authorEl.tagName === 'A') authorEl.href = `../author/?slug=${toAuthorSlug(updates.author || '')}`; }
           if (coverCell) coverCell.dataset.author = (updates.author || '').toLowerCase();
         }
       }
@@ -881,7 +884,7 @@
         <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
           <div style="flex:1;min-width:0">
             ${titleHtml}
-            ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
           </div>
         </div>
         <div class="book-entry">
@@ -934,7 +937,7 @@
             await updateBookMeta(user.uid, book.id, updates);
             Object.assign(book, updates);
             if (updates.title) { const el = card.querySelector('.book-title'); if (el) el.textContent = updates.title; }
-            if ('author' in updates) { const el = card.querySelector('.book-author'); if (el) el.textContent = updates.author || ''; }
+            if ('author' in updates) { const el = card.querySelector('.book-author'); if (el) { el.textContent = updates.author || ''; if (el.tagName === 'A') el.href = `../author/?slug=${toAuthorSlug(updates.author || '')}`; } }
             if (updates.coverUrl) { const img = coverWrap.querySelector('img'); if (img) img.src = updates.coverUrl; }
             if (updates.totalPages) { const inp = card.querySelector('.page-total'); if (inp) { inp.value = updates.totalPages; inp.dispatchEvent(new Event('input')); } }
             card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
@@ -1202,7 +1205,7 @@
         <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
           <div style="flex:1;min-width:0">
             ${titleHtml}
-            ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
           </div>
         </div>
         <div class="book-entry">
@@ -1246,7 +1249,7 @@
             await updateBookMeta(user.uid, book.id, updates);
             Object.assign(book, updates);
             if (updates.title) { const el = card.querySelector('.book-title'); if (el) el.textContent = updates.title; }
-            if ('author' in updates) { const el = card.querySelector('.book-author'); if (el) el.textContent = updates.author || ''; }
+            if ('author' in updates) { const el = card.querySelector('.book-author'); if (el) { el.textContent = updates.author || ''; if (el.tagName === 'A') el.href = `../author/?slug=${toAuthorSlug(updates.author || '')}`; } }
             if (updates.coverUrl) { const img = coverWrap.querySelector('img'); if (img) img.src = updates.coverUrl; }
             if (updates.totalPages) { const inp = card.querySelector('.page-total'); if (inp) { inp.value = updates.totalPages; inp.dispatchEvent(new Event('input')); } }
             card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
@@ -1634,7 +1637,7 @@
         <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
           <div style="flex:1;min-width:0">
             ${titleHtml}
-            ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
           </div>
         </div>
         <div class="book-entry">
@@ -1724,7 +1727,7 @@
         <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
           <div style="flex:1;min-width:0">
             ${titleHtml}
-            ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
           </div>
         </div>
         <div class="book-entry">

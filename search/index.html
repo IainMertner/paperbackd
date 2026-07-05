@@ -31,7 +31,12 @@
   </header>
 
   <main class="page-content">
-    <div class="book-search-wrap" id="search-wrap" style="margin-bottom:1rem">
+    <div style="display:flex;gap:.5rem;margin-bottom:.65rem">
+      <button id="tab-books"   class="tab-btn" style="font-size:.82rem;padding:.28rem .75rem;border-radius:20px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-family:inherit">Books</button>
+      <button id="tab-authors" class="tab-btn" style="font-size:.82rem;padding:.28rem .75rem;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-family:inherit">Authors</button>
+      <button id="tab-users"   class="tab-btn" style="font-size:.82rem;padding:.28rem .75rem;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-family:inherit">Users</button>
+    </div>
+    <div class="book-search-wrap" id="search-wrap" style="margin-bottom:.9rem">
       <input type="search" id="search-input" class="join-club-input"
         placeholder="Search for a book…" autocomplete="off" spellcheck="false"
         style="width:100%;box-sizing:border-box;font-size:1rem;padding:.6rem .75rem">
@@ -80,27 +85,62 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
+    import { searchUsers } from '../js/firebase.js';
 
-    await requireAuth();
+    const { user } = await requireAuth();
     document.body.classList.remove('auth-loading');
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
-    const input   = document.getElementById('search-input');
-    const results = document.getElementById('search-results');
+    const input      = document.getElementById('search-input');
+    const results    = document.getElementById('search-results');
+    const tabBooks   = document.getElementById('tab-books');
+    const tabAuthors = document.getElementById('tab-authors');
+    const tabUsers   = document.getElementById('tab-users');
     let timer;
+    let activeTab = 'books';
 
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
+    const tabDefs = [
+      { id: 'books',   btn: tabBooks,   placeholder: 'Search for a book…' },
+      { id: 'authors', btn: tabAuthors, placeholder: 'Search for an author…' },
+      { id: 'users',   btn: tabUsers,   placeholder: 'Search for a user…' },
+    ];
+
+    function setTab(tab) {
+      activeTab = tab;
+      tabDefs.forEach(t => {
+        const active = t.id === tab;
+        t.btn.style.background  = active ? 'var(--accent)' : 'transparent';
+        t.btn.style.color       = active ? '#fff' : 'var(--text-muted)';
+        t.btn.style.borderColor = active ? 'var(--accent)' : 'var(--border)';
+        if (active) input.placeholder = t.placeholder;
+      });
+      results.innerHTML = '';
+      const q = input.value.trim();
+      if (q) runSearch(q);
+    }
+
+    tabBooks.addEventListener('click',   () => setTab('books'));
+    tabAuthors.addEventListener('click', () => setTab('authors'));
+    tabUsers.addEventListener('click',   () => setTab('users'));
+
     input.addEventListener('input', () => {
       clearTimeout(timer);
       const q = input.value.trim();
       if (!q) { results.innerHTML = ''; return; }
-      timer = setTimeout(() => fetchResults(q), 280);
+      timer = setTimeout(() => runSearch(q), 280);
     });
 
-    async function fetchResults(q) {
+    function runSearch(q) {
+      if (activeTab === 'books')        fetchBooks(q);
+      else if (activeTab === 'authors') fetchAuthors(q);
+      else                              fetchUsers(q);
+    }
+
+    async function fetchBooks(q) {
       results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">Searching…</p>';
       try {
         const res  = await fetch(HARDCOVER_PROXY, {
@@ -113,13 +153,63 @@
         });
         const data = await res.json();
         const hits = data?.data?.search?.results?.hits || [];
-        renderResults(hits.map(h => h.document));
+        renderBooks(hits.map(h => h.document));
       } catch (e) {
         results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">Search failed. Please try again.</p>';
       }
     }
 
-    function renderResults(docs) {
+    async function fetchAuthors(q) {
+      results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">Searching…</p>';
+      try {
+        const res = await fetch(HARDCOVER_PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `query($q:String!){search(query:$q,query_type:"Author",per_page:20){results}}`,
+            variables: { q }
+          })
+        });
+        const data = await res.json();
+        const hits = data?.data?.search?.results?.hits || [];
+        renderAuthors(hits.map(h => h.document));
+      } catch (e) {
+        results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">Search failed. Please try again.</p>';
+      }
+    }
+
+    function renderAuthors(docs) {
+      if (!docs.length) {
+        results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">No results found.</p>';
+        return;
+      }
+      results.innerHTML = '';
+      docs.forEach(doc => {
+        const slug  = doc.slug || String(doc.id);
+        const name  = doc.name || '';
+        const image = doc.image?.url || '';
+        const a = document.createElement('a');
+        a.href = `../author/?slug=${encodeURIComponent(slug)}`;
+        a.className = 'search-result-row';
+        a.innerHTML = image
+          ? `<img class="search-result-cover" src="${esc(image)}" alt="" style="border-radius:50%;object-fit:cover">`
+          : `<div class="search-result-cover search-result-cover-placeholder" style="border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem">${esc((name[0] || '?').toUpperCase())}</div>`;
+        a.innerHTML += `<div class="search-result-info"><div class="search-result-title">${esc(name)}</div></div>`;
+        results.appendChild(a);
+      });
+    }
+
+    async function fetchUsers(q) {
+      results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">Searching…</p>';
+      try {
+        const users = await searchUsers(q, user.uid);
+        renderUsers(users);
+      } catch (e) {
+        results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">Search failed. Please try again.</p>';
+      }
+    }
+
+    function renderBooks(docs) {
       if (!docs.length) {
         results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">No results found.</p>';
         return;
@@ -142,6 +232,30 @@
           <div class="search-result-title">${esc(title)}</div>
           <div class="search-result-meta">${author ? esc(author) : ''}${author && year ? ' · ' : ''}${year ? esc(String(year)) : ''}</div>
         </div>`;
+        results.appendChild(a);
+      });
+    }
+
+    function renderUsers(users) {
+      if (!users.length) {
+        results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">No users found.</p>';
+        return;
+      }
+      results.innerHTML = '';
+      users.forEach(u => {
+        const a = document.createElement('a');
+        a.href = `../profile/?u=${encodeURIComponent(u.username)}`;
+        a.className = 'search-result-row';
+        a.style.textDecoration = 'none';
+        const initial = (u.username?.[0] || '?').toUpperCase();
+        const borderStyle = u.avatarBorderColor ? `border-color:${esc(u.avatarBorderColor)}` : '';
+        const avatarInner = u.avatarUrl
+          ? `<img src="${esc(u.avatarUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+          : esc(initial);
+        a.innerHTML = `<div class="friend-avatar" style="flex-shrink:0;${borderStyle}">${avatarInner}</div>
+          <div class="search-result-info">
+            <div class="search-result-title" style="font-size:.9rem">${esc(u.username)}</div>
+          </div>`;
         results.appendChild(a);
       });
     }

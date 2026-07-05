@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Author - paperbackd</title>
+  <link rel="stylesheet" href="../css/main.css">
+  <script>
+    (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
+  </script>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/library/">paperbackd</a>
+      <nav class="desktop-nav">
+        <a href="../feed/" data-nav="feed">Feed</a>
+        <a href="../search/"   data-nav="search">Search</a>
+        <a href="../library/"  data-nav="library">Library</a>
+        <a href="../profile/"  data-nav="profile">Profile</a>
+        <a href="../settings/" data-nav="settings">Settings</a>
+      </nav>
+      <button class="theme-toggle" aria-label="Toggle theme"></button>
+    </div>
+  </header>
+
+  <main class="page-content">
+    <a class="back-link" id="back-link" href="../search/">← Back</a>
+    <div id="author-detail"></div>
+  </main>
+
+  <nav class="mobile-nav">
+    <a class="mobile-nav-item" href="../feed/" data-nav="feed">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+      </svg>
+      Feed
+    </a>
+    <a class="mobile-nav-item" href="../search/" data-nav="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      Search
+    </a>
+    <a class="mobile-nav-item" href="../library/" data-nav="library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
+        <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+      </svg>
+      Library
+    </a>
+    <a class="mobile-nav-item" href="../profile/" data-nav="profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      Profile
+    </a>
+    <a class="mobile-nav-item" href="../settings/" data-nav="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+      </svg>
+      Settings
+    </a>
+  </nav>
+
+  <script src="../js/main.js"></script>
+  <script>document.body.classList.add('auth-loading');</script>
+  <script type="module">
+    import { requireAuth } from '../js/auth.js';
+
+    const params = new URLSearchParams(location.search);
+    const slug   = params.get('slug');
+    if (!slug) location.replace('../search/');
+
+    await requireAuth();
+
+    document.getElementById('back-link').addEventListener('click', e => {
+      if (history.length > 1) { e.preventDefault(); history.back(); }
+    });
+
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function stripHtml(html) {
+      const d = document.createElement('div');
+      d.innerHTML = html;
+      return d.textContent || '';
+    }
+
+    const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
+    const detail = document.getElementById('author-detail');
+
+    try {
+      const [authorRes, booksRes] = await Promise.all([
+        fetch(HARDCOVER_PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `query GetAuthor($slug: String!) {
+              authors(where: { slug: { _eq: $slug } }, limit: 1) {
+                id
+                name
+                bio
+                cached_image
+              }
+            }`,
+            variables: { slug }
+          })
+        }),
+        fetch(HARDCOVER_PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `query GetAuthorBooks($slug: String!) {
+              books(
+                where: { contributions: { author: { slug: { _eq: $slug } } } }
+                limit: 100
+                order_by: { users_read_count: desc }
+              ) {
+                title
+                slug
+                release_year
+                cached_image
+              }
+            }`,
+            variables: { slug }
+          })
+        })
+      ]);
+
+      const authorData = authorRes.ok ? await authorRes.json() : {};
+      const booksData  = booksRes.ok  ? await booksRes.json()  : {};
+      const author = authorData?.data?.authors?.[0];
+      const books  = booksData?.data?.books || [];
+
+      if (!author) {
+        detail.innerHTML = '<p style="color:var(--text-muted)">Author not found.</p>';
+      } else {
+
+      const photo = author.cached_image?.url || '';
+      const bio   = author.bio ? stripHtml(author.bio) : '';
+
+      const headerCard = document.createElement('div');
+      headerCard.className = 'card';
+      headerCard.innerHTML = `<div style="display:flex;gap:1rem;align-items:flex-start">
+        ${photo ? `<img src="${esc(photo)}" alt="" style="width:72px;height:72px;border-radius:50%;object-fit:cover;flex-shrink:0">` : ''}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:1.15rem;font-weight:700;line-height:1.3">${esc(author.name)}</div>
+          ${bio ? `<div class="author-bio" style="font-size:.83rem;color:var(--text-muted);margin-top:.5rem;line-height:1.55">${esc(bio.slice(0, 350))}${bio.length > 350 ? '<span class="author-bio-more" style="cursor:pointer"> …</span>' : ''}</div>` : ''}
+        </div>
+      </div>`;
+      detail.appendChild(headerCard);
+
+      headerCard.querySelector('.author-bio-more')?.addEventListener('click', function () {
+        const el = headerCard.querySelector('.author-bio');
+        el.textContent = bio;
+      });
+
+      if (books.length) {
+        const booksTitle = document.createElement('p');
+        booksTitle.className = 'section-title';
+        booksTitle.textContent = `Books (${books.length})`;
+        detail.appendChild(booksTitle);
+
+        books.forEach(book => {
+          const bookSlug = book.slug || String(book.id || '');
+          const cover    = book.cached_image?.url || '';
+          const year     = book.release_year || '';
+
+          const a = document.createElement('a');
+          a.href = `../book/?gbid=${encodeURIComponent(bookSlug)}`;
+          a.className = 'search-result-row';
+          a.innerHTML = cover
+            ? `<img class="search-result-cover" src="${esc(cover)}" alt="">`
+            : `<div class="search-result-cover search-result-cover-placeholder"></div>`;
+          a.innerHTML += `<div class="search-result-info">
+            <div class="search-result-title">${esc(book.title || '')}</div>
+            ${year ? `<div class="search-result-meta">${esc(String(year))}</div>` : ''}
+          </div>`;
+          detail.appendChild(a);
+        });
+      }
+      } // end else
+    } finally {
+      document.body.classList.remove('auth-loading');
+    }
+  </script>
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
+</body>
+</html>

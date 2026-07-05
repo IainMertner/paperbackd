@@ -113,7 +113,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { ROOT, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData } from '../js/firebase.js';
+    import { ROOT, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName } from '../js/firebase.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -431,6 +431,9 @@
             if (country) { await updateBookMeta(targetUid, book.id, { country }); fixed++; }
           }
         }
+
+        repairStatus.textContent = 'Merging duplicate lists…';
+        await mergeListsByName(targetUid);
 
         const total = mergedGroupsCount + unmatched.length + incomplete.length + needsCountry.length;
         repairStatus.textContent = `Done — updated ${fixed} of ${total} book${total === 1 ? '' : 's'}.`;

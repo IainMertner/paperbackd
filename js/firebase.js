@@ -581,6 +581,40 @@ export async function exportLibraryData(uid) {
   };
 }
 
+export async function mergeListsByName(uid) {
+  const snap = await getDocs(collection(db, 'users', uid, 'lists'));
+  const lists = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const byName = {};
+  for (const list of lists) {
+    const key = (list.name || '').toLowerCase().trim();
+    if (!byName[key]) byName[key] = [];
+    byName[key].push(list);
+  }
+
+  for (const group of Object.values(byName)) {
+    if (group.length <= 1) continue;
+    // Prefer the default list as keeper; otherwise keep the first
+    const keeper = group.find(l => l.isDefault) || group[0];
+    const dupes  = group.filter(l => l !== keeper);
+
+    const merged = [...(keeper.books || [])];
+    const seen   = new Set(merged.map(b => b.gbid).filter(Boolean));
+    for (const dupe of dupes) {
+      for (const book of (dupe.books || [])) {
+        if (book.gbid && seen.has(book.gbid)) continue;
+        if (book.gbid) seen.add(book.gbid);
+        merged.push(book);
+      }
+    }
+
+    await Promise.all([
+      updateDoc(doc(db, 'users', uid, 'lists', keeper.id), { books: merged }),
+      ...dupes.map(d => deleteDoc(doc(db, 'users', uid, 'lists', d.id))),
+    ]);
+  }
+}
+
 export async function importLibraryData(uid, data) {
   const books = (data.books || []);
   const lists  = (data.lists  || []);
@@ -592,6 +626,7 @@ export async function importLibraryData(uid, data) {
   for (let i = 0; i < lists.length; i += 20) {
     await Promise.all(lists.slice(i, i + 20).map(({ id: _id, ...rest }) => addDoc(lCol, deserializeFromExport(rest))));
   }
+  await mergeListsByName(uid);
   return { books: books.length, lists: lists.length };
 }
 
@@ -610,6 +645,19 @@ export async function removeActivityEvent(uid, activityId, gbid, dateField) {
       });
     }
   }
+}
+
+export async function searchUsers(q, currentUid, pageSize = 10) {
+  const lower = q.toLowerCase();
+  const snap = await getDocs(query(
+    collection(db, 'users'),
+    where('username', '>=', lower),
+    where('username', '<=', lower + ''),
+    limit(pageSize)
+  ));
+  return snap.docs
+    .map(d => ({ uid: d.id, ...d.data() }))
+    .filter(u => u.uid !== currentUid);
 }
 
 export async function getFeed(currentUid, followingUids, cursor = null, pageSize = 20) {

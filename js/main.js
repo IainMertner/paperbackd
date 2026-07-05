@@ -183,6 +183,7 @@ function setActiveNav() {
   // Determine which page we're on
   let page = 'feed';
   if (/\/book\/?/.test(path))          page = 'search';
+  else if (/\/author\/?/.test(path))   page = 'search';
   else if (/\/search\/?/.test(path))   page = 'search';
   else if (/\/library\/?/.test(path))  page = 'library';
   else if (/\/friends\/?/.test(path))  page = 'profile';
