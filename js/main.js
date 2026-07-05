@@ -8,6 +8,7 @@ function normalizeCountry(raw) {
     'Union of Soviet Socialist Republics': 'Russia',
     'Russian Empire': 'Russia',
     'Russian Soviet Federative Socialist Republic': 'Russia',
+    'Russian Socialist Federative Soviet Republic': 'Russia',
     'Nazi Germany': 'Germany',
     'German Democratic Republic': 'Germany',
     'West Germany': 'Germany',
@@ -22,7 +23,9 @@ function normalizeCountry(raw) {
     'Czechoslovakia': 'Czech Republic',
     'Ottoman Empire': 'Turkey',
     'British Empire': 'United Kingdom',
+    'British Raj': 'India',
     'Kingdom of Great Britain': 'United Kingdom',
+    'United Kingdom of Great Britain and Northern Ireland': 'United Kingdom',
     'England': 'United Kingdom',
     'Scotland': 'United Kingdom',
     'Wales': 'United Kingdom',
@@ -86,6 +89,40 @@ function normalizeCountry(raw) {
   ];
   for (const prefix of prefixes) {
     if (raw.startsWith(prefix)) return raw.slice(prefix.length);
+  }
+
+  // Last resort: if the string contains a known country name as a whole word, use it.
+  // Sorted longest-first so "United States" wins over bare "States".
+  // Uses \b word boundaries so "Iran" won't match inside "Ukraine", etc.
+  const knownCountries = [
+    'Papua New Guinea', 'Trinidad and Tobago', 'Bosnia and Herzegovina',
+    'Dominican Republic', 'United Arab Emirates', 'United States', 'United Kingdom',
+    'Czech Republic', 'South Africa', 'South Korea', 'North Korea', 'Saudi Arabia',
+    'New Zealand', 'Sierra Leone', 'Côte d\'Ivoire', 'Sri Lanka', 'Costa Rica',
+    'El Salvador', 'Puerto Rico', 'Netherlands', 'Switzerland', 'Afghanistan',
+    'Bangladesh', 'Kazakhstan', 'Madagascar', 'Mozambique', 'Azerbaijan',
+    'Cameroon', 'Cambodia', 'Colombia', 'Ethiopia', 'Malaysia', 'Portugal',
+    'Romania', 'Slovakia', 'Slovenia', 'Tanzania', 'Thailand', 'Ukraine',
+    'Venezuela', 'Zimbabwe', 'Bulgaria', 'Argentina', 'Australia', 'Pakistan',
+    'Palestine', 'Mongolia', 'Malaysia', 'Ethiopia', 'Honduras', 'Paraguay',
+    'Armenia', 'Albania', 'Algeria', 'Belgium', 'Bolivia', 'Croatia',
+    'Denmark', 'Ecuador', 'Estonia', 'Finland', 'Georgia', 'Germany',
+    'Hungary', 'Iceland', 'Ireland', 'Jamaica', 'Lebanon', 'Moldova',
+    'Morocco', 'Myanmar', 'Nigeria', 'Austria', 'Belarus', 'Tunisia',
+    'Uruguay', 'Vietnam', 'Bahrain', 'Comoros', 'Djibouti', 'Eritrea',
+    'Eswatini', 'Grenada', 'Guyana', 'Iceland', 'Lesotho', 'Liberia',
+    'Namibia', 'Panama', 'Rwanda', 'Senegal', 'Somalia', 'Suriname',
+    'Ukraine', 'Vanuatu', 'Zambia', 'Russia', 'France', 'Brazil',
+    'Canada', 'Mexico', 'Sweden', 'Norway', 'Poland', 'Greece', 'Turkey',
+    'Israel', 'Jordan', 'Egypt', 'Kenya', 'Ghana', 'Uganda', 'Angola',
+    'Latvia', 'Libya', 'Malta', 'Niger', 'Qatar', 'Sudan', 'Syria',
+    'China', 'India', 'Japan', 'Italy', 'Spain', 'Nepal', 'Haiti',
+    'Benin', 'Gabon', 'Palau', 'Tonga', 'Cuba', 'Iraq', 'Iran',
+    'Laos', 'Mali', 'Oman', 'Peru', 'Togo', 'Chad', 'Fiji',
+  ].filter((v, i, a) => a.indexOf(v) === i);
+
+  for (const country of knownCountries) {
+    if (new RegExp('\\b' + country.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(raw)) return country;
   }
 
   return raw;

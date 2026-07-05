@@ -795,7 +795,6 @@
               <input class="page-input" type="number" value="${book.currentPage}" min="0" max="9999" aria-label="Current page">
               <span class="page-sep">/</span>
               <input class="page-input page-total" type="number" value="${book.totalPages || ''}" min="1" max="9999" aria-label="Total pages" placeholder="?">
-              <button class="btn-update btn-pg-update" style="display:none">Update</button>
               <button class="btn-finished">Finished</button>
             </div>
           </div>
@@ -855,25 +854,31 @@
         return sel;
       }, val => { book.format = val; updateBookMeta(user.uid, book.id, { format: val }); }));
 
-      const inputs    = card.querySelectorAll('.page-input');
-      const fillEl    = card.querySelector('.progress-bar-fill');
-      const labelEl   = card.querySelector('.progress-label');
-      const updateBtn = card.querySelector('.btn-pg-update');
+      const inputs   = card.querySelector('.progress-controls').querySelectorAll('.page-input');
+      const fillEl   = card.querySelector('.progress-bar-fill');
+      const labelEl  = card.querySelector('.progress-label');
+      const controls = card.querySelector('.progress-controls');
 
-      inputs.forEach(inp => inp.addEventListener('input', () => { updateBtn.style.display = ''; }));
-
-      updateBtn.addEventListener('click', async () => {
+      let pgSaveTimer;
+      async function saveProgress() {
+        clearTimeout(pgSaveTimer);
         const cur     = Math.max(0, parseInt(inputs[0].value) || 0);
-        const total   = Math.max(1, parseInt(inputs[1].value) || 1);
-        const clamped = Math.min(cur, total);
+        const total   = parseInt(inputs[1].value) || null;
+        const clamped = total ? Math.min(cur, total) : cur;
         inputs[0].value = clamped;
-        fillEl.style.width  = Math.round((clamped / total) * 100) + '%';
-        labelEl.textContent = `Page ${clamped} of ${total}`;
-        await updateBookProgress(user.uid, book.id, clamped);
+        if (total) {
+          const pct = Math.round((clamped / total) * 100);
+          fillEl.style.width  = pct + '%';
+          labelEl.textContent = `Page ${clamped} of ${total} · ${pct}%`;
+        } else {
+          fillEl.style.width  = '0%';
+          labelEl.textContent = `Page ${clamped}`;
+        }
+        const updates = { currentPage: clamped };
+        if (total !== book.totalPages) updates.totalPages = total;
+        await updateBookMeta(user.uid, book.id, updates);
         book.currentPage = clamped;
-        book.totalPages  = total;
-        updateBtn.style.display = 'none';
-        // Update progress strip on cover cell
+        if (total != null) book.totalPages = total;
         if (coverCell && total) {
           let strip = coverCell.querySelector('.library-progress-strip');
           if (!strip) {
@@ -882,11 +887,26 @@
             const fill = document.createElement('div');
             fill.className = 'library-progress-fill';
             strip.appendChild(fill);
-            const titleEl = coverCell.querySelector('.library-cover-title');
-            coverCell.insertBefore(strip, titleEl);
+            coverCell.insertBefore(strip, coverCell.querySelector('.library-cover-title'));
           }
           coverCell.querySelector('.library-progress-fill').style.width = Math.round((clamped / total) * 100) + '%';
         }
+      }
+
+      inputs.forEach(inp => inp.addEventListener('input', () => {
+        clearTimeout(pgSaveTimer);
+        const cur   = Math.max(0, parseInt(inputs[0].value) || 0);
+        const total = parseInt(inputs[1].value) || book.totalPages || null;
+        if (total) {
+          fillEl.style.width = Math.round((Math.min(cur, total) / total) * 100) + '%';
+        }
+        pgSaveTimer = setTimeout(saveProgress, 700);
+      }));
+
+      controls.addEventListener('focusout', e => {
+        if (controls.contains(e.relatedTarget)) return;
+        clearTimeout(pgSaveTimer);
+        saveProgress();
       });
 
       card.querySelector('.btn-finished').addEventListener('click', () => {
@@ -1927,12 +1947,13 @@
 
         function addSection(heading, key, entries) {
           if (!entries.length) return;
+          entries = [...entries].sort((a, b) => (b.count ?? 0) - (a.count ?? 0));
           const section = document.createElement('div');
           const hdr = document.createElement('div');
           hdr.style.cssText = 'font-size:.7rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;padding:.4rem .75rem .2rem';
           hdr.textContent = heading;
           section.appendChild(hdr);
-          entries.forEach(({ val, label }) => {
+          entries.forEach(({ val, label, count }) => {
             const row = document.createElement('label');
             row.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.3rem .75rem;cursor:pointer;font-size:.85rem';
             row.addEventListener('mouseenter', () => row.style.background = 'var(--bg-alt)');
@@ -1945,7 +1966,10 @@
               else activeFilters[key].delete(val);
               applyFilter();
             });
-            row.append(cb, document.createTextNode(label));
+            const countEl = document.createElement('span');
+            countEl.style.cssText = 'margin-left:auto;font-size:.78rem;color:var(--text-muted)';
+            countEl.textContent = count != null ? `(${count})` : '';
+            row.append(cb, document.createTextNode(label), countEl);
             section.appendChild(row);
           });
           if (filterDropdown.children.length) {
@@ -1960,14 +1984,17 @@
         const languages = [...new Set(allBooks.map(b => b.language).filter(Boolean))].sort();
         const countries = [...new Set(allBooks.map(b => b.country).filter(Boolean))].sort();
 
-        addSection('Format',   'format',   formats.map(v => ({ val: v.toLowerCase(), label: v })));
-        addSection('Language', 'language', languages.map(v => ({ val: v.toLowerCase(), label: v })));
-        addSection('Country',  'country',  countries.map(v => ({ val: v.toLowerCase(), label: v })));
+        addSection('Format',   'format',   formats.map(v => ({ val: v.toLowerCase(), label: v, count: allBooks.filter(b => b.format === v).length })));
+        addSection('Language', 'language', languages.map(v => ({ val: v.toLowerCase(), label: v, count: allBooks.filter(b => b.language === v).length })));
+        const countryEntries = countries.map(v => ({ val: v.toLowerCase(), label: v, count: allBooks.filter(b => b.country === v).length }));
+        const noCountryCount = allBooks.filter(b => !b.country).length;
+        if (noCountryCount > 0) countryEntries.push({ val: '', label: 'No country', count: noCountryCount });
+        addSection('Country',  'country',  countryEntries);
 
         if (isOwn && allLists.length) {
           const libraryGbids = new Set(allBooks.map(b => b.gbid).filter(Boolean));
           const relevantLists = allLists.filter(l => (l.books || []).some(b => b.gbid && libraryGbids.has(b.gbid)));
-          addSection('Lists', 'lists', relevantLists.map(l => ({ val: l.id, label: l.name })));
+          addSection('Lists', 'lists', relevantLists.map(l => ({ val: l.id, label: l.name, count: (l.books || []).filter(b => b.gbid && libraryGbids.has(b.gbid)).length })));
         }
 
         if (!filterDropdown.children.length) filterDropdownBtn.style.display = 'none';
@@ -2200,31 +2227,30 @@
             suggestBox.innerHTML     = '';
             suggestBox.style.display = 'none';
             setAddEnabled(true);
-            // Background country fetch via Wikidata (runs while user reviews selection)
+            // Background country fetch via Wikidata — store Promise so save handlers can await it
             if (author) {
               const capturedBook = selectedBook;
-              (async () => {
+              capturedBook._countryFetch = (async () => {
                 try {
                   const base = 'https://www.wikidata.org/w/api.php';
-                  // 1. Find author's Wikidata QID
                   const sr = await fetch(`${base}?action=wbsearchentities&search=${encodeURIComponent(author)}&language=en&type=item&format=json&origin=*&limit=1`);
                   if (!sr.ok) return;
                   const sd = await sr.json();
                   const qid = sd.search?.[0]?.id;
                   if (!qid) return;
-                  // 2. Get P27 (country of citizenship) claim
                   const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
                   if (!er.ok) return;
                   const ed = await er.json();
-                  const countryQid = ed.entities?.[qid]?.claims?.P27?.[0]?.mainsnak?.datavalue?.value?.id;
+                  const p27 = ed.entities?.[qid]?.claims?.P27 || [];
+                  const bestP27 = p27.find(c => c.rank === 'preferred') || p27.find(c => c.rank === 'normal') || p27[0];
+                  const countryQid = bestP27?.mainsnak?.datavalue?.value?.id;
                   if (!countryQid) return;
-                  // 3. Get country name label
                   const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
                   if (!lr.ok) return;
                   const ld = await lr.json();
                   const countryName = ld.entities?.[countryQid]?.labels?.en?.value;
                   if (countryName) capturedBook.country = normalizeCountry(countryName);
-                } catch (e) { /* silently ignore */ }
+                } catch { /* silently ignore */ }
               })();
             }
           }, 150);
@@ -2247,10 +2273,12 @@
 
     saveBtn.addEventListener('click', async () => {
       if (!selectedBook) return;
-      const { title, author, pages, gbid, cover, releaseYear, country } = selectedBook;
-
       saveBtn.disabled    = true;
       saveBtn.textContent = 'Adding…';
+      if (selectedBook._countryFetch) {
+        await Promise.race([selectedBook._countryFetch, new Promise(r => setTimeout(r, 5000))]);
+      }
+      const { title, author, pages, gbid, cover, releaseYear, country } = selectedBook;
 
       const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, coverUrl: cover, releaseYear, country }, profile.username);
       const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, addedAt: { toDate: () => new Date() } };
@@ -2267,7 +2295,7 @@
 
     finishedBtn.addEventListener('click', () => {
       if (!selectedBook) return;
-      const { title, author, pages, gbid, cover, releaseYear, country } = selectedBook;
+      const { title, author, pages, gbid, cover, releaseYear } = selectedBook;
 
       const fields     = form.querySelector('.add-book-fields');
       const actions    = form.querySelector('.add-book-actions');
@@ -2313,6 +2341,10 @@
 
       confirmBtn.addEventListener('click', async () => {
         confirmBtn.disabled = true; confirmBtn.textContent = 'Adding…';
+        if (selectedBook._countryFetch) {
+          await Promise.race([selectedBook._countryFetch, new Promise(r => setTimeout(r, 5000))]);
+        }
+        const country = selectedBook.country;
         const rating = picker.getValue();
         const review = ta.value.trim() || null;
         const { date: addedAt,    precision: startedPrec  } = startedPicker.getDate();

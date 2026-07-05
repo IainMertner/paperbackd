@@ -53,6 +53,13 @@
           <div id="export-status" style="display:none;font-size:.85rem"></div>
         </div>
 
+        <div class="settings-row" id="clear-country-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Clear countries</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Remove the country field from every book in their library so Repair will re-fetch them all.</p>
+          <button class="btn-update" id="clear-country-btn" type="button">Clear countries</button>
+          <div id="clear-country-status" style="display:none;font-size:.85rem"></div>
+        </div>
+
         <div class="settings-row" id="repair-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
           <span class="settings-row-label">Repair library</span>
           <p style="font-size:.82rem;color:var(--text-muted);margin:0">Merge duplicate entries, re-match unmatched books, fill metadata gaps, look up missing countries.</p>
@@ -130,8 +137,9 @@
     const lookupBtn    = document.getElementById('lookup-btn');
     const lookupStatus = document.getElementById('lookup-status');
     const targetInfo   = document.getElementById('target-info');
-    const exportSection = document.getElementById('export-section');
-    const repairSection = document.getElementById('repair-section');
+    const exportSection       = document.getElementById('export-section');
+    const clearCountrySection = document.getElementById('clear-country-section');
+    const repairSection       = document.getElementById('repair-section');
 
     lookupBtn.addEventListener('click', async () => {
       const username = document.getElementById('target-username').value.trim().toLowerCase();
@@ -141,8 +149,9 @@
       lookupStatus.style.color = 'var(--text-muted)';
       lookupStatus.textContent = 'Looking up…';
       targetInfo.style.display = 'none';
-      exportSection.style.display = 'none';
-      repairSection.style.display = 'none';
+      exportSection.style.display       = 'none';
+      clearCountrySection.style.display = 'none';
+      repairSection.style.display       = 'none';
       targetUid = null;
 
       try {
@@ -157,10 +166,12 @@
         lookupStatus.style.display = 'none';
         targetInfo.style.display = '';
         targetInfo.textContent = `${profile.username} · ${count} book${count === 1 ? '' : 's'} · uid: ${targetUid}`;
-        exportSection.style.display = '';
-        repairSection.style.display = '';
-        document.getElementById('export-status').style.display = 'none';
-        document.getElementById('repair-status').style.display = 'none';
+        exportSection.style.display       = '';
+        clearCountrySection.style.display = '';
+        repairSection.style.display       = '';
+        document.getElementById('export-status').style.display        = 'none';
+        document.getElementById('clear-country-status').style.display = 'none';
+        document.getElementById('repair-status').style.display        = 'none';
       } catch (err) {
         console.error(err);
         lookupStatus.textContent = 'Lookup failed.';
@@ -200,6 +211,33 @@
       } catch (err) {
         console.error(err);
         status.textContent = 'Export failed.';
+        status.style.color = 'var(--danger, #d44)';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // ── Clear countries ───────────────────────────────────────────────────────
+    document.getElementById('clear-country-btn').addEventListener('click', async () => {
+      if (!targetUid) return;
+      const btn    = document.getElementById('clear-country-btn');
+      const status = document.getElementById('clear-country-status');
+      btn.disabled = true;
+      status.style.display = '';
+      status.style.color = 'var(--text-muted)';
+      status.textContent = 'Loading books…';
+      try {
+        const books = await getBooks(targetUid);
+        const withCountry = books.filter(b => b.country);
+        status.textContent = `Clearing ${withCountry.length} countr${withCountry.length === 1 ? 'y' : 'ies'}…`;
+        for (const book of withCountry) {
+          await updateBookMeta(targetUid, book.id, { country: null });
+        }
+        status.textContent = `Cleared country from ${withCountry.length} book${withCountry.length === 1 ? '' : 's'}. Run Repair to re-fetch.`;
+        status.style.color = 'var(--accent)';
+      } catch (err) {
+        console.error(err);
+        status.textContent = 'Failed. Check console.';
         status.style.color = 'var(--danger, #d44)';
       } finally {
         btn.disabled = false;
@@ -351,6 +389,16 @@
           }
         }
 
+        // ── Phase 2.5: re-normalize stored country values ────────────────────
+        const toRenormalize = books.filter(b => b.country && normalizeCountry(b.country) !== b.country);
+        if (toRenormalize.length) {
+          repairStatus.textContent = `Normalizing ${toRenormalize.length} countr${toRenormalize.length === 1 ? 'y' : 'ies'}…`;
+          for (const book of toRenormalize) {
+            await updateBookMeta(targetUid, book.id, { country: normalizeCountry(book.country) });
+            fixed++;
+          }
+        }
+
         // ── Phase 3: fill country via Wikidata ────────────────────────────────
         if (needsCountry.length) {
           repairStatus.textContent = `Looking up countries for ${needsCountry.length} book${needsCountry.length === 1 ? '' : 's'}…`;
@@ -367,7 +415,9 @@
               const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
               if (!er.ok) continue;
               const ed = await er.json();
-              const countryQid = ed.entities?.[qid]?.claims?.P27?.[0]?.mainsnak?.datavalue?.value?.id;
+              const p27 = ed.entities?.[qid]?.claims?.P27 || [];
+              const bestP27 = p27.find(c => c.rank === 'preferred') || p27.find(c => c.rank === 'normal') || p27[0];
+              const countryQid = bestP27?.mainsnak?.datavalue?.value?.id;
               if (!countryQid) continue;
               const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
               if (!lr.ok) continue;

@@ -726,6 +726,16 @@
           }
         }
 
+        // ── Phase 2.5: re-normalize stored country values ────────────────────
+        const toRenormalize = books.filter(b => b.country && normalizeCountry(b.country) !== b.country);
+        if (toRenormalize.length) {
+          repairStatus.textContent = `Normalizing ${toRenormalize.length} countr${toRenormalize.length === 1 ? 'y' : 'ies'}…`;
+          for (const book of toRenormalize) {
+            await updateBookMeta(currentUser.uid, book.id, { country: normalizeCountry(book.country) });
+            fixed++;
+          }
+        }
+
         // ── Phase 3: fill country via Wikidata for books missing it ─────────
         if (needsCountry.length) {
           repairStatus.textContent = `Looking up countries for ${needsCountry.length} book${needsCountry.length === 1 ? '' : 's'}…`;
@@ -745,7 +755,9 @@
               const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
               if (!er.ok) continue;
               const ed = await er.json();
-              const countryQid = ed.entities?.[qid]?.claims?.P27?.[0]?.mainsnak?.datavalue?.value?.id;
+              const p27 = ed.entities?.[qid]?.claims?.P27 || [];
+              const bestP27 = p27.find(c => c.rank === 'preferred') || p27.find(c => c.rank === 'normal') || p27[0];
+              const countryQid = bestP27?.mainsnak?.datavalue?.value?.id;
               if (!countryQid) continue;
               const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
               if (!lr.ok) continue;
