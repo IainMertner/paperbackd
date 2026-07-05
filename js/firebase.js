@@ -467,6 +467,10 @@ export async function clearLibrary(uid) {
   ]);
 }
 
+export function deleteBookDoc(uid, bookId) {
+  return deleteDoc(doc(db, 'users', uid, 'books', bookId));
+}
+
 export async function deleteBook(uid, bookId, { title }) {
   await Promise.all([
     deleteDoc(doc(db, 'users', uid, 'books', bookId)),

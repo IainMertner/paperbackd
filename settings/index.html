@@ -161,7 +161,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, changeUsername, clearLibrary } from '../js/firebase.js';
+    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, changeUsername, clearLibrary } from '../js/firebase.js';
 
     let currentUser = null;
 
@@ -458,21 +458,39 @@
       repairStatus.textContent = 'Loading library…';
 
       try {
-        const books = await getBooks(currentUser.uid);
+        let books = await getBooks(currentUser.uid);
+
+        // Find groups of duplicate finished entries (same gbid, or same title+author)
+        function computeDupeGroups(bookList) {
+          const groups = new Map();
+          for (const book of bookList.filter(b => b.status === 'finished')) {
+            const key = book.gbid?.trim()
+              ? `g:${book.gbid.trim()}`
+              : (book.title && book.author)
+                ? `t:${book.title.toLowerCase().trim()}||${book.author.toLowerCase().trim()}`
+                : null;
+            if (!key) continue;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(book);
+          }
+          return [...groups.values()].filter(g => g.length > 1);
+        }
+
+        const dupeGroups = computeDupeGroups(books);
 
         // Phase 1: books with no Hardcover match at all
-        const unmatched = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
+        let unmatched = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
 
         // Phase 2: books already matched (non-numeric slug) but missing fillable fields
-        const incomplete = books.filter(b =>
+        let incomplete = books.filter(b =>
           b.gbid && !/^\d+$/.test(b.gbid) &&
           (b.releaseYear == null || !b.totalPages || !b.author)
         );
 
         // Phase 3: books missing country (computed early so the guard below sees it)
-        const needsCountry = books.filter(b => !b.country && b.author);
+        let needsCountry = books.filter(b => !b.country && b.author);
 
-        if (!unmatched.length && !incomplete.length && !needsCountry.length) {
+        if (!dupeGroups.length && !unmatched.length && !incomplete.length && !needsCountry.length) {
           repairStatus.textContent = 'Nothing to repair - all books are matched and complete.';
           repairStatus.style.color = 'var(--accent)';
           repairBtn.disabled = false;
@@ -480,6 +498,86 @@
         }
 
         let fixed = 0;
+        const mergedGroupsCount = dupeGroups.length;
+
+        // ── Phase 0: merge duplicate finished entries ─────────────────────────
+        if (dupeGroups.length) {
+          repairStatus.textContent = `Merging ${dupeGroups.length} duplicate entr${dupeGroups.length === 1 ? 'y' : 'ies'}…`;
+
+          function bookToReads(book) {
+            if (book.reads?.length) return book.reads;
+            return [{
+              startedAt:           book.addedAt           || null,
+              startedAtPrecision:  book.addedAtPrecision   || null,
+              finishedAt:          book.finishedAt         || null,
+              finishedAtPrecision: book.finishedAtPrecision || null,
+              rating: book.rating ?? null,
+              review: book.review || null,
+              language: book.language || null,
+              format:   book.format   || null,
+            }];
+          }
+
+          const tsVal = ts => ts?.seconds ?? (ts?.toDate ? ts.toDate().getTime() / 1000 : 0);
+
+          for (const group of dupeGroups) {
+            // Pick primary: highest completeness score, then oldest addedAt
+            const score = b =>
+              (b.coverUrl    ? 3 : 0) + (b.totalPages > 0 ? 2 : 0) +
+              (b.author      ? 1 : 0) + (b.releaseYear   ? 1 : 0) +
+              (b.country     ? 1 : 0);
+            const sorted = [...group].sort((a, b) => {
+              const ds = score(b) - score(a);
+              return ds !== 0 ? ds : tsVal(a.addedAt) - tsVal(b.addedAt);
+            });
+            const primary     = sorted[0];
+            const secondaries = sorted.slice(1);
+
+            // Merge all reads; deduplicate by finishedAt timestamp
+            const allReads = bookToReads(primary).concat(...secondaries.map(bookToReads));
+            const seen = new Set();
+            const mergedReads = allReads.filter(r => {
+              const key = r.finishedAt?.seconds ?? r.finishedAt?.toDate?.()?.getTime?.();
+              if (key == null) return true;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+
+            // Fill metadata gaps on primary from secondaries
+            const metaUpdates = {};
+            for (const s of secondaries) {
+              if (!primary.coverUrl    && s.coverUrl)    metaUpdates.coverUrl    = s.coverUrl;
+              if (!primary.totalPages  && s.totalPages)  metaUpdates.totalPages  = s.totalPages;
+              if (!primary.author      && s.author)      metaUpdates.author      = s.author;
+              if (!primary.releaseYear && s.releaseYear) metaUpdates.releaseYear = s.releaseYear;
+              if (!primary.country     && s.country)     metaUpdates.country     = s.country;
+              if (!primary.gbid        && s.gbid)        metaUpdates.gbid        = s.gbid;
+            }
+
+            // Sync top-level rating/review/finishedAt from most recent read
+            const mostRecent = [...mergedReads].sort((a, b) => tsVal(b.finishedAt) - tsVal(a.finishedAt))[0];
+            if (mostRecent?.rating != null) metaUpdates.rating     = mostRecent.rating;
+            if (mostRecent?.review)         metaUpdates.review     = mostRecent.review;
+            if (mostRecent?.finishedAt)     metaUpdates.finishedAt = mostRecent.finishedAt;
+
+            await updateBookReads(currentUser.uid, primary.id, mergedReads);
+            if (Object.keys(metaUpdates).length) {
+              await updateBookMeta(currentUser.uid, primary.id, metaUpdates);
+            }
+            // Delete secondary docs only — activity entries are preserved intentionally
+            for (const s of secondaries) {
+              await deleteBookDoc(currentUser.uid, s.id);
+            }
+            fixed++;
+          }
+
+          // Re-fetch so subsequent phases operate on up-to-date data
+          books        = await getBooks(currentUser.uid);
+          unmatched    = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
+          incomplete   = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author));
+          needsCountry = books.filter(b => !b.country && b.author);
+        }
 
         // ── Phase 1: match unmatched books via Hardcover ──────────────────
         for (let i = 0; i < unmatched.length; i++) {
@@ -572,7 +670,7 @@
           }
         }
 
-        const total = unmatched.length + incomplete.length + needsCountry.length;
+        const total = mergedGroupsCount + unmatched.length + incomplete.length + needsCountry.length;
         repairStatus.textContent = `Done - updated ${fixed} of ${total} book${total === 1 ? '' : 's'}.`;
         repairStatus.style.color = 'var(--accent)';
       } catch (err) {
