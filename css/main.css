@@ -841,6 +841,7 @@ a { color: inherit; }
 .library-cover-cell::after { content: ''; position: absolute; inset: 0; background: rgba(0,0,0,0); transition: background .15s; border-radius: var(--radius-sm); pointer-events: none; }
 .library-cover-cell:hover::after { background: rgba(0,0,0,.18); }
 .library-progress-strip { position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: rgba(0,0,0,.25); z-index: 2; }
+.library-progress-pct { position: absolute; bottom: 6px; right: .35rem; font-size: .6rem; font-weight: 600; color: rgba(255,255,255,.9); text-shadow: 0 1px 3px rgba(0,0,0,.6); z-index: 3; pointer-events: none; line-height: 1; }
 .library-progress-fill { height: 100%; background: var(--accent); }
 .library-cover-info { position: absolute; bottom: 0; left: 0; right: 0; padding: .75rem .35rem .3rem; background: linear-gradient(transparent, rgba(0,0,0,.72)); pointer-events: none; z-index: 1; }
 .library-cover-rating { display: block; margin-bottom: .15rem; }

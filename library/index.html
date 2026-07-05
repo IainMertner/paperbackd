@@ -385,6 +385,10 @@
         fill.style.width = pct + '%';
         strip.appendChild(fill);
         cell.appendChild(strip);
+        const pctEl = document.createElement('div');
+        pctEl.className = 'library-progress-pct';
+        pctEl.textContent = pct + '%';
+        cell.appendChild(pctEl);
       }
       const info = document.createElement('div');
       info.className = 'library-cover-info';
@@ -1041,7 +1045,11 @@
             strip.appendChild(fill);
             coverCell.insertBefore(strip, coverCell.querySelector('.library-cover-title'));
           }
-          coverCell.querySelector('.library-progress-fill').style.width = Math.round((clamped / total) * 100) + '%';
+          const pct = Math.round((clamped / total) * 100);
+          coverCell.querySelector('.library-progress-fill').style.width = pct + '%';
+          let pctEl = coverCell.querySelector('.library-progress-pct');
+          if (!pctEl) { pctEl = document.createElement('div'); pctEl.className = 'library-progress-pct'; coverCell.appendChild(pctEl); }
+          pctEl.textContent = pct + '%';
         }
       }
 
