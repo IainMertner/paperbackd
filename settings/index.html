@@ -90,6 +90,20 @@
           <div id="gr-status" style="display:none;font-size:.85rem"></div>
         </div>
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Import from StoryGraph</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">My Books → Export your data</p>
+          <input type="file" id="sg-file" accept=".csv" style="display:none">
+          <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+            <button class="btn-update" id="sg-select-btn" type="button">Choose CSV…</button>
+            <span id="sg-filename" style="font-size:.82rem;color:var(--text-muted)"></span>
+          </div>
+          <div id="sg-preview" style="display:none;width:100%">
+            <div id="sg-preview-text" style="font-size:.85rem;color:var(--text-muted);margin-bottom:.5rem"></div>
+            <button id="sg-import-btn" class="join-club-btn" type="button">Import</button>
+          </div>
+          <div id="sg-status" style="display:none;font-size:.85rem"></div>
+        </div>
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
           <span class="settings-row-label">Import from paperbackd</span>
           <p style="font-size:.82rem;color:var(--text-muted);margin:0">Add books from a previously exported file.</p>
           <input type="file" id="backup-file" accept=".json" style="display:none">
@@ -299,6 +313,66 @@
       }
     });
 
+    // ── StoryGraph import ─────────────────────────────────────────────────────
+    const sgFile        = document.getElementById('sg-file');
+    const sgSelectBtn   = document.getElementById('sg-select-btn');
+    const sgFilename    = document.getElementById('sg-filename');
+    const sgPreview     = document.getElementById('sg-preview');
+    const sgPreviewText = document.getElementById('sg-preview-text');
+    const sgImportBtn   = document.getElementById('sg-import-btn');
+    const sgStatus      = document.getElementById('sg-status');
+    let parsedSGBooks   = [];
+
+    sgSelectBtn.addEventListener('click', () => sgFile.click());
+
+    sgFile.addEventListener('change', () => {
+      const file = sgFile.files[0];
+      if (!file) return;
+      sgFilename.textContent = file.name;
+      sgStatus.style.display = 'none';
+      const reader = new FileReader();
+      reader.onload = e => {
+        parsedSGBooks = parseStorygraph(e.target.result);
+        const finished = parsedSGBooks.filter(b => b.status === 'finished').length;
+        const reading  = parsedSGBooks.filter(b => b.status === 'reading').length;
+        sgPreviewText.textContent = `Found ${parsedSGBooks.length} book${parsedSGBooks.length !== 1 ? 's' : ''}: ${finished} finished, ${reading} currently reading.`;
+        sgPreview.style.display = '';
+        sgImportBtn.disabled = false;
+      };
+      reader.readAsText(file);
+    });
+
+    sgImportBtn.addEventListener('click', async () => {
+      if (!parsedSGBooks.length || !currentUser) return;
+      sgImportBtn.disabled = true;
+      sgStatus.style.display = '';
+      sgStatus.style.color = 'var(--text-muted)';
+      const total = parsedSGBooks.length;
+      sgStatus.textContent = `Don't close this tab - matching your books with Hardcover…`;
+      const enrichedRaw = await enrichBatch(parsedSGBooks, (i, remaining, title) => {
+        sgStatus.textContent = `Don't close this tab - searching ${i + 1}/${remaining}: ${title}…`;
+      });
+      const matched  = enrichedRaw.filter(b => b._hardcoverMatched).length;
+      const enriched = enrichedRaw.map(({ _isbn13, _hardcoverMatched, ...b }) => b);
+      sgStatus.textContent = `Matched ${matched}/${total} books. Saving to library…`;
+      try {
+        await importBooks(currentUser.uid, enriched, (saved, tot) => {
+          sgStatus.textContent = `Saving to library - ${saved}/${tot} done…`;
+        });
+        sgStatus.textContent = `All done! Imported ${total} books (${matched} matched with Hardcover).`;
+        sgStatus.style.color = 'var(--accent)';
+        sgPreview.style.display = 'none';
+        parsedSGBooks = [];
+        sgFile.value = '';
+        sgFilename.textContent = '';
+      } catch (err) {
+        console.error(err);
+        sgStatus.textContent = 'Import failed. Please try again.';
+        sgStatus.style.color = 'var(--danger, #d44)';
+        sgImportBtn.disabled = false;
+      }
+    });
+
     async function hcQuery(query, variables, retries = 3) {
       const res = await fetch(HARDCOVER_PROXY, {
         method: 'POST',
@@ -455,6 +529,13 @@
     function parseGRDate(str) {
       if (!str?.trim()) return null;
       const parts = str.trim().split('/');
+      if (parts.length === 3) return new Date(+parts[0], +parts[1] - 1, +parts[2]);
+      return null;
+    }
+
+    function parseSGDate(str) {
+      if (!str?.trim()) return null;
+      const parts = str.trim().replace(/-/g, '/').split('/');
       if (parts.length === 3) return new Date(+parts[0], +parts[1] - 1, +parts[2]);
       return null;
     }
@@ -833,6 +914,85 @@
           book.finishedAt          = finishedAt;
           book.finishedAtPrecision = 'day';
         }
+        books.push(book);
+      }
+      return books;
+    }
+
+    function parseStorygraph(text) {
+      const rows = parseCSV(text);
+      if (rows.length < 2) return [];
+      const headers = rows[0];
+      const first = (...names) => { for (const n of names) { const i = headers.indexOf(n); if (i !== -1) return i; } return -1; };
+      const col = {
+        isbn13:    first('ISBN13', 'ISBN-13'),
+        title:     first('Title'),
+        author:    first('Authors', 'Author'),
+        pages:     first('Number of Pages', 'Pages', 'Num Pages'),
+        rating:    first('My Rating', 'Star Rating'),
+        status:    first('Exclusive Shelf', 'Read Status'),
+        dateRead:  first('Date Read', 'Dates Read'),
+        dateAdded: first('Date Added'),
+        review:    first('My Review', 'Review'),
+        year:      first('Original Publication Year', 'Year Published', 'Publication Year'),
+      };
+
+      const books = [];
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (r.length < 3) continue;
+
+        const statusRaw = col.status >= 0 ? (r[col.status] || '').trim() : '';
+        if (statusRaw === 'to-read') continue;
+        const status = statusRaw === 'currently-reading' ? 'reading' : 'finished';
+
+        const title = col.title >= 0 ? (r[col.title] || '').trim() : '';
+        if (!title) continue;
+
+        const author      = col.author     >= 0 ? (r[col.author]  || '').trim() : '';
+        const totalPages  = col.pages      >= 0 ? parseInt(r[col.pages]) || 0 : 0;
+        const ratingRaw   = col.rating     >= 0 ? parseFloat(r[col.rating]) : NaN;
+        const rating      = !isNaN(ratingRaw) && ratingRaw > 0 ? ratingRaw : null;
+        const isbn13      = col.isbn13     >= 0 ? (r[col.isbn13]  || '').replace(/[^0-9X]/gi, '') : '';
+        const review      = col.review     >= 0 ? (r[col.review]  || '').trim() : '';
+        const releaseYear = col.year       >= 0 ? parseInt(r[col.year]) || null : null;
+        const addedAt     = col.dateAdded  >= 0 ? parseSGDate(r[col.dateAdded]) : null;
+
+        // Multiple read dates are comma- or pipe-separated within the field
+        const dateReadRaw = col.dateRead >= 0 ? (r[col.dateRead] || '') : '';
+        const readDates   = dateReadRaw.split(/[,|]/).map(d => parseSGDate(d.trim())).filter(Boolean);
+
+        const book = {
+          title,
+          author,
+          totalPages,
+          currentPage: status === 'finished' ? totalPages : 0,
+          status,
+          gbid: '',
+          _isbn13: isbn13,
+        };
+
+        if (addedAt || readDates[0]) { book.addedAt = addedAt || readDates[0]; book.addedAtPrecision = 'day'; }
+        if (releaseYear) book.releaseYear = releaseYear;
+
+        if (status === 'finished') {
+          const lastDate = readDates[readDates.length - 1] || null;
+          if (lastDate) { book.finishedAt = lastDate; book.finishedAtPrecision = 'day'; }
+          if (rating != null) book.rating = rating;
+          if (review) book.review = review;
+
+          // Build reads array when multiple read dates exist (re-reads)
+          if (readDates.length > 1) {
+            book.reads = readDates.map((d, j) => ({
+              startedAt: null, startedAtPrecision: null,
+              finishedAt: d, finishedAtPrecision: 'day',
+              language: null, format: null,
+              rating: j === readDates.length - 1 ? rating : null,
+              review: j === readDates.length - 1 ? (review || null) : null,
+            }));
+          }
+        }
+
         books.push(book);
       }
       return books;
