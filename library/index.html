@@ -169,6 +169,93 @@
       return r.json();
     }
 
+    function cleanTitle(t)  { return (t || '').replace(/\s*\([^)]*#\s*\d+[^)]*\)/g, '').trim(); }
+    function cleanAuthor(a) { return (a || '').replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim(); }
+
+    async function searchHardcover(q) {
+      const data = await hcPost(`query($q:String!){search(query:$q,query_type:"Book",per_page:3){results}}`, { q });
+      const doc = data?.data?.search?.results?.hits?.[0]?.document;
+      return doc?.slug ? doc : null;
+    }
+
+    async function repairBook(book) {
+      const updates = {};
+
+      // Phase 1: match unmatched book via Hardcover title search
+      if (!book.gbid && !book.coverUrl?.startsWith('data:')) {
+        try {
+          const title  = cleanTitle(book.title);
+          const author = cleanAuthor(book.author || '');
+          let doc = await searchHardcover(`${title} ${author}`.trim());
+          if (!doc && author) doc = await searchHardcover(title);
+          if (doc?.slug) {
+            if (!book.gbid)      updates.gbid        = doc.slug;
+            if (!book.coverUrl)  updates.coverUrl    = doc.image?.url || '';
+            if (!book.totalPages && doc.pages) updates.totalPages = doc.pages;
+            if (book.releaseYear == null && doc.release_year) updates.releaseYear = doc.release_year;
+          }
+        } catch (e) { console.warn('Repair: title search failed', e); }
+      }
+
+      // Phase 2: fill gaps for already-matched book via slug query
+      const gbid = updates.gbid || book.gbid;
+      if (gbid && !/^\d+$/.test(gbid) && (book.releaseYear == null || !book.totalPages || !book.author)) {
+        try {
+          const data = await hcPost(
+            `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){slug pages release_year contributions{author{name}}}}`,
+            { slug: gbid }
+          );
+          const hc = data?.data?.books?.[0];
+          if (hc) {
+            if (book.releaseYear == null && hc.release_year) updates.releaseYear = hc.release_year;
+            if (!book.totalPages  && hc.pages)               updates.totalPages  = hc.pages;
+            if (!book.author) {
+              const name = hc.contributions?.[0]?.author?.name;
+              if (name) updates.author = name;
+            }
+          }
+        } catch (e) { console.warn('Repair: slug query failed', e); }
+      }
+
+      // Phase 2.5: re-normalize stored country
+      const storedCountry = book.country;
+      if (storedCountry && normalizeCountry(storedCountry) !== storedCountry) {
+        updates.country = normalizeCountry(storedCountry);
+      }
+
+      // Phase 3: Wikidata country lookup if missing
+      const authorForCountry = updates.author || book.author;
+      if (!book.country && !updates.country && authorForCountry) {
+        try {
+          const base = 'https://www.wikidata.org/w/api.php';
+          const sr = await fetch(`${base}?action=wbsearchentities&search=${encodeURIComponent(authorForCountry)}&language=en&type=item&format=json&origin=*&limit=1`);
+          if (sr.ok) {
+            const sd = await sr.json();
+            const qid = sd.search?.[0]?.id;
+            if (qid) {
+              const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
+              if (er.ok) {
+                const ed = await er.json();
+                const p27 = ed.entities?.[qid]?.claims?.P27 || [];
+                const bestP27 = p27.find(c => c.rank === 'preferred') || p27.find(c => c.rank === 'normal') || p27[0];
+                const countryQid = bestP27?.mainsnak?.datavalue?.value?.id;
+                if (countryQid) {
+                  const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
+                  if (lr.ok) {
+                    const ld = await lr.json();
+                    const countryName = ld.entities?.[countryQid]?.labels?.en?.value;
+                    if (countryName) updates.country = normalizeCountry(countryName);
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) { /* silently ignore */ }
+      }
+
+      return updates;
+    }
+
     const { user, profile } = await requireAuth();
 
     const params   = new URLSearchParams(location.search);
@@ -321,6 +408,7 @@
       overlay.className = 'book-modal-overlay';
       const inner = document.createElement('div');
       inner.className = 'book-modal-inner';
+
       inner.appendChild(cardEl);
       overlay.appendChild(inner);
 
@@ -330,6 +418,15 @@
       }
       overlay.remove = dismiss;
 
+      const closeBtn = document.createElement('button');
+      closeBtn.innerHTML = '&times;';
+      closeBtn.setAttribute('aria-label', 'Close');
+      closeBtn.style.cssText = 'position:absolute;top:.6rem;right:.75rem;background:none;border:none;font-size:1.25rem;line-height:1;color:var(--text-muted);cursor:pointer;padding:.1rem;transition:color .15s;z-index:1';
+      closeBtn.addEventListener('mouseenter', () => closeBtn.style.color = 'var(--text)');
+      closeBtn.addEventListener('mouseleave', () => closeBtn.style.color = 'var(--text-muted)');
+      closeBtn.addEventListener('click', dismiss);
+      cardEl.style.position = 'relative';
+      cardEl.appendChild(closeBtn);
       overlay.addEventListener('click', e => { if (e.target === overlay) dismiss(); });
       document.addEventListener('keydown', function onEsc(e) {
         if (e.key === 'Escape') { dismiss(); document.removeEventListener('keydown', onEsc); }
@@ -712,6 +809,7 @@
             section.appendChild(dl);
           }
         }
+        control.dataset.key = key;
         inputs[key] = control;
         row.append(lbl, control);
         section.appendChild(row);
@@ -781,7 +879,6 @@
             ${titleHtml}
             ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
           </div>
-          <button class="btn-remove-x" aria-label="Remove" title="Remove">${TRASH_ICON}</button>
         </div>
         <div class="book-entry">
           <div class="book-info">
@@ -804,6 +901,61 @@
       const coverImg  = coverWrap.querySelector('.book-cover, .book-cover-img');
       if (coverImg) { coverImg.style.width = '72px'; coverImg.style.height = '108px'; }
       coverWrap.addEventListener('click', () => openCoverPicker(book, coverWrap, coverCell));
+
+      const coverCol = document.createElement('div');
+      coverCol.style.cssText = 'display:flex;flex-direction:column;align-items:center;flex-shrink:0;justify-content:space-between';
+      const trashBtn = document.createElement('button');
+      trashBtn.className = 'btn-remove-x';
+      trashBtn.setAttribute('aria-label', 'Remove'); trashBtn.title = 'Remove';
+      trashBtn.innerHTML = TRASH_ICON;
+      trashBtn.style.cssText = 'margin:0;align-self:center';
+      const repairBtn = document.createElement('button');
+      repairBtn.className = 'btn-remove-x btn-repair';
+      repairBtn.setAttribute('aria-label', 'Repair'); repairBtn.title = 'Repair this book';
+      repairBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
+      repairBtn.style.cssText = 'margin:0;align-self:center';
+      const coverBtnRow = document.createElement('div');
+      coverBtnRow.style.cssText = 'display:flex;gap:.35rem';
+      coverBtnRow.append(repairBtn, trashBtn);
+      coverWrap.style.marginTop = '-1.25rem';
+      coverWrap.replaceWith(coverCol);
+      coverCol.append(coverWrap, coverBtnRow);
+      card.querySelector('.book-entry').style.alignItems = 'stretch';
+
+      repairBtn.addEventListener('click', async () => {
+        repairBtn.disabled = true; repairBtn.title = 'Repairing…';
+        try {
+          const updates = await repairBook(book);
+          if (Object.keys(updates).length) {
+            await updateBookMeta(user.uid, book.id, updates);
+            Object.assign(book, updates);
+            if (updates.title) { const el = card.querySelector('.book-title'); if (el) el.textContent = updates.title; }
+            if ('author' in updates) { const el = card.querySelector('.book-author'); if (el) el.textContent = updates.author || ''; }
+            if (updates.coverUrl) { const img = coverWrap.querySelector('img'); if (img) img.src = updates.coverUrl; }
+            if (updates.totalPages) { const inp = card.querySelector('.page-total'); if (inp) { inp.value = updates.totalPages; inp.dispatchEvent(new Event('input')); } }
+            card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
+          }
+          const keys = Object.keys(updates);
+          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country' };
+          const toast = document.createElement('div');
+          toast.style.cssText = 'position:absolute;bottom:.75rem;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:.7rem;padding:.25rem .65rem;border-radius:20px;white-space:nowrap;z-index:2;opacity:0;transition:opacity .2s;pointer-events:none';
+          toast.textContent = keys.length ? `Updated: ${keys.map(k => LABELS[k] || k).join(', ')}` : 'Already up to date';
+          if (!keys.length) toast.style.background = 'var(--text-muted)';
+          card.appendChild(toast);
+          requestAnimationFrame(() => toast.style.opacity = '1');
+          repairBtn.style.color = 'var(--accent)'; repairBtn.title = 'Done';
+          setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 200);
+            repairBtn.style.color = ''; repairBtn.title = 'Repair this book'; repairBtn.disabled = false;
+          }, 3000);
+        } catch (e) {
+          console.error(e);
+          repairBtn.style.color = '#ef4444'; repairBtn.title = 'Failed';
+          setTimeout(() => { repairBtn.style.color = ''; repairBtn.title = 'Repair this book'; repairBtn.disabled = false; }, 2000);
+        }
+      });
+
       card.querySelector('.book-started-date').replaceWith(makeDateEl('Started', book.addedAt, 'addedAt', book));
 
       // Inline Language / Format rows (click-to-edit, same style as finished card)
@@ -993,7 +1145,7 @@
         });
       });
 
-      card.querySelector('.btn-remove-x').addEventListener('click', async () => {
+      trashBtn.addEventListener('click', async () => {
         if (!confirm(`Remove "${book.title}" from your library?`)) return;
         await deleteBook(user.uid, book.id, { title: book.title });
         if (coverCell) coverCell.remove();
@@ -1044,7 +1196,6 @@
             ${titleHtml}
             ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ''}
           </div>
-          <button class="btn-remove-x" aria-label="Remove" title="Remove">${TRASH_ICON}</button>
         </div>
         <div class="book-entry">
           <div class="book-info">
@@ -1058,6 +1209,60 @@
       const coverImg  = coverWrap.querySelector('.book-cover, .book-cover-img');
       if (coverImg) { coverImg.style.width = '72px'; coverImg.style.height = '108px'; }
       coverWrap.addEventListener('click', () => openCoverPicker(book, coverWrap, coverCell));
+
+      const coverCol = document.createElement('div');
+      coverCol.style.cssText = 'display:flex;flex-direction:column;align-items:center;flex-shrink:0;justify-content:space-between';
+      const trashBtn = document.createElement('button');
+      trashBtn.className = 'btn-remove-x';
+      trashBtn.setAttribute('aria-label', 'Remove'); trashBtn.title = 'Remove';
+      trashBtn.innerHTML = TRASH_ICON;
+      trashBtn.style.cssText = 'margin:0;align-self:center';
+      const repairBtn = document.createElement('button');
+      repairBtn.className = 'btn-remove-x btn-repair';
+      repairBtn.setAttribute('aria-label', 'Repair'); repairBtn.title = 'Repair this book';
+      repairBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
+      repairBtn.style.cssText = 'margin:0;align-self:center';
+      const coverBtnRow = document.createElement('div');
+      coverBtnRow.style.cssText = 'display:flex;gap:.35rem';
+      coverBtnRow.append(repairBtn, trashBtn);
+      coverWrap.style.marginTop = '-1.25rem';
+      coverWrap.replaceWith(coverCol);
+      coverCol.append(coverWrap, coverBtnRow);
+      card.querySelector('.book-entry').style.alignItems = 'stretch';
+
+      repairBtn.addEventListener('click', async () => {
+        repairBtn.disabled = true; repairBtn.title = 'Repairing…';
+        try {
+          const updates = await repairBook(book);
+          if (Object.keys(updates).length) {
+            await updateBookMeta(user.uid, book.id, updates);
+            Object.assign(book, updates);
+            if (updates.title) { const el = card.querySelector('.book-title'); if (el) el.textContent = updates.title; }
+            if ('author' in updates) { const el = card.querySelector('.book-author'); if (el) el.textContent = updates.author || ''; }
+            if (updates.coverUrl) { const img = coverWrap.querySelector('img'); if (img) img.src = updates.coverUrl; }
+            if (updates.totalPages) { const inp = card.querySelector('.page-total'); if (inp) { inp.value = updates.totalPages; inp.dispatchEvent(new Event('input')); } }
+            card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
+          }
+          const keys = Object.keys(updates);
+          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country' };
+          const toast = document.createElement('div');
+          toast.style.cssText = 'position:absolute;bottom:.75rem;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:.7rem;padding:.25rem .65rem;border-radius:20px;white-space:nowrap;z-index:2;opacity:0;transition:opacity .2s;pointer-events:none';
+          toast.textContent = keys.length ? `Updated: ${keys.map(k => LABELS[k] || k).join(', ')}` : 'Already up to date';
+          if (!keys.length) toast.style.background = 'var(--text-muted)';
+          card.appendChild(toast);
+          requestAnimationFrame(() => toast.style.opacity = '1');
+          repairBtn.style.color = 'var(--accent)'; repairBtn.title = 'Done';
+          setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 200);
+            repairBtn.style.color = ''; repairBtn.title = 'Repair this book'; repairBtn.disabled = false;
+          }, 3000);
+        } catch (e) {
+          console.error(e);
+          repairBtn.style.color = '#ef4444'; repairBtn.title = 'Failed';
+          setTimeout(() => { repairBtn.style.color = ''; repairBtn.title = 'Repair this book'; repairBtn.disabled = false; }, 2000);
+        }
+      });
 
       // Reads array drives all per-read fields
       const reads = getReads(book);
@@ -1212,7 +1417,7 @@
       reviewWrap.append(reviewText, reviewTa);
       ratingEditor.appendChild(reviewWrap);
 
-      card.querySelector('.btn-remove-x').addEventListener('click', async () => {
+      trashBtn.addEventListener('click', async () => {
         if (!confirm(`Remove "${book.title}" from your library?`)) return;
         await deleteBook(user.uid, book.id, { title: book.title });
         if (coverCell) coverCell.remove();

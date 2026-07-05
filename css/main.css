@@ -615,6 +615,7 @@ a { color: inherit; }
   padding: 0;
 }
 .btn-remove-x:hover { color: #ef4444; border-color: #ef4444; }
+.btn-repair:hover { color: var(--accent) !important; border-color: var(--accent) !important; }
 
 /* ── Add book card ─────────────────────────────────────────── */
 .add-book-card { margin-top: 1rem; }
