@@ -548,6 +548,53 @@ export async function removeBookFromList(uid, listId, gbid) {
   await updateDoc(ref, { books: (snap.data().books || []).filter(b => b.gbid !== gbid) });
 }
 
+// ── Backup / restore ──────────────────────────────────────────────────────────
+
+function serializeForExport(v) {
+  if (v instanceof Timestamp) return { _ts: true, s: v.seconds, n: v.nanoseconds };
+  if (Array.isArray(v)) return v.map(serializeForExport);
+  if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) {
+    return Object.fromEntries(Object.entries(v).map(([k, val]) => [k, serializeForExport(val)]));
+  }
+  return v;
+}
+
+function deserializeFromExport(v) {
+  if (v && typeof v === 'object' && v._ts === true) return new Timestamp(v.s, v.n || 0);
+  if (Array.isArray(v)) return v.map(deserializeFromExport);
+  if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) {
+    return Object.fromEntries(Object.entries(v).map(([k, val]) => [k, deserializeFromExport(val)]));
+  }
+  return v;
+}
+
+export async function exportLibraryData(uid) {
+  const [booksSnap, listsSnap] = await Promise.all([
+    getDocs(collection(db, 'users', uid, 'books')),
+    getDocs(collection(db, 'users', uid, 'lists')),
+  ]);
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    books: booksSnap.docs.map(d => serializeForExport({ id: d.id, ...d.data() })),
+    lists: listsSnap.docs.map(d => serializeForExport({ id: d.id, ...d.data() })),
+  };
+}
+
+export async function importLibraryData(uid, data) {
+  const books = (data.books || []);
+  const lists  = (data.lists  || []);
+  const col = collection(db, 'users', uid, 'books');
+  for (let i = 0; i < books.length; i += 20) {
+    await Promise.all(books.slice(i, i + 20).map(({ id: _id, ...rest }) => addDoc(col, deserializeFromExport(rest))));
+  }
+  const lCol = collection(db, 'users', uid, 'lists');
+  for (let i = 0; i < lists.length; i += 20) {
+    await Promise.all(lists.slice(i, i + 20).map(({ id: _id, ...rest }) => addDoc(lCol, deserializeFromExport(rest))));
+  }
+  return { books: books.length, lists: lists.length };
+}
+
 export async function renameList(uid, listId, name) {
   await updateDoc(doc(db, 'users', uid, 'lists', listId), { name });
 }

@@ -73,10 +73,10 @@
     </div>
 
     <div class="settings-group">
-      <div class="settings-group-label">Import</div>
+      <div class="settings-group-label">Import / Export</div>
       <div class="settings-list">
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
-          <span class="settings-row-label">Goodreads</span>
+          <span class="settings-row-label">Import from Goodreads</span>
           <p style="font-size:.82rem;color:var(--text-muted);margin:0">My Books → Import and Export</p>
           <input type="file" id="gr-file" accept=".csv" style="display:none">
           <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
@@ -89,6 +89,19 @@
           </div>
           <div id="gr-status" style="display:none;font-size:.85rem"></div>
         </div>
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Import from paperbackd</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Add books from a previously exported file.</p>
+          <input type="file" id="backup-file" accept=".json" style="display:none">
+          <button class="btn-update" id="import-backup-btn" type="button">Choose file…</button>
+          <div id="import-backup-status" style="display:none;font-size:.85rem"></div>
+        </div>
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Export library</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Download all your books and lists as a JSON file.</p>
+          <button class="btn-update" id="export-btn" type="button">Export</button>
+          <div id="export-status" style="display:none;font-size:.85rem"></div>
+        </div>
       </div>
     </div>
 
@@ -96,7 +109,7 @@
       <div class="settings-group-label">Library</div>
       <div class="settings-list">
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
-          <span class="settings-row-label">Repair imports</span>
+          <span class="settings-row-label">Repair</span>
           <p style="font-size:.82rem;color:var(--text-muted);margin:0">Re-matches books missing Hardcover data, and fills in any blank metadata fields (cover, page count, release year, author) for books already matched.</p>
           <button class="btn-update" id="repair-btn" type="button">Repair library</button>
           <div id="repair-status" style="display:none;font-size:.85rem"></div>
@@ -161,7 +174,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, changeUsername, clearLibrary } from '../js/firebase.js';
+    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, changeUsername, clearLibrary } from '../js/firebase.js';
 
     let currentUser = null;
 
@@ -679,6 +692,73 @@
         repairStatus.style.color = 'var(--danger, #d44)';
       } finally {
         repairBtn.disabled = false;
+      }
+    });
+
+    // ── Export library ────────────────────────────────────────────────────────
+    document.getElementById('export-btn').addEventListener('click', async () => {
+      if (!currentUser) return;
+      const btn    = document.getElementById('export-btn');
+      const status = document.getElementById('export-status');
+      btn.disabled = true;
+      status.style.display = '';
+      status.style.color   = 'var(--text-muted)';
+      status.textContent   = 'Exporting…';
+      try {
+        const data     = await exportLibraryData(currentUser.uid);
+        const json     = JSON.stringify(data, null, 2);
+        const blob     = new Blob([json], { type: 'application/json' });
+        const url      = URL.createObjectURL(blob);
+        const a        = document.createElement('a');
+        const date     = new Date().toISOString().slice(0, 10);
+        a.href         = url;
+        a.download     = `paperbackd-backup-${date}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        status.textContent = `Exported ${data.books.length} book${data.books.length === 1 ? '' : 's'} and ${data.lists.length} list${data.lists.length === 1 ? '' : 's'}.`;
+        status.style.color = 'var(--accent)';
+      } catch (err) {
+        console.error(err);
+        status.textContent = 'Export failed. Please try again.';
+        status.style.color = 'var(--danger, #d44)';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // ── Import backup ─────────────────────────────────────────────────────────
+    const backupFile   = document.getElementById('backup-file');
+    const importBackupBtn    = document.getElementById('import-backup-btn');
+    const importBackupStatus = document.getElementById('import-backup-status');
+
+    importBackupBtn.addEventListener('click', () => backupFile.click());
+
+    backupFile.addEventListener('change', async () => {
+      const file = backupFile.files[0];
+      if (!file || !currentUser) return;
+      backupFile.value = '';
+      importBackupStatus.style.display = '';
+      importBackupStatus.style.color   = 'var(--text-muted)';
+      importBackupStatus.textContent   = 'Reading file…';
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (!data.version || !Array.isArray(data.books)) {
+          importBackupStatus.textContent = 'Invalid backup file.';
+          importBackupStatus.style.color = 'var(--danger, #d44)';
+          return;
+        }
+        importBackupStatus.textContent = 'Importing…';
+        importBackupBtn.disabled = true;
+        const result = await importLibraryData(currentUser.uid, data);
+        importBackupStatus.textContent = `Restored ${result.books} book${result.books === 1 ? '' : 's'} and ${result.lists} list${result.lists === 1 ? '' : 's'}.`;
+        importBackupStatus.style.color = 'var(--accent)';
+      } catch (err) {
+        console.error(err);
+        importBackupStatus.textContent = 'Import failed. Check the file and try again.';
+        importBackupStatus.style.color = 'var(--danger, #d44)';
+      } finally {
+        importBackupBtn.disabled = false;
       }
     });
 
