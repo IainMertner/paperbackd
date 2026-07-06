@@ -273,13 +273,14 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, co
 export async function addBook(uid, { title, author, totalPages, gbid, coverUrl, releaseYear, country }, username) {
   const bookData = {
     title,
-    author:      author || '',
-    totalPages:  totalPages || 0,
-    currentPage: 0,
-    status:      'reading',
-    gbid:        gbid || '',
-    addedAt:     serverTimestamp(),
-    language:    'English'
+    author:           author || '',
+    totalPages:       totalPages || 0,
+    currentPage:      0,
+    status:           'reading',
+    gbid:             gbid || '',
+    addedAt:          serverTimestamp(),
+    addedAtPrecision: 'day',
+    language:         'English'
   };
   if (coverUrl)    bookData.coverUrl    = coverUrl;
   if (releaseYear) bookData.releaseYear = releaseYear;
@@ -361,14 +362,16 @@ export async function updateBookDates(uid, bookId, updates, bookInfo) {
   if (firestoreUpdates.finishedAtPrecision === null) firestoreUpdates.finishedAtPrecision = deleteField();
   await updateDoc(doc(db, 'users', uid, 'books', bookId), firestoreUpdates);
   if (bookInfo) {
-    if (updates.addedAt instanceof Date) {
-      if (updates.addedAtPrecision === 'day') await upsertActivityTimestamp(uid, 'started', updates.addedAt, bookInfo);
-      else await deleteActivityForBook(uid, bookInfo.title, 'started');
-    }
-    if (updates.finishedAt instanceof Date) {
-      if (updates.finishedAtPrecision === 'day') await upsertActivityTimestamp(uid, 'finished', updates.finishedAt, bookInfo);
-      else await deleteActivityForBook(uid, bookInfo.title, 'finished');
-    }
+    try {
+      if (updates.addedAt instanceof Date) {
+        if (updates.addedAtPrecision === 'day') await upsertActivityTimestamp(uid, 'started', updates.addedAt, bookInfo);
+        else await deleteActivityForBook(uid, bookInfo.title, 'started');
+      }
+      if (updates.finishedAt instanceof Date) {
+        if (updates.finishedAtPrecision === 'day') await upsertActivityTimestamp(uid, 'finished', updates.finishedAt, bookInfo);
+        else await deleteActivityForBook(uid, bookInfo.title, 'finished');
+      }
+    } catch (e) { console.warn('Activity sync failed (date still saved):', e); }
   }
 }
 
@@ -662,15 +665,35 @@ export async function renameList(uid, listId, name) {
   await updateDoc(doc(db, 'users', uid, 'lists', listId), { name });
 }
 
-export async function removeActivityEvent(uid, activityId, gbid, dateField) {
+export async function removeActivityEvent(uid, activityId, gbid, dateField, bookTitle) {
   await deleteDoc(doc(db, 'activity', activityId));
-  if (gbid && dateField) {
-    const book = await getBookByGbid(uid, gbid);
+  if (dateField) {
+    let book = gbid ? await getBookByGbid(uid, gbid) : null;
+    if (!book && bookTitle) {
+      const q = query(collection(db, 'users', uid, 'books'), where('title', '==', bookTitle));
+      const snap = await getDocs(q);
+      if (!snap.empty) book = { id: snap.docs[0].id, ...snap.docs[0].data() };
+    }
     if (book?.id) {
-      await updateDoc(doc(db, 'users', uid, 'books', book.id), {
+      const updateData = {
         [dateField]: deleteField(),
         [`${dateField}Precision`]: deleteField()
-      });
+      };
+      if (book.reads && book.reads.length > 0) {
+        // For finished books, dates are shown from the reads array — clear from there too.
+        // Map dateField ('addedAt' → 'startedAt', 'finishedAt' → 'finishedAt') for the reads entry.
+        const readsField = dateField === 'addedAt' ? 'startedAt' : 'finishedAt';
+        const readsPrecField = readsField + 'Precision';
+        updateData.reads = book.reads.map((r, i, arr) => {
+          if (i !== arr.length - 1) return r;
+          const updated = {};
+          for (const [k, v] of Object.entries(r)) if (v !== undefined) updated[k] = v;
+          updated[readsField] = null;
+          updated[readsPrecField] = null;
+          return updated;
+        });
+      }
+      await updateDoc(doc(db, 'users', uid, 'books', book.id), updateData);
     }
   }
 }

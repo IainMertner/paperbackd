@@ -648,39 +648,19 @@
 
     function createPartialDatePicker(ts, precision) {
       const d = ts?.toDate?.() ?? null;
-      const initYear  = d ? d.getFullYear() : '';
-      const initMonth = (d && precision !== 'year') ? d.getMonth() + 1 : '';
-      const initDay   = (d && precision !== 'year' && precision !== 'month') ? d.getDate() : '';
+      const initYear  = d ? d.getFullYear() : null;
+      const initMonth = (d && precision !== 'year') ? d.getMonth() + 1 : null;
+      const initDay   = (d && precision !== 'year' && precision !== 'month') ? d.getDate() : null;
 
       const wrap = document.createElement('div');
       wrap.className = 'date-picker-partial';
 
-      function makeSpinner(input, defaultVal, min, max) {
-        const up = document.createElement('button');
-        up.type = 'button'; up.className = 'date-num-btn'; up.textContent = '▲';
-        up.addEventListener('click', () => {
-          const v = parseInt(input.value);
-          input.value = v ? Math.min(v + 1, max) : defaultVal;
-        });
-        const down = document.createElement('button');
-        down.type = 'button'; down.className = 'date-num-btn'; down.textContent = '▼';
-        down.addEventListener('click', () => {
-          const v = parseInt(input.value);
-          input.value = v ? Math.max(v - 1, min) : defaultVal;
-        });
-        const btns = document.createElement('div');
-        btns.className = 'date-num-btns';
-        btns.append(up, down);
-        const spinWrap = document.createElement('div');
-        spinWrap.className = 'date-num-wrap';
-        spinWrap.append(input, btns);
-        return spinWrap;
-      }
-
-      const dayInput = document.createElement('input');
-      dayInput.type = 'text'; dayInput.inputMode = 'numeric'; dayInput.maxLength = 2;
-      dayInput.className = 'date-day-input'; dayInput.placeholder = 'Day';
-      dayInput.value = initDay;
+      const daySel = document.createElement('select');
+      daySel.className = 'date-day-select';
+      daySel.innerHTML = '<option value="">Day</option>' +
+        Array.from({length: 31}, (_, i) => i + 1)
+          .map(n => `<option value="${n}"${initDay === n ? ' selected' : ''}>${n}</option>`)
+          .join('');
 
       const monthSel = document.createElement('select');
       monthSel.className = 'date-month-select';
@@ -689,18 +669,22 @@
           .map((m, i) => `<option value="${i+1}"${initMonth === i+1 ? ' selected' : ''}>${m}</option>`)
           .join('');
 
-      const yearInput = document.createElement('input');
-      yearInput.type = 'text'; yearInput.inputMode = 'numeric'; yearInput.maxLength = 4;
-      yearInput.className = 'date-year-input'; yearInput.placeholder = 'Year';
-      yearInput.value = initYear;
+      const currentYear = new Date().getFullYear();
+      const yearSel = document.createElement('select');
+      yearSel.className = 'date-year-select';
+      let yearOpts = '<option value="">Year</option>';
+      for (let y = currentYear + 1; y >= 1900; y--) {
+        yearOpts += `<option value="${y}"${initYear === y ? ' selected' : ''}>${y}</option>`;
+      }
+      yearSel.innerHTML = yearOpts;
 
-      wrap.append(makeSpinner(dayInput, 1, 1, 31), monthSel, makeSpinner(yearInput, new Date().getFullYear(), 1000, 2200));
+      wrap.append(daySel, monthSel, yearSel);
 
       wrap.getDate = () => {
-        const year = parseInt(yearInput.value);
-        if (!year || year < 1000 || year > 2200) return { date: null, precision: null };
+        const year = parseInt(yearSel.value);
+        if (!year) return { date: null, precision: null };
         const month = parseInt(monthSel.value) || 0;
-        const day   = parseInt(dayInput.value)  || 0;
+        const day   = parseInt(daySel.value)  || 0;
         if (!month) return { date: new Date(year, 0, 1, 12, 0, 0), precision: 'year' };
         if (!day)   return { date: new Date(year, month - 1, 1, 12, 0, 0), precision: 'month' };
         return { date: new Date(year, month - 1, Math.min(day, 31), 12, 0, 0), precision: 'day' };
@@ -728,44 +712,49 @@
       el.addEventListener('click', () => {
         const picker = createPartialDatePicker(ts, precision);
 
-        const saveBtn = document.createElement('button');
-        saveBtn.type = 'button'; saveBtn.className = 'join-club-btn date-action-btn';
-        saveBtn.textContent = 'Save';
-
-        const cancelBtn = document.createElement('button');
-        cancelBtn.type = 'button'; cancelBtn.className = 'btn-update date-action-btn';
-        cancelBtn.textContent = 'Cancel';
-
         const editorWrap = document.createElement('div');
         editorWrap.className = 'date-editor-wrap';
-        editorWrap.append(picker, saveBtn, cancelBtn);
+        editorWrap.append(picker);
         el.replaceWith(editorWrap);
 
-        saveBtn.addEventListener('click', async () => {
-          const { date, precision: newPrec } = picker.getDate();
-          if (!date) {
-            await clearBookDate(user.uid, book.id, field);
-            book[field] = null;
-            book[field + 'Precision'] = null;
-            editorWrap.replaceWith(makeDateEl(label, null, field, book, withActivity));
-            return;
+        let committing = false;
+
+        async function commitDate() {
+          if (committing) return;
+          committing = true;
+          try {
+            const { date, precision: newPrec } = picker.getDate();
+            if (!date) {
+              if (ts && document.contains(editorWrap)) {
+                await clearBookDate(user.uid, book.id, field);
+                book[field] = null;
+                book[field + 'Precision'] = null;
+              }
+              if (document.contains(editorWrap)) editorWrap.replaceWith(makeDateEl(label, null, field, book, withActivity));
+              return;
+            }
+            const updates = { [field]: date, [field + 'Precision']: newPrec };
+            const bookInfo = withActivity ? {
+              title: book.title, author: book.author, gbid: book.gbid,
+              rating: book.rating, review: book.review, username: profile.username
+            } : null;
+            await updateBookDates(user.uid, book.id, updates, bookInfo);
+            book[field] = { toDate: () => date };
+            book[field + 'Precision'] = newPrec;
+            if (document.contains(editorWrap)) editorWrap.replaceWith(makeDateEl(label, book[field], field, book, withActivity));
+          } catch (err) {
+            console.error('Date save failed:', err);
+            committing = false;
           }
-          const updates = {
-            [field]: date,
-            [field + 'Precision']: newPrec
-          };
-          const bookInfo = withActivity ? {
-            title: book.title, author: book.author, gbid: book.gbid,
-            rating: book.rating, review: book.review, username: profile.username
-          } : null;
-          await updateBookDates(user.uid, book.id, updates, bookInfo);
-          book[field] = { toDate: () => date };
-          book[field + 'Precision'] = newPrec;
-          editorWrap.replaceWith(makeDateEl(label, book[field], field, book, withActivity));
+        }
+
+        editorWrap.addEventListener('focusout', e => {
+          if (!editorWrap.contains(e.relatedTarget)) commitDate();
         });
 
-        cancelBtn.addEventListener('click', () => {
-          editorWrap.replaceWith(makeDateEl(label, ts, field, book, withActivity));
+        editorWrap.addEventListener('keydown', e => {
+          if (e.key === 'Escape') { e.stopPropagation(); editorWrap.replaceWith(makeDateEl(label, ts, field, book, withActivity)); }
+          if (e.key === 'Enter')  commitDate();
         });
       });
 
@@ -882,7 +871,6 @@
     }
 
     function renderReading(book, coverCell, closeModal) {
-      const pct  = book.totalPages ? Math.round((book.currentPage / book.totalPages) * 100) : 0;
       const card = document.createElement('div');
       card.className  = 'card';
       card.dataset.id = book.id;
@@ -900,16 +888,10 @@
           <div class="book-info">
             <div class="book-started-date"></div>
             <div class="book-reading-meta" style="display:flex;flex-direction:column;gap:.2rem;margin:.2rem 0"></div>
-            <div class="progress-bar-track">
-              <div class="progress-bar-fill" style="width:${pct}%"></div>
-            </div>
-            <div class="progress-label">${book.totalPages ? `Page ${book.currentPage} of ${book.totalPages} · ${pct}%` : `Page ${book.currentPage}`}</div>
             <div class="progress-controls">
               <input class="page-input" type="text" inputmode="numeric" value="${book.currentPage}" aria-label="Current page">
               <span class="page-sep">/</span>
               <span class="page-total-display" style="font-size:.82rem;cursor:pointer;color:var(--text-muted);min-width:1.5rem;text-align:center" title="Click to edit">${book.totalPages || '?'}</span>
-              <button class="btn-finished" title="Mark as finished" aria-label="Mark as finished"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 9"/></svg></button>
-              <button class="btn-dnf" title="Did not finish" aria-label="Did not finish"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="19.07" x2="19.07" y2="4.93"/></svg></button>
             </div>
           </div>
           ${bookCoverHtml(book)}
@@ -920,22 +902,19 @@
       coverWrap.addEventListener('click', () => openCoverPicker(book, coverWrap, coverCell));
 
       const coverCol = document.createElement('div');
-      coverCol.style.cssText = 'display:flex;flex-direction:column;align-items:center;flex-shrink:0;justify-content:space-between';
+      coverCol.style.cssText = 'display:flex;flex-direction:column;align-items:center;flex-shrink:0';
       const trashBtn = document.createElement('button');
       trashBtn.className = 'btn-remove-x';
       trashBtn.setAttribute('aria-label', 'Remove'); trashBtn.title = 'Remove';
       trashBtn.innerHTML = TRASH_ICON;
-      trashBtn.style.cssText = 'margin:0;align-self:center';
+      trashBtn.style.cssText = 'margin:0';
       const repairBtn = document.createElement('button');
       repairBtn.className = 'btn-remove-x btn-repair';
       repairBtn.setAttribute('aria-label', 'Repair'); repairBtn.title = 'Repair this book';
       repairBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
-      repairBtn.style.cssText = 'margin:0;align-self:center';
-      const coverBtnRow = document.createElement('div');
-      coverBtnRow.style.cssText = 'display:flex;gap:.35rem';
-      coverBtnRow.append(repairBtn, trashBtn);
+      repairBtn.style.cssText = 'margin:0';
       coverWrap.replaceWith(coverCol);
-      coverCol.append(coverWrap, coverBtnRow);
+      coverCol.append(coverWrap);
       card.querySelector('.book-entry').style.alignItems = 'stretch';
 
       repairBtn.addEventListener('click', async () => {
@@ -1022,8 +1001,6 @@
         return sel;
       }, val => { book.format = val; updateBookMeta(user.uid, book.id, { format: val }); }));
 
-      const fillEl   = card.querySelector('.progress-bar-fill');
-      const labelEl  = card.querySelector('.progress-label');
       const controls = card.querySelector('.progress-controls');
       const curInput = controls.querySelector('.page-input');
       let totalPagesVal = book.totalPages || null;
@@ -1057,14 +1034,6 @@
         const total   = totalPagesVal;
         const clamped = total ? Math.min(cur, total) : cur;
         curInput.value = clamped;
-        if (total) {
-          const pct = Math.round((clamped / total) * 100);
-          fillEl.style.width  = pct + '%';
-          labelEl.textContent = `Page ${clamped} of ${total} · ${pct}%`;
-        } else {
-          fillEl.style.width  = '0%';
-          labelEl.textContent = `Page ${clamped}`;
-        }
         const updates = { currentPage: clamped };
         if (total !== book.totalPages) updates.totalPages = total;
         await updateBookMeta(user.uid, book.id, updates);
@@ -1090,11 +1059,6 @@
 
       curInput.addEventListener('input', () => {
         clearTimeout(pgSaveTimer);
-        const cur   = Math.max(0, parseInt(curInput.value) || 0);
-        const total = totalPagesVal;
-        if (total) {
-          fillEl.style.width = Math.round((Math.min(cur, total) / total) * 100) + '%';
-        }
         pgSaveTimer = setTimeout(saveProgress, 700);
       });
 
@@ -1137,101 +1101,6 @@
         inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
       });
 
-      card.querySelector('.btn-finished').addEventListener('click', () => {
-        const controls = card.querySelector('.progress-controls');
-        controls.innerHTML = '<div class="rating-prompt" style="margin-top:.25rem"></div>';
-        const prompt = controls.querySelector('.rating-prompt');
-
-        const label = document.createElement('div');
-        label.style.cssText = 'font-size:.8rem;color:var(--text-muted);margin-bottom:.35rem';
-        label.textContent = 'Rate this book (optional)';
-        prompt.appendChild(label);
-
-        const picker = createStarPicker(0);
-        prompt.appendChild(picker);
-
-        const ta = document.createElement('textarea');
-        ta.className = 'review-input';
-        ta.placeholder = 'Write a review… (optional)';
-        ta.rows = 3;
-        prompt.appendChild(ta);
-
-        const actions = document.createElement('div');
-        actions.style.cssText = 'display:flex;gap:.5rem;margin-top:.5rem';
-        actions.innerHTML = `<button class="join-club-btn btn-do-finish" type="button">Mark as finished</button><button class="btn-update btn-cancel-finish" type="button">Cancel</button>`;
-        prompt.appendChild(actions);
-
-        actions.querySelector('.btn-cancel-finish').addEventListener('click', () => {
-          card.replaceWith(renderReading(book, coverCell, closeModal));
-        });
-
-        actions.querySelector('.btn-do-finish').addEventListener('click', async () => {
-          const rating = picker.getValue();
-          const review = ta.value.trim() || null;
-          const newReadLocal = { startedAt: book.addedAt || null, finishedAt: { toDate: () => new Date() }, language: book.language || null, format: book.format || null, rating, review };
-
-          // Match by gbid first, then fall back to title for books added before gbid was tracked
-          const existingFinished =
-            (book.gbid  && allBooks.find(b => b.gbid  === book.gbid                              && b.id !== book.id && b.status === 'finished')) ||
-            (book.title && allBooks.find(b => b.title?.toLowerCase() === book.title?.toLowerCase() && b.id !== book.id && b.status === 'finished'));
-
-          if (existingFinished) {
-            await finishBook(user.uid, existingFinished.id, { title: existingFinished.title, author: existingFinished.author, gbid: existingFinished.gbid, rating, review, language: book.language, format: book.format, coverUrl: existingFinished.coverUrl }, profile.username);
-            await deleteBook(user.uid, book.id, { title: book.title });
-            existingFinished.rating = rating;
-            existingFinished.review = review;
-            existingFinished.reads  = (existingFinished.reads || []).concat([newReadLocal]);
-            if (coverCell) coverCell.remove();
-            finishedList.querySelector(`[data-gbid="${book.gbid}"]`)?.remove();
-            closeModal();
-            if (!readingList.querySelector('[data-title]')) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
-            document.getElementById('finished-empty')?.remove();
-            if (viewMode === 'list') {
-              const newRow = makeBookListRow(existingFinished);
-              newRow.addEventListener('click', () => { let ov; const c = renderFinished(existingFinished, newRow, () => ov?.remove()); ov = createBookModal(c); });
-              finishedList.prepend(newRow);
-            } else {
-              const newCell = makeBookCoverCell(existingFinished);
-              attachFinishedCell(newCell, existingFinished);
-              finishedList.prepend(newCell);
-            }
-            updateCounts();
-          } else {
-            await finishBook(user.uid, book.id, { title: book.title, author: book.author, gbid: book.gbid, rating, review, language: book.language, format: book.format, coverUrl: book.coverUrl, startedAt: book.addedAt?.toDate?.() }, profile.username);
-            book.status     = 'finished';
-            book.finishedAt = { toDate: () => new Date() };
-            book.rating     = rating;
-            book.review     = review;
-            book.reads      = (book.reads || []).concat([newReadLocal]);
-            if (coverCell) coverCell.remove();
-            closeModal();
-            if (!readingList.querySelector('[data-title]')) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
-            document.getElementById('finished-empty')?.remove();
-            if (viewMode === 'list') {
-              const newRow = makeBookListRow(book);
-              newRow.addEventListener('click', () => { let ov; const c = renderFinished(book, newRow, () => ov?.remove()); ov = createBookModal(c); });
-              finishedList.prepend(newRow);
-            } else {
-              const newCell = makeBookCoverCell(book);
-              attachFinishedCell(newCell, book);
-              finishedList.prepend(newCell);
-            }
-            updateCounts();
-          }
-        });
-      });
-
-      card.querySelector('.btn-dnf').addEventListener('click', async () => {
-        if (!confirm(`Mark "${book.title}" as did not finish?`)) return;
-        await dnfBook(user.uid, book.id, book);
-        const idx = allBooks.findIndex(b => b.id === book.id);
-        if (idx !== -1) allBooks.splice(idx, 1);
-        if (coverCell) coverCell.remove();
-        closeModal();
-        if (!readingList.querySelector('[data-title]')) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
-        updateCounts();
-      });
-
       trashBtn.addEventListener('click', async () => {
         if (!confirm(`Remove "${book.title}" from your library?`)) return;
         await deleteBook(user.uid, book.id, { title: book.title });
@@ -1257,18 +1126,135 @@
       const bookInfoWrap = document.createElement('div');
       bookInfoWrap.style.cssText = 'margin-top:.75rem;padding:.5rem .625rem;background:var(--bg-alt);border-radius:var(--radius-sm);border:1px solid var(--border);overflow:hidden';
 
+      const bookInfoHeader = document.createElement('div');
+      bookInfoHeader.style.cssText = 'display:flex;align-items:center;gap:.15rem;margin:-.5rem -.625rem;padding:.5rem .625rem';
       const bookInfoBtn = document.createElement('button');
-      bookInfoBtn.style.cssText = 'font-size:.75rem;font-weight:600;width:calc(100% + 1.25rem);text-align:left;background:none;border:none;display:flex;align-items:center;padding:.5rem .625rem;margin:-.5rem -.625rem;cursor:pointer;color:var(--text-muted);letter-spacing:.02em;text-transform:uppercase';
+      bookInfoBtn.style.cssText = 'flex:1;font-size:.75rem;font-weight:600;text-align:left;background:none;border:none;cursor:pointer;color:var(--text-muted);letter-spacing:.02em;text-transform:uppercase;padding:0;font-family:inherit';
       bookInfoBtn.textContent = 'Book info ▾';
       bookInfoBtn.addEventListener('click', () => {
         const open = detailsSection.style.display === 'none';
         detailsSection.style.display = open ? '' : 'none';
         bookInfoBtn.textContent = `Book info ${open ? '▴' : '▾'}`;
       });
+      bookInfoHeader.append(bookInfoBtn, repairBtn, trashBtn);
 
-      bookInfoWrap.appendChild(bookInfoBtn);
+      bookInfoWrap.appendChild(bookInfoHeader);
       bookInfoWrap.appendChild(detailsSection);
       card.appendChild(bookInfoWrap);
+
+      // Status tabs — Finished / Did not finish
+      const statusRow = document.createElement('div');
+      statusRow.style.cssText = 'display:flex;margin-top:.75rem;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden';
+
+      function makeStatusTab(label, hoverColor) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = label;
+        btn.style.cssText = 'flex:1;padding:.45rem .5rem;font-size:.78rem;background:none;border:none;cursor:pointer;color:var(--text-muted);font-family:inherit;transition:color .15s';
+        btn.addEventListener('mouseover', () => btn.style.color = hoverColor);
+        btn.addEventListener('mouseout',  () => btn.style.color = 'var(--text-muted)');
+        return btn;
+      }
+
+      const finishedTab = makeStatusTab('Finished',       'var(--accent)');
+      const dnfTab      = makeStatusTab('Did not finish', '#c84f4f');
+      const tabDivider  = document.createElement('div');
+      tabDivider.style.cssText = 'width:1px;background:var(--border);flex-shrink:0';
+      statusRow.append(finishedTab, tabDivider, dnfTab);
+      card.appendChild(statusRow);
+
+      finishedTab.addEventListener('click', () => {
+        statusRow.innerHTML = '';
+        statusRow.style.cssText = 'margin-top:.75rem;padding:.625rem;border:1px solid var(--border);border-radius:var(--radius-sm)';
+
+        const label = document.createElement('div');
+        label.style.cssText = 'font-size:.8rem;color:var(--text-muted);margin-bottom:.35rem';
+        label.textContent = 'Rate this book (optional)';
+        statusRow.appendChild(label);
+
+        const picker = createStarPicker(0);
+        statusRow.appendChild(picker);
+
+        const ta = document.createElement('textarea');
+        ta.className = 'review-input';
+        ta.placeholder = 'Write a review… (optional)';
+        ta.rows = 3;
+        statusRow.appendChild(ta);
+
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:.5rem;margin-top:.5rem';
+        actions.innerHTML = `<button class="join-club-btn btn-do-finish" type="button">Mark as finished</button><button class="btn-update btn-cancel-finish" type="button">Cancel</button>`;
+        statusRow.appendChild(actions);
+
+        actions.querySelector('.btn-cancel-finish').addEventListener('click', () => {
+          card.replaceWith(renderReading(book, coverCell, closeModal));
+        });
+
+        actions.querySelector('.btn-do-finish').addEventListener('click', async () => {
+          const rating = picker.getValue();
+          const review = ta.value.trim() || null;
+          const newReadLocal = { startedAt: book.addedAt || null, startedAtPrecision: book.addedAtPrecision || null, finishedAt: { toDate: () => new Date() }, finishedAtPrecision: 'day', language: book.language || null, format: book.format || null, rating, review };
+
+          const existingFinished =
+            (book.gbid  && allBooks.find(b => b.gbid  === book.gbid                               && b.id !== book.id && b.status === 'finished')) ||
+            (book.title && allBooks.find(b => b.title?.toLowerCase() === book.title?.toLowerCase() && b.id !== book.id && b.status === 'finished'));
+
+          if (existingFinished) {
+            await finishBook(user.uid, existingFinished.id, { title: existingFinished.title, author: existingFinished.author, gbid: existingFinished.gbid, rating, review, language: book.language, format: book.format, coverUrl: existingFinished.coverUrl }, profile.username);
+            await deleteBook(user.uid, book.id, { title: book.title });
+            existingFinished.rating = rating;
+            existingFinished.review = review;
+            existingFinished.reads  = (existingFinished.reads || []).concat([newReadLocal]);
+            if (coverCell) coverCell.remove();
+            finishedList.querySelector(`[data-gbid="${book.gbid}"]`)?.remove();
+            closeModal();
+            if (!readingList.querySelector('[data-title]')) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
+            document.getElementById('finished-empty')?.remove();
+            if (viewMode === 'list') {
+              const newRow = makeBookListRow(existingFinished);
+              newRow.addEventListener('click', () => { let ov; const c = renderFinished(existingFinished, newRow, () => ov?.remove()); ov = createBookModal(c); });
+              finishedList.prepend(newRow);
+            } else {
+              const newCell = makeBookCoverCell(existingFinished);
+              attachFinishedCell(newCell, existingFinished);
+              finishedList.prepend(newCell);
+            }
+            updateCounts();
+          } else {
+            await finishBook(user.uid, book.id, { title: book.title, author: book.author, gbid: book.gbid, rating, review, language: book.language, format: book.format, coverUrl: book.coverUrl, startedAt: book.addedAt?.toDate?.(), startedAtPrecision: book.addedAtPrecision || null }, profile.username);
+            book.status     = 'finished';
+            book.finishedAt = { toDate: () => new Date() };
+            book.rating     = rating;
+            book.review     = review;
+            book.reads      = (book.reads || []).concat([newReadLocal]);
+            if (coverCell) coverCell.remove();
+            closeModal();
+            if (!readingList.querySelector('[data-title]')) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
+            document.getElementById('finished-empty')?.remove();
+            if (viewMode === 'list') {
+              const newRow = makeBookListRow(book);
+              newRow.addEventListener('click', () => { let ov; const c = renderFinished(book, newRow, () => ov?.remove()); ov = createBookModal(c); });
+              finishedList.prepend(newRow);
+            } else {
+              const newCell = makeBookCoverCell(book);
+              attachFinishedCell(newCell, book);
+              finishedList.prepend(newCell);
+            }
+            updateCounts();
+          }
+        });
+      });
+
+      dnfTab.addEventListener('click', async () => {
+        if (!confirm(`Mark "${book.title}" as did not finish?`)) return;
+        await dnfBook(user.uid, book.id, book);
+        const idx = allBooks.findIndex(b => b.id === book.id);
+        if (idx !== -1) allBooks.splice(idx, 1);
+        if (coverCell) coverCell.remove();
+        closeModal();
+        if (!readingList.querySelector('[data-title]')) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
+        updateCounts();
+      });
 
       return card;
     }
@@ -1301,22 +1287,19 @@
       coverWrap.addEventListener('click', () => openCoverPicker(book, coverWrap, coverCell));
 
       const coverCol = document.createElement('div');
-      coverCol.style.cssText = 'display:flex;flex-direction:column;align-items:center;flex-shrink:0;justify-content:space-between';
+      coverCol.style.cssText = 'display:flex;flex-direction:column;align-items:center;flex-shrink:0';
       const trashBtn = document.createElement('button');
       trashBtn.className = 'btn-remove-x';
       trashBtn.setAttribute('aria-label', 'Remove'); trashBtn.title = 'Remove';
       trashBtn.innerHTML = TRASH_ICON;
-      trashBtn.style.cssText = 'margin:0;align-self:center';
+      trashBtn.style.cssText = 'margin:0';
       const repairBtn = document.createElement('button');
       repairBtn.className = 'btn-remove-x btn-repair';
       repairBtn.setAttribute('aria-label', 'Repair'); repairBtn.title = 'Repair this book';
       repairBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
-      repairBtn.style.cssText = 'margin:0;align-self:center';
-      const coverBtnRow = document.createElement('div');
-      coverBtnRow.style.cssText = 'display:flex;gap:.35rem';
-      coverBtnRow.append(repairBtn, trashBtn);
+      repairBtn.style.cssText = 'margin:0';
       coverWrap.replaceWith(coverCol);
-      coverCol.append(coverWrap, coverBtnRow);
+      coverCol.append(coverWrap);
       card.querySelector('.book-entry').style.alignItems = 'stretch';
 
       repairBtn.addEventListener('click', async () => {
@@ -1521,14 +1504,15 @@
 
 
       async function saveCurrentRead() {
-        if (!reads.length) return;
         const { date: startedAtDate,  precision: startedAtPrec  } = startedPicker.getDate();
         const { date: finishedAtDate, precision: finishedAtPrec } = finishedPicker.getDate();
+        const existing = reads[selectedReadIdx];
+        if (!existing && !startedAtDate && !finishedAtDate) return;
         reads[selectedReadIdx] = {
           startedAt:           startedAtDate  ? { toDate: () => startedAtDate  } : null,
           startedAtPrecision:  startedAtDate  ? startedAtPrec  : null,
-          finishedAt:          finishedAtDate ? { toDate: () => finishedAtDate } : (reads[selectedReadIdx].finishedAt || null),
-          finishedAtPrecision: finishedAtDate ? finishedAtPrec : (reads[selectedReadIdx].finishedAtPrecision || null),
+          finishedAt:          finishedAtDate ? { toDate: () => finishedAtDate } : (existing?.finishedAt || null),
+          finishedAtPrecision: finishedAtDate ? finishedAtPrec : (existing?.finishedAtPrecision || null),
           language: langInput.value.trim() || null,
           format:   fmtSel.value           || null,
           rating:   starPicker.getValue(),
@@ -1583,16 +1567,19 @@
       const bookInfoWrap = document.createElement('div');
       bookInfoWrap.style.cssText = 'margin-top:.75rem;padding:.5rem .625rem;background:var(--bg-alt);border-radius:var(--radius-sm);border:1px solid var(--border);overflow:hidden';
 
+      const bookInfoHeader = document.createElement('div');
+      bookInfoHeader.style.cssText = 'display:flex;align-items:center;gap:.15rem;margin:-.5rem -.625rem;padding:.5rem .625rem';
       const bookInfoBtn = document.createElement('button');
-      bookInfoBtn.style.cssText = 'font-size:.75rem;font-weight:600;width:calc(100% + 1.25rem);text-align:left;background:none;border:none;display:flex;align-items:center;padding:.5rem .625rem;margin:-.5rem -.625rem;cursor:pointer;color:var(--text-muted);letter-spacing:.02em;text-transform:uppercase';
+      bookInfoBtn.style.cssText = 'flex:1;font-size:.75rem;font-weight:600;text-align:left;background:none;border:none;cursor:pointer;color:var(--text-muted);letter-spacing:.02em;text-transform:uppercase;padding:0;font-family:inherit';
       bookInfoBtn.textContent = 'Book info ▾';
       bookInfoBtn.addEventListener('click', () => {
         const open = detailsSection.style.display === 'none';
         detailsSection.style.display = open ? '' : 'none';
         bookInfoBtn.textContent = `Book info ${open ? '▴' : '▾'}`;
       });
+      bookInfoHeader.append(bookInfoBtn, repairBtn, trashBtn);
 
-      bookInfoWrap.appendChild(bookInfoBtn);
+      bookInfoWrap.appendChild(bookInfoHeader);
       bookInfoWrap.appendChild(detailsSection);
       card.appendChild(bookInfoWrap);
 
@@ -2044,7 +2031,7 @@
             }
             case 'release': sorted.sort((a, b) => asc ? (a.releaseYear||9999) - (b.releaseYear||9999) : (b.releaseYear||0) - (a.releaseYear||0)); break;
             case 'rating':  sorted.sort((a, b) => asc ? (a.rating||0) - (b.rating||0) : (b.rating||0) - (a.rating||0)); break;
-            default:        sorted.sort((a, b) => { const at = tsOf(a,'finishedAt')||tsOf(a,'addedAt'), bt = tsOf(b,'finishedAt')||tsOf(b,'addedAt'); return asc ? at - bt : bt - at; });
+            default:        sorted.sort((a, b) => { const af = tsOf(a,'finishedAt'), bf = tsOf(b,'finishedAt'); if (!af && !bf) return 0; if (!af) return 1; if (!bf) return -1; return asc ? af - bf : bf - af; });
           }
           if (!sorted.length) { showEmpty(finishedList, 'finished-empty', 'No finished books yet.'); return; }
           sorted.forEach(b => {
@@ -2579,7 +2566,7 @@
       const { title, author, pages, gbid, cover, releaseYear, country } = selectedBook;
 
       const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, coverUrl: cover, releaseYear, country }, profile.username);
-      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, addedAt: { toDate: () => new Date() } };
+      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, addedAt: { toDate: () => new Date() }, addedAtPrecision: 'day' };
 
       allBooks.push(book);
       document.getElementById('reading-empty')?.remove();

@@ -234,7 +234,7 @@
           if (!confirm(`Remove this event from your feed?\n\nThis will also clear the ${dateLabel} (${dateStr}) from "${event.bookTitle}" in your library.`)) return;
           removeBtn.disabled = true;
           try {
-            await removeActivityEvent(user.uid, event.id, event.gbid, dateField);
+            await removeActivityEvent(user.uid, event.id, event.gbid, dateField, event.bookTitle);
             card.remove();
           } catch (e) {
             console.error(e);

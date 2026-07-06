@@ -548,14 +548,11 @@ a { color: inherit; }
 /* Custom partial date picker (month + year) */
 .date-picker-partial { display: flex; align-items: center; gap: .3rem; }
 
-.date-month-select, .date-day-input, .date-year-input {
+.date-day-select, .date-month-select, .date-year-select {
   background: var(--bg-alt); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: .15rem .3rem;
+  border-radius: var(--radius-sm); padding: .15rem .2rem;
   color: inherit; font-size: .78rem; font-family: inherit;
 }
-
-.date-day-input  { width: 2.4rem; border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
-.date-year-input { width: 3.8rem; border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
 
 .date-num-wrap { display: flex; align-items: stretch; }
 .date-num-btns { display: flex; flex-direction: column; }
@@ -573,8 +570,6 @@ a { color: inherit; }
   display: flex; align-items: center; gap: .35rem;
   flex-wrap: wrap; margin: .15rem 0;
 }
-
-.date-action-btn { font-size: .72rem !important; padding: .18rem .45rem !important; }
 
 /* Review textarea */
 .review-input {

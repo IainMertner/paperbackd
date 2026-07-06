@@ -144,34 +144,28 @@
     function createPartialDatePicker() {
       const wrap = document.createElement('div');
       wrap.className = 'date-picker-partial';
-      function makeSpinner(input, defaultVal, min, max) {
-        const up = document.createElement('button');
-        up.type = 'button'; up.className = 'date-num-btn'; up.textContent = '▲';
-        up.addEventListener('click', () => { const v = parseInt(input.value); input.value = v ? Math.min(v+1,max) : defaultVal; });
-        const down = document.createElement('button');
-        down.type = 'button'; down.className = 'date-num-btn'; down.textContent = '▼';
-        down.addEventListener('click', () => { const v = parseInt(input.value); input.value = v ? Math.max(v-1,min) : defaultVal; });
-        const btns = document.createElement('div'); btns.className = 'date-num-btns'; btns.append(up, down);
-        const w = document.createElement('div'); w.className = 'date-num-wrap'; w.append(input, btns);
-        return w;
-      }
-      const dayIn = document.createElement('input');
-      dayIn.type = 'text'; dayIn.inputMode = 'numeric'; dayIn.maxLength = 2;
-      dayIn.className = 'date-day-input'; dayIn.placeholder = 'Day';
+      const daySel = document.createElement('select');
+      daySel.className = 'date-day-select';
+      daySel.innerHTML = '<option value="">Day</option>' +
+        Array.from({length: 31}, (_, i) => i + 1)
+          .map(n => `<option value="${n}">${n}</option>`).join('');
       const monthSel = document.createElement('select');
       monthSel.className = 'date-month-select';
       monthSel.innerHTML = '<option value="">Month</option>' +
         ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
           .map((m,i) => `<option value="${i+1}">${m}</option>`).join('');
-      const yearIn = document.createElement('input');
-      yearIn.type = 'text'; yearIn.inputMode = 'numeric'; yearIn.maxLength = 4;
-      yearIn.className = 'date-year-input'; yearIn.placeholder = 'Year';
-      wrap.append(makeSpinner(dayIn, 1, 1, 31), monthSel, makeSpinner(yearIn, new Date().getFullYear(), 1000, 2200));
+      const currentYear = new Date().getFullYear();
+      const yearSel = document.createElement('select');
+      yearSel.className = 'date-year-select';
+      let yearOpts = '<option value="">Year</option>';
+      for (let y = currentYear + 1; y >= 1900; y--) yearOpts += `<option value="${y}">${y}</option>`;
+      yearSel.innerHTML = yearOpts;
+      wrap.append(daySel, monthSel, yearSel);
       wrap.getDate = () => {
-        const year = parseInt(yearIn.value);
-        if (!year || year < 1000 || year > 2200) return { date: null, precision: null };
+        const year = parseInt(yearSel.value);
+        if (!year) return { date: null, precision: null };
         const month = parseInt(monthSel.value) || 0;
-        const day   = parseInt(dayIn.value)    || 0;
+        const day   = parseInt(daySel.value)   || 0;
         if (!month) return { date: new Date(year, 0, 1, 12, 0, 0), precision: 'year' };
         if (!day)   return { date: new Date(year, month-1, 1, 12, 0, 0), precision: 'month' };
         return { date: new Date(year, month-1, Math.min(day,31), 12, 0, 0), precision: 'day' };
