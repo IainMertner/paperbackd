@@ -231,14 +231,6 @@ export async function importBooks(uid, books, onProgress) {
   }
 }
 
-export function muteUser(currentUid, targetUid) {
-  return updateDoc(doc(db, 'users', currentUid), { muted: arrayUnion(targetUid) });
-}
-
-export function unmuteUser(currentUid, targetUid) {
-  return updateDoc(doc(db, 'users', currentUid), { muted: arrayRemove(targetUid) });
-}
-
 // ── Books ─────────────────────────────────────────────────────────────────────
 
 export async function getBookCount(uid) {

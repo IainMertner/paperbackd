@@ -878,7 +878,7 @@ a { color: inherit; }
 .profile-name-row { display: flex; align-items: center; gap: .75rem; }
 .profile-name-wrap .profile-name { font-size: 1.25rem; font-weight: 700; }
 
-.profile-actions { display: none; gap: .4rem; margin-top: .45rem; }
+.profile-actions { display: none; gap: .4rem; }
 .profile-actions:not([hidden]) { display: flex; }
 .profile-action-btn {
   padding: .2rem .65rem;
@@ -893,9 +893,8 @@ a { color: inherit; }
 .profile-action-follow { background: var(--accent); color: #fff; border-color: var(--accent); }
 .profile-action-follow.following { background: var(--bg-alt); color: var(--text); border-color: var(--border); }
 .profile-action-follow:hover { opacity: .82; }
-.profile-action-mute { background: none; color: var(--text-muted); border-color: var(--border); }
-.profile-action-mute.muted { color: var(--text); }
-.profile-action-mute:hover { color: var(--text); border-color: var(--text-muted); }
+.profile-action-secondary { background: none; color: var(--text-muted); border-color: var(--border); }
+.profile-action-secondary:hover { color: var(--text); border-color: var(--text-muted); }
 
 .friend-item {
   display: flex;

@@ -40,12 +40,11 @@
         <div class="profile-name-row">
           <div class="profile-name" id="profile-name"></div>
           <div id="own-actions" style="display:none">
-            <a href="../edit-profile/" class="profile-action-btn profile-action-mute" style="text-decoration:none">Edit profile</a>
+            <a href="../edit-profile/" class="profile-action-btn profile-action-secondary" style="text-decoration:none">Edit profile</a>
           </div>
-        </div>
-        <div class="profile-actions" id="profile-actions" hidden>
-          <button id="follow-btn" class="profile-action-btn profile-action-follow">Follow</button>
-          <button id="mute-btn" class="profile-action-btn profile-action-mute">Mute</button>
+          <div class="profile-actions" id="profile-actions" hidden>
+            <button id="follow-btn" class="profile-action-btn profile-action-follow">Follow</button>
+          </div>
         </div>
         <a id="activity-link" href="#" style="font-size:.78rem;color:var(--text-muted);text-decoration:none;margin-top:.4rem;display:inline-flex;align-items:center;gap:.25rem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Show activity</a>
       </div>
@@ -139,7 +138,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getProfileByUsername, getFollowers, getProfile, getBookCount, getListCount, followUser, unfollowUser, muteUser, unmuteUser } from '../js/firebase.js';
+    import { getProfileByUsername, getFollowers, getProfile, getBookCount, getListCount, followUser, unfollowUser } from '../js/firebase.js';
 
     const { user, profile: myProfile } = await requireAuth();
     const params      = new URLSearchParams(location.search);
@@ -222,13 +221,10 @@
           });
 
           const myFollowing = myFreshProfile?.following || myProfile.following || myProfile.friends || [];
-          const myMuted     = myFreshProfile?.muted || [];
           let isFollowing   = myFollowing.includes(target.uid);
-          let isMuted       = myMuted.includes(target.uid);
 
           const profileActions = document.getElementById('profile-actions');
           const followBtn      = document.getElementById('follow-btn');
-          const muteBtn        = document.getElementById('mute-btn');
 
           profileActions.hidden = false;
 
@@ -236,12 +232,7 @@
             followBtn.textContent = isFollowing ? 'Following' : 'Follow';
             followBtn.classList.toggle('following', isFollowing);
           }
-          function updateMuteBtn() {
-            muteBtn.textContent = isMuted ? 'Unmute' : 'Mute';
-            muteBtn.classList.toggle('muted', isMuted);
-          }
           updateFollowBtn();
-          updateMuteBtn();
 
           followBtn.addEventListener('click', async () => {
             followBtn.disabled = true;
@@ -256,22 +247,6 @@
               updateFollowBtn();
             } finally {
               followBtn.disabled = false;
-            }
-          });
-
-          muteBtn.addEventListener('click', async () => {
-            muteBtn.disabled = true;
-            try {
-              if (isMuted) {
-                await unmuteUser(user.uid, target.uid);
-                isMuted = false;
-              } else {
-                await muteUser(user.uid, target.uid);
-                isMuted = true;
-              }
-              updateMuteBtn();
-            } finally {
-              muteBtn.disabled = false;
             }
           });
         }

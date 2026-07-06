@@ -107,7 +107,7 @@
           ownerUsername = target.username;
 
           document.title = `${ownerUsername}'s Lists - paperbackd`;
-          document.getElementById('page-title').textContent = `${ownerUsername}'s Lists`;
+          document.getElementById('page-title').innerHTML = `<a href="../profile/?u=${encodeURIComponent(ownerUsername)}" style="color:inherit;text-decoration:none">${esc(ownerUsername)}</a>'s Lists`;
         }
 
         let lists = await getLists(ownerUid);
