@@ -435,20 +435,74 @@
           return el;
         }
 
+        const tsVal  = ts => ts?.seconds ?? (ts?.toDate ? ts.toDate().getTime() / 1000 : 0);
+        const fmtDate = (ts, prec) => {
+          if (!ts?.toDate) return null;
+          const d = ts.toDate();
+          if (!prec || prec === 'month') return d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+          if (prec === 'year') return String(d.getFullYear());
+          return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        };
+
         for (const { username, avatarUrl, avatarBorderColor, book } of friendStatuses) {
-          const status = book.status === 'reading'
-            ? book.totalPages
+          if (book.status === 'reading') {
+            const status = book.totalPages
               ? `Currently reading · page ${book.currentPage} of ${book.totalPages}`
-              : 'Currently reading'
-            : 'Finished';
-          const friendStars  = (book.status === 'finished' && book.rating) ? renderStars(book.rating) : '';
-          const friendReview = (book.status === 'finished' && book.review)
-            ? `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(book.review.slice(0, 150))}${book.review.length > 150 ? '…' : ''}</div>`
-            : '';
-          list.appendChild(friendCard(
-            { username, avatarUrl, avatarBorderColor },
-            `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">${status}</div>${friendStars}${friendReview}`
-          ));
+              : 'Currently reading';
+            list.appendChild(friendCard(
+              { username, avatarUrl, avatarBorderColor },
+              `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">${status}</div>`
+            ));
+            continue;
+          }
+
+          const reads = (book.reads?.length > 0) ? [...book.reads] : [{
+            finishedAt: book.finishedAt || null, finishedAtPrecision: book.finishedAtPrecision || null,
+            rating: book.rating || null, review: book.review || null,
+          }];
+          reads.sort((a, b) => tsVal(b.finishedAt) - tsVal(a.finishedAt));
+
+          const card = friendCard({ username, avatarUrl, avatarBorderColor }, '');
+          const contentEl = card.querySelector('.friend-item > div');
+
+          let selectedIdx = 0;
+          const metaEl = document.createElement('div');
+
+          function renderRead(idx) {
+            const r = reads[idx];
+            const dateStr = fmtDate(r.finishedAt, r.finishedAtPrecision);
+            let html = `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">Finished${dateStr ? ` · ${dateStr}` : ''}</div>`;
+            if (r.rating) html += renderStars(r.rating);
+            if (r.review) html += `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(r.review.slice(0, 150))}${r.review.length > 150 ? '…' : ''}</div>`;
+            metaEl.innerHTML = html;
+          }
+          renderRead(0);
+          contentEl.appendChild(metaEl);
+
+          if (reads.length > 1) {
+            const switcherEl = document.createElement('div');
+            switcherEl.style.cssText = 'display:flex;gap:.3rem;margin-top:.35rem;flex-wrap:wrap';
+            reads.forEach((rd, i) => {
+              const label = fmtDate(rd.finishedAt, rd.finishedAtPrecision) || '—';
+              const pill = document.createElement('button');
+              pill.type = 'button';
+              pill.textContent = label;
+              pill.style.cssText = `font-size:.7rem;padding:.15rem .45rem;border-radius:20px;border:1px solid ${i === 0 ? 'var(--accent)' : 'var(--border)'};background:none;cursor:pointer;color:${i === 0 ? 'var(--accent)' : 'var(--text-muted)'};font-family:inherit`;
+              pill.addEventListener('click', () => {
+                selectedIdx = i;
+                renderRead(i);
+                switcherEl.querySelectorAll('button').forEach((b, j) => {
+                  const sel = j === i;
+                  b.style.borderColor = sel ? 'var(--accent)' : 'var(--border)';
+                  b.style.color       = sel ? 'var(--accent)' : 'var(--text-muted)';
+                });
+              });
+              switcherEl.appendChild(pill);
+            });
+            contentEl.appendChild(switcherEl);
+          }
+
+          list.appendChild(card);
         }
 
         for (const { username, avatarUrl, avatarBorderColor, listNames } of readingListOnly) {

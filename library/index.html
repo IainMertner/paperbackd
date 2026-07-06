@@ -528,10 +528,10 @@
 
         async function pickCover(url) {
           if (url === book.coverUrl) { overlay.remove(); return; }
-          await updateBookCover(user.uid, book.id, url, { gbid: book.gbid, title: book.title });
           book.coverUrl = url;
           wrapEl.innerHTML = coverInnerHtml(book);
-          // Sync the grid cell cover (skip in list mode — list rows have no cover image)
+          const newCoverImg = wrapEl.querySelector('.book-cover, .book-cover-img');
+          if (newCoverImg) { newCoverImg.style.width = '72px'; newCoverImg.style.height = '108px'; }
           if (coverCell && !coverCell.classList.contains('books-list-row')) {
             const existImg = coverCell.querySelector('img:not(.book-cover-img)');
             const existPh  = coverCell.querySelector('.library-cover-placeholder');
@@ -542,6 +542,8 @@
               existPh ? existPh.replaceWith(img) : coverCell.prepend(img);
             }
           }
+          overlay.remove();
+          updateBookCover(user.uid, book.id, url, { gbid: book.gbid, title: book.title });
           if (profile.shelf?.some(s => s.gbid === book.gbid && book.gbid)) {
             const updatedShelf = profile.shelf.map(s =>
               s.gbid === book.gbid ? { ...s, coverUrl: url } : s
@@ -551,7 +553,6 @@
             const cached = JSON.parse(localStorage.getItem('rl_profile') || '{}');
             if (cached.shelf) { cached.shelf = updatedShelf; localStorage.setItem('rl_profile', JSON.stringify(cached)); }
           }
-          overlay.remove();
         }
 
         // Current cover first (selected state)
@@ -1938,6 +1939,39 @@
           return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
         };
 
+        let selectedViewIdx = 0;
+
+        function selectRead(idx) {
+          selectedViewIdx = idx;
+          const rd = reads[idx];
+          rangeEl.innerHTML = '';
+          rangeEl.append(
+            staticDateRow('Started',  rd.startedAt,  rd.startedAtPrecision),
+            staticDateRow('Finished', rd.finishedAt, rd.finishedAtPrecision),
+            staticLabelRow('Language', rd.language || 'English'),
+            staticLabelRow('Format',   rd.format   || null),
+          );
+          ratingEditor.innerHTML = '';
+          if (rd.rating) {
+            const starsEl = document.createElement('div');
+            starsEl.innerHTML = renderStars(rd.rating);
+            ratingEditor.appendChild(starsEl);
+          }
+          if (rd.review) {
+            const reviewText = document.createElement('div');
+            reviewText.style.cssText = 'margin-top:.5rem;font-size:.82rem;line-height:1.4;white-space:pre-wrap;word-break:break-word;font-style:italic;color:var(--text)';
+            reviewText.textContent = '"' + rd.review + '"';
+            ratingEditor.appendChild(reviewText);
+          }
+          histList.querySelectorAll('[data-read-row]').forEach((r, i) => {
+            const sel = i === idx;
+            r.style.background   = sel ? 'var(--bg)' : '';
+            r.style.border       = sel ? '1px solid var(--border)' : '';
+            r.querySelector('[data-dot]').style.background  = sel ? 'var(--accent)' : 'var(--border)';
+            r.querySelector('[data-label]').style.color     = sel ? 'var(--text)' : 'var(--text-muted)';
+          });
+        }
+
         histToggleBtn.addEventListener('click', () => {
           const open = histList.style.display === 'none';
           histList.style.display = open ? '' : 'none';
@@ -1946,20 +1980,24 @@
           histList.style.cssText = 'padding-top:.5rem;margin-top:.5rem;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:.1rem';
           reads.forEach((rd, i) => {
             const row = document.createElement('div');
-            const isSelected = i === 0;
-            row.style.cssText = `display:flex;align-items:center;gap:.4rem;padding:.3rem .4rem;border-radius:var(--radius-sm);${isSelected ? 'background:var(--bg);border:1px solid var(--border)' : ''}`;
+            row.dataset.readRow = '';
+            const isSelected = i === selectedViewIdx;
+            row.style.cssText = `display:flex;align-items:center;gap:.4rem;padding:.3rem .4rem;border-radius:var(--radius-sm);cursor:pointer;${isSelected ? 'background:var(--bg);border:1px solid var(--border)' : ''}`;
             const finished = fmtR(rd.finishedAt, rd.finishedAtPrecision);
             const started  = fmtR(rd.startedAt,  rd.startedAtPrecision);
             const dateStr  = finished || started || '—';
             const dot = document.createElement('span');
+            dot.dataset.dot = '';
             dot.style.cssText = `flex-shrink:0;width:6px;height:6px;border-radius:50%;background:${isSelected ? 'var(--accent)' : 'var(--border)'};margin-right:.1rem`;
             const dateEl = document.createElement('span');
+            dateEl.dataset.label = '';
             dateEl.style.cssText = `flex:1;font-size:.82rem;color:${isSelected ? 'var(--text)' : 'var(--text-muted)'}`;
             dateEl.textContent = dateStr;
             const starsEl = document.createElement('span');
             starsEl.style.cssText = 'font-size:.78rem';
             if (rd.rating) starsEl.innerHTML = cellRatingHtml(rd.rating);
             row.append(dot, dateEl, starsEl);
+            row.addEventListener('click', () => selectRead(i));
             histList.appendChild(row);
           });
         });
