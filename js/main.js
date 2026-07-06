@@ -176,21 +176,22 @@ function moonIcon() {
   </svg>`;
 }
 
-// Mark the active nav link based on current path
 function setActiveNav() {
   const path = window.location.pathname;
+  const hasU = new URLSearchParams(window.location.search).has('u');
 
-  // Determine which page we're on
-  let page = 'feed';
-  if (/\/book\/?/.test(path))          page = 'search';
-  else if (/\/author\/?/.test(path))   page = 'search';
-  else if (/\/search\/?/.test(path))   page = 'search';
-  else if (/\/library\/?/.test(path))  page = 'library';
-  else if (/\/friends\/?/.test(path))  page = 'profile';
-  else if (/\/profile\/?/.test(path))  page = 'profile';
-  else if (/\/lists?\/?/.test(path))   page = 'profile';
-  else if (/\/settings\/?/.test(path)) page = 'settings';
-  else if (/\/feed\/?/.test(path))     page = 'feed';
+  let page = null;
+  if (/\/feed\/?$/.test(path))                  page = 'feed';
+  else if (/\/search\/?$/.test(path))           page = 'search';
+  else if (/\/settings\/?$/.test(path))         page = 'settings';
+  else if (/\/library\/?$/.test(path) && !hasU) page = 'library';
+  else if (/\/profile\/?$/.test(path) && !hasU) page = 'profile';
+
+  if (page) {
+    localStorage.setItem('nav-active', page);
+  } else {
+    page = localStorage.getItem('nav-active') || 'feed';
+  }
 
   document.querySelectorAll('[data-nav]').forEach(el => {
     el.classList.toggle('active', el.dataset.nav === page);

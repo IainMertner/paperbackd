@@ -31,8 +31,6 @@
   </header>
 
   <main class="page-content">
-    <a class="back-link" id="back-link" href="#" style="display:none">← Back</a>
-
 
     <div class="profile-card card">
       <div class="profile-avatar-wrap">
@@ -188,9 +186,6 @@
           document.getElementById('lists-count').textContent = n;
         });
       } else {
-        const backLink = document.getElementById('back-link');
-        backLink.style.display = '';
-        backLink.addEventListener('click', e => { e.preventDefault(); history.back(); });
 
         const [target, myFreshProfile] = await Promise.all([
           getProfileByUsername(targetParam),

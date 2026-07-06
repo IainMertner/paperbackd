@@ -31,8 +31,7 @@
   </header>
 
   <main class="page-content">
-    <a class="back-link" id="back-link" href="../profile/">← Profile</a>
-
+    <h1 class="page-title" id="page-title">Network</h1>
     <div class="add-friend card" id="follow-form">
       <div class="add-friend-label">Follow someone</div>
       <div class="join-club-row">
@@ -118,7 +117,7 @@
       const targetProfile = await getProfileByUsername(targetParam);
       if (targetProfile) {
         viewUid = targetProfile.uid;
-        document.getElementById('back-link').href = `../profile/?u=${encodeURIComponent(targetProfile.username)}`;
+        document.getElementById('page-title').textContent = `${targetProfile.username}'s Network`;
       }
       document.getElementById('follow-form').style.display = 'none';
     }

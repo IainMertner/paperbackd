@@ -31,7 +31,6 @@
   </header>
 
   <main class="page-content">
-    <a class="back-link" id="back-link" href="../library/">← Back</a>
     <div id="book-detail"></div>
     <p class="section-title" id="friends-title" style="display:none">Friends</p>
     <div id="friends-list"></div>
@@ -86,9 +85,6 @@
 
     const { user, profile } = await requireAuth();
 
-    document.getElementById('back-link').addEventListener('click', e => {
-      if (history.length > 1) { e.preventDefault(); history.back(); }
-    });
 
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');

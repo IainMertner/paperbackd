@@ -31,7 +31,7 @@
   </header>
 
   <main class="page-content">
-    <a class="back-link" id="back-link" href="../profile/">← Profile</a>
+    <h1 class="page-title" id="page-title">Lists</h1>
     <div id="lists-container"></div>
   </main>
 
@@ -105,8 +105,9 @@
           }
           ownerUid      = target.uid;
           ownerUsername = target.username;
-          document.getElementById('back-link').href = `../profile/?u=${encodeURIComponent(ownerUsername)}`;
+
           document.title = `${ownerUsername}'s Lists - paperbackd`;
+          document.getElementById('page-title').textContent = `${ownerUsername}'s Lists`;
         }
 
         let lists = await getLists(ownerUid);

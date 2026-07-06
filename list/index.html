@@ -31,7 +31,6 @@
   </header>
 
   <main class="page-content">
-    <a class="back-link" href="../profile/" id="back-link">← Back</a>
     <div id="list-header"></div>
     <div id="list-add" style="display:none"></div>
 
@@ -126,7 +125,7 @@
         }
         ownerUid      = target.uid;
         ownerUsername = target.username;
-        document.getElementById('back-link').href = `../profile/?u=${encodeURIComponent(ownerUsername)}`;
+
       }
 
       const lists = await getLists(ownerUid);
