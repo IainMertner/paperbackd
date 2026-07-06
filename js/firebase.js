@@ -162,13 +162,27 @@ export async function followUser(currentUid, targetUsername) {
   const targetUid = usernameSnap.data().uid;
   if (targetUid === currentUid) throw new Error('You cannot follow yourself.');
 
-  const mySnap = await getDoc(doc(db, 'users', currentUid));
+  const [mySnap, targetSnap] = await Promise.all([
+    getDoc(doc(db, 'users', currentUid)),
+    getDoc(doc(db, 'users', targetUid)),
+  ]);
   const alreadyFollowing = (mySnap.data()?.following || mySnap.data()?.friends || []).includes(targetUid);
   if (alreadyFollowing) throw new Error('You already follow this person.');
 
-  await updateDoc(doc(db, 'users', currentUid), { following: arrayUnion(targetUid) });
-
-  const targetSnap = await getDoc(doc(db, 'users', targetUid));
+  const targetData = targetSnap.data() || {};
+  await Promise.all([
+    updateDoc(doc(db, 'users', currentUid), { following: arrayUnion(targetUid) }),
+    addDoc(collection(db, 'activity'), {
+      uid:               currentUid,
+      username:          mySnap.data()?.username || '',
+      type:              'followed',
+      targetUid,
+      targetUsername:    targetData.username || lower,
+      targetAvatarUrl:   targetData.avatarUrl || null,
+      targetBorderColor: targetData.avatarBorderColor || null,
+      timestamp:         serverTimestamp(),
+    }),
+  ]);
   return { uid: targetUid, ...targetSnap.data() };
 }
 
@@ -339,9 +353,17 @@ export function finishBook(uid, bookId, { title, author, gbid, rating, review, l
 
 async function upsertActivityTimestamp(uid, type, date, { title, author, gbid, rating, review, username }) {
   const snap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
-  const matching = snap.docs.filter(d => d.data().bookTitle === title && d.data().type === type);
+  console.log(`[activity] upsert ${type} for "${title}" (gbid=${gbid}) — ${snap.docs.length} total activity docs`);
+  const matching = snap.docs.filter(d => {
+    const data = d.data();
+    if (data.type !== type) return false;
+    if (gbid && data.gbid && data.gbid === gbid) return true;
+    return data.bookTitle === title;
+  });
+  console.log(`[activity] matched ${matching.length} doc(s) — updating timestamp to`, date);
   if (matching.length > 0) {
     await Promise.all(matching.map(d => updateDoc(d.ref, { timestamp: date })));
+    console.log('[activity] timestamp updated ✓');
   } else {
     const entry = {
       uid, username: username || '', type,
@@ -353,6 +375,7 @@ async function upsertActivityTimestamp(uid, type, date, { title, author, gbid, r
       entry.hasReview = !!(review && review.trim());
     }
     await addDoc(collection(db, 'activity'), entry);
+    console.log('[activity] no match found — created new doc');
   }
 }
 
@@ -371,7 +394,7 @@ export async function updateBookDates(uid, bookId, updates, bookInfo) {
         if (updates.finishedAtPrecision === 'day') await upsertActivityTimestamp(uid, 'finished', updates.finishedAt, bookInfo);
         else await deleteActivityForBook(uid, bookInfo.title, 'finished');
       }
-    } catch (e) { console.warn('Activity sync failed (date still saved):', e); }
+    } catch (e) { console.error('Activity sync failed:', e); }
   }
 }
 
@@ -450,6 +473,14 @@ export async function getFriendBookStatus(followingUids, gbid) {
     })
   );
   return results.filter(Boolean);
+}
+
+export async function syncBookActivity(uid, type, date, precision, bookInfo) {
+  if (date && precision === 'day') {
+    await upsertActivityTimestamp(uid, type, date, bookInfo);
+  } else {
+    await deleteActivityForBook(uid, bookInfo.title, type);
+  }
 }
 
 async function deleteActivityForBook(uid, bookTitle, type) {

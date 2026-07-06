@@ -772,8 +772,8 @@ a { color: inherit; }
   height: 72px;
   border-radius: 50%;
   border: 3px solid var(--border);
-  background: var(--accent-dim);
-  color: var(--accent);
+  background: var(--bg-alt);
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1148,19 +1148,19 @@ body.auth-loading .mobile-nav { visibility: hidden; animation: auth-reveal 0s 8s
 .feed-day-divider {
   display: flex;
   align-items: center;
-  gap: .5rem;
-  font-size: .72rem;
-  font-weight: 600;
-  letter-spacing: .05em;
+  gap: .6rem;
+  font-size: .85rem;
+  font-weight: 700;
+  letter-spacing: .04em;
   text-transform: uppercase;
   color: var(--text-muted);
-  padding: .75rem 0 .35rem;
+  padding: 1.1rem 0 .5rem;
   white-space: nowrap;
 }
 .feed-day-divider::after {
   content: '';
   flex: 1;
-  height: 1px;
+  height: 2px;
   background: var(--border);
 }
 .feed-day-divider:first-child { padding-top: 0; }

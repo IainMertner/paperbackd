@@ -18,7 +18,7 @@
 
   <header class="site-header">
     <div class="header-inner">
-      <a class="logo" href="/library/">paperbackd</a>
+      <a class="logo" href="/feed/">paperbackd</a>
       <nav class="desktop-nav">
         <a href="../feed/" data-nav="feed">Feed</a>
         <a href="../search/"   data-nav="search">Search</a>
@@ -125,7 +125,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists } from '../js/firebase.js';
+    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, syncBookActivity } from '../js/firebase.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -1375,6 +1375,7 @@
             textEl.textContent = d ? formatDateTs({ toDate: () => d }, p) : '—';
             picker.style.display = 'none';
             textEl.style.display = '';
+            debouncedSave();
           }
 
           textEl.addEventListener('click', () => {
@@ -1520,7 +1521,29 @@
         };
         book.reads = reads;
         await updateBookReads(user.uid, book.id, reads);
-        const mostRecent = reads[0];
+        const mostRecent = reads.reduce((best, r) => {
+          const rTs = r.finishedAt?.toDate?.()?.getTime?.() ?? 0;
+          const bTs = best?.finishedAt?.toDate?.()?.getTime?.() ?? 0;
+          return rTs > bTs ? r : best;
+        }, null);
+        const selectedRead = reads[selectedReadIdx];
+        const bookInfo = { title: book.title, author: book.author, gbid: book.gbid,
+          rating: mostRecent?.rating ?? null, review: mostRecent?.review ?? null,
+          username: profile.username };
+        try {
+          await syncBookActivity(user.uid, 'finished',
+            mostRecent?.finishedAt?.toDate?.() ?? null,
+            mostRecent?.finishedAtPrecision ?? null,
+            bookInfo
+          );
+        } catch (e) { console.error('Finished activity sync failed:', e); }
+        try {
+          await syncBookActivity(user.uid, 'started',
+            selectedRead?.startedAt?.toDate?.() ?? null,
+            selectedRead?.startedAtPrecision ?? null,
+            bookInfo
+          );
+        } catch (e) { console.error('Started activity sync failed:', e); }
         book.rating     = mostRecent?.rating;
         book.review     = mostRecent?.review;
         book.finishedAt = mostRecent?.finishedAt;
