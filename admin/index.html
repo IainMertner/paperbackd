@@ -67,6 +67,14 @@
           <div id="repair-status" style="display:none;font-size:.85rem"></div>
         </div>
 
+        <div class="settings-row" id="repair-activity-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Repair activity</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Sync cover, page count, and total pages from each book onto its activity docs.</p>
+          <button class="btn-update" id="repair-activity-btn" type="button">Repair activity</button>
+          <div id="repair-activity-status" style="display:none;font-size:.85rem"></div>
+        </div>
+
+
       </div>
     </div>
 
@@ -113,7 +121,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { ROOT, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName } from '../js/firebase.js';
+    import { ROOT, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs } from '../js/firebase.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -137,9 +145,10 @@
     const lookupBtn    = document.getElementById('lookup-btn');
     const lookupStatus = document.getElementById('lookup-status');
     const targetInfo   = document.getElementById('target-info');
-    const exportSection       = document.getElementById('export-section');
-    const clearCountrySection = document.getElementById('clear-country-section');
-    const repairSection       = document.getElementById('repair-section');
+    const exportSection          = document.getElementById('export-section');
+    const clearCountrySection    = document.getElementById('clear-country-section');
+    const repairSection          = document.getElementById('repair-section');
+    const repairActivitySection  = document.getElementById('repair-activity-section');
 
     lookupBtn.addEventListener('click', async () => {
       const username = document.getElementById('target-username').value.trim().toLowerCase();
@@ -149,9 +158,10 @@
       lookupStatus.style.color = 'var(--text-muted)';
       lookupStatus.textContent = 'Looking up…';
       targetInfo.style.display = 'none';
-      exportSection.style.display       = 'none';
-      clearCountrySection.style.display = 'none';
-      repairSection.style.display       = 'none';
+      exportSection.style.display          = 'none';
+      clearCountrySection.style.display    = 'none';
+      repairSection.style.display          = 'none';
+      repairActivitySection.style.display  = 'none';
       targetUid = null;
 
       try {
@@ -166,12 +176,14 @@
         lookupStatus.style.display = 'none';
         targetInfo.style.display = '';
         targetInfo.textContent = `${profile.username} · ${count} book${count === 1 ? '' : 's'} · uid: ${targetUid}`;
-        exportSection.style.display       = '';
-        clearCountrySection.style.display = '';
-        repairSection.style.display       = '';
-        document.getElementById('export-status').style.display        = 'none';
-        document.getElementById('clear-country-status').style.display = 'none';
-        document.getElementById('repair-status').style.display        = 'none';
+        exportSection.style.display          = '';
+        clearCountrySection.style.display    = '';
+        repairSection.style.display          = '';
+        repairActivitySection.style.display  = '';
+        document.getElementById('export-status').style.display           = 'none';
+        document.getElementById('clear-country-status').style.display    = 'none';
+        document.getElementById('repair-status').style.display           = 'none';
+        document.getElementById('repair-activity-status').style.display  = 'none';
       } catch (err) {
         console.error(err);
         lookupStatus.textContent = 'Lookup failed.';
@@ -444,6 +456,28 @@
         repairStatus.style.color = 'var(--danger, #d44)';
       } finally {
         repairBtn.disabled = false;
+      }
+    });
+
+    // ── Repair activity ───────────────────────────────────────────────────────
+    document.getElementById('repair-activity-btn').addEventListener('click', async () => {
+      if (!targetUid) return;
+      const btn    = document.getElementById('repair-activity-btn');
+      const status = document.getElementById('repair-activity-status');
+      btn.disabled = true;
+      status.style.display = '';
+      status.style.color = 'var(--text-muted)';
+      status.textContent = 'Repairing…';
+      try {
+        const count = await repairActivityDocs(targetUid);
+        status.textContent = `Updated ${count} activity doc${count === 1 ? '' : 's'}.`;
+        status.style.color = 'var(--accent)';
+      } catch (err) {
+        console.error(err);
+        status.textContent = 'Failed. Check the console.';
+        status.style.color = 'var(--danger, #d44)';
+      } finally {
+        btn.disabled = false;
       }
     });
 

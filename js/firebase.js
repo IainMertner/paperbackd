@@ -202,8 +202,20 @@ export function updateAvatarBorderColor(uid, color) {
   return updateDoc(doc(db, 'users', uid), { avatarBorderColor: color || deleteField() });
 }
 
-export function updateBookCover(uid, bookId, coverUrl) {
-  return updateDoc(doc(db, 'users', uid, 'books', bookId), { coverUrl });
+export async function updateBookCover(uid, bookId, coverUrl, { gbid, title } = {}) {
+  await updateDoc(doc(db, 'users', uid, 'books', bookId), { coverUrl });
+  if (gbid || title) {
+    const docs = await activityDocsForBook(uid, { gbid, title });
+    if (docs.length) await Promise.all(docs.map(d => updateDoc(d.ref, { coverUrl })));
+  }
+}
+
+async function activityDocsForBook(uid, { gbid, title }) {
+  const snap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
+  return snap.docs.filter(d => {
+    const data = d.data();
+    return (gbid && data.gbid === gbid) || data.bookTitle === title;
+  });
 }
 
 export async function importBooks(uid, books, onProgress) {
@@ -304,12 +316,14 @@ export async function addBook(uid, { title, author, totalPages, gbid, coverUrl, 
     addDoc(collection(db, 'activity'), {
       uid,
       username,
-      type:       'started',
-      bookTitle:  title,
-      bookAuthor: author || '',
-      gbid:       gbid || '',
-      coverUrl:   coverUrl || '',
-      timestamp:  serverTimestamp()
+      type:        'started',
+      bookTitle:   title,
+      bookAuthor:  author || '',
+      gbid:        gbid || '',
+      coverUrl:    coverUrl || '',
+      currentPage: 0,
+      totalPages:  totalPages || 0,
+      timestamp:   serverTimestamp()
     })
   ]);
   return bookRef.id;
@@ -353,17 +367,14 @@ export function finishBook(uid, bookId, { title, author, gbid, rating, review, l
 
 async function upsertActivityTimestamp(uid, type, date, { title, author, gbid, rating, review, username }) {
   const snap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
-  console.log(`[activity] upsert ${type} for "${title}" (gbid=${gbid}) — ${snap.docs.length} total activity docs`);
   const matching = snap.docs.filter(d => {
     const data = d.data();
     if (data.type !== type) return false;
     if (gbid && data.gbid && data.gbid === gbid) return true;
     return data.bookTitle === title;
   });
-  console.log(`[activity] matched ${matching.length} doc(s) — updating timestamp to`, date);
   if (matching.length > 0) {
     await Promise.all(matching.map(d => updateDoc(d.ref, { timestamp: date })));
-    console.log('[activity] timestamp updated ✓');
   } else {
     const entry = {
       uid, username: username || '', type,
@@ -375,7 +386,6 @@ async function upsertActivityTimestamp(uid, type, date, { title, author, gbid, r
       entry.hasReview = !!(review && review.trim());
     }
     await addDoc(collection(db, 'activity'), entry);
-    console.log('[activity] no match found — created new doc');
   }
 }
 
@@ -405,8 +415,23 @@ export function clearBookDate(uid, bookId, field) {
   });
 }
 
-export function updateBookMeta(uid, bookId, updates) {
-  return updateDoc(doc(db, 'users', uid, 'books', bookId), updates);
+export async function updateBookMeta(uid, bookId, updates, { gbid, title } = {}) {
+  await updateDoc(doc(db, 'users', uid, 'books', bookId), updates);
+  const hasProgress = updates.currentPage !== undefined || updates.totalPages !== undefined;
+  const hasCover    = updates.coverUrl !== undefined;
+  if ((gbid || title) && (hasProgress || hasCover)) {
+    const docs = await activityDocsForBook(uid, { gbid, title });
+    await Promise.all(docs.map(d => {
+      const isStarted = d.data().type === 'started';
+      const update = {};
+      if (hasCover) update.coverUrl = updates.coverUrl;
+      if (hasProgress && isStarted) {
+        if (updates.currentPage !== undefined) update.currentPage = updates.currentPage;
+        if (updates.totalPages  !== undefined) update.totalPages  = updates.totalPages;
+      }
+      return Object.keys(update).length ? updateDoc(d.ref, update) : Promise.resolve();
+    }));
+  }
 }
 
 export function updateBookReads(uid, bookId, reads) {
@@ -745,15 +770,48 @@ export async function searchUsers(q, currentUid, pageSize = 10) {
 export async function getFeed(currentUid, followingUids, cursor = null, pageSize = 20) {
   const uids = [...new Set([currentUid, ...followingUids])];
   if (!uids.length) return { events: [], lastDoc: null };
-  const constraints = [
-    where('uid', 'in', uids.slice(0, 30)),
-    orderBy('timestamp', 'desc'),
-    limit(pageSize),
-  ];
-  if (cursor) constraints.push(startAfter(cursor));
-  const snap = await getDocs(query(collection(db, 'activity'), ...constraints));
+
+  const chunks = [];
+  for (let i = 0; i < uids.length; i += 30) chunks.push(uids.slice(i, i + 30));
+
+  const snaps = await Promise.all(chunks.map(chunk => {
+    const constraints = [where('uid', 'in', chunk), orderBy('timestamp', 'desc'), limit(pageSize)];
+    if (cursor) constraints.push(startAfter(cursor));
+    return getDocs(query(collection(db, 'activity'), ...constraints));
+  }));
+
+  const allDocs = snaps.flatMap(s => s.docs);
+  allDocs.sort((a, b) => (b.data().timestamp?.seconds ?? 0) - (a.data().timestamp?.seconds ?? 0));
+  const page = allDocs.slice(0, pageSize);
+
   return {
-    events: snap.docs.map(d => ({ id: d.id, ...d.data() })),
-    lastDoc: snap.docs[snap.docs.length - 1] ?? null,
+    events: page.map(d => ({ id: d.id, ...d.data() })),
+    lastDoc: page.length === pageSize ? page[page.length - 1] : null,
   };
 }
+
+export async function repairActivityDocs(uid) {
+  const [booksSnap, activitySnap] = await Promise.all([
+    getDocs(collection(db, 'users', uid, 'books')),
+    getDocs(query(collection(db, 'activity'), where('uid', '==', uid)))
+  ]);
+  const books = booksSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const findBook = (gbid, title) =>
+    books.find(b => (gbid && b.gbid === gbid) || b.title === title);
+  const writes = [];
+  for (const actDoc of activitySnap.docs) {
+    const ev   = actDoc.data();
+    const book = findBook(ev.gbid, ev.bookTitle);
+    if (!book) continue;
+    const update = {};
+    if (book.coverUrl && book.coverUrl !== ev.coverUrl) update.coverUrl = book.coverUrl;
+    if (ev.type === 'started') {
+      if (book.currentPage !== undefined && book.currentPage !== ev.currentPage) update.currentPage = book.currentPage;
+      if (book.totalPages  !== undefined && book.totalPages  !== ev.totalPages)  update.totalPages  = book.totalPages;
+    }
+    if (Object.keys(update).length) writes.push(updateDoc(actDoc.ref, update));
+  }
+  await Promise.all(writes);
+  return writes.length;
+}
+

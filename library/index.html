@@ -528,7 +528,7 @@
 
         async function pickCover(url) {
           if (url === book.coverUrl) { overlay.remove(); return; }
-          await updateBookCover(user.uid, book.id, url);
+          await updateBookCover(user.uid, book.id, url, { gbid: book.gbid, title: book.title });
           book.coverUrl = url;
           wrapEl.innerHTML = coverInnerHtml(book);
           // Sync the grid cell cover (skip in list mode — list rows have no cover image)
@@ -922,7 +922,7 @@
         try {
           const updates = await repairBook(book);
           if (Object.keys(updates).length) {
-            await updateBookMeta(user.uid, book.id, updates);
+            await updateBookMeta(user.uid, book.id, updates, { gbid: book.gbid, title: book.title });
             Object.assign(book, updates);
             if (updates.title) { const el = card.querySelector('.book-title'); if (el) el.textContent = updates.title; }
             if ('author' in updates) { const el = card.querySelector('.book-author'); if (el) { el.textContent = updates.author || ''; if (el.tagName === 'A') el.href = `../author/?slug=${toAuthorSlug(updates.author || '')}`; } }
@@ -1036,7 +1036,7 @@
         curInput.value = clamped;
         const updates = { currentPage: clamped };
         if (total !== book.totalPages) updates.totalPages = total;
-        await updateBookMeta(user.uid, book.id, updates);
+        await updateBookMeta(user.uid, book.id, updates, { gbid: book.gbid, title: book.title });
         book.currentPage = clamped;
         if (total != null) book.totalPages = total;
         if (coverCell && total) {
@@ -1307,7 +1307,7 @@
         try {
           const updates = await repairBook(book);
           if (Object.keys(updates).length) {
-            await updateBookMeta(user.uid, book.id, updates);
+            await updateBookMeta(user.uid, book.id, updates, { gbid: book.gbid, title: book.title });
             Object.assign(book, updates);
             if (updates.title) { const el = card.querySelector('.book-title'); if (el) el.textContent = updates.title; }
             if ('author' in updates) { const el = card.querySelector('.book-author'); if (el) { el.textContent = updates.author || ''; if (el.tagName === 'A') el.href = `../author/?slug=${toAuthorSlug(updates.author || '')}`; } }

@@ -76,7 +76,8 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getFollowing, getFeed, getProfile, getBookByGbid, removeActivityEvent } from '../js/firebase.js';
+    import { getFollowing, getFeed, getProfile, getBookByGbid, removeActivityEvent, db } from '../js/firebase.js';
+    import { doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const { user } = await requireAuth();
     const main = document.querySelector('main.page-content');
@@ -196,9 +197,9 @@
       const ratingRow = (event.type === 'finished' && event.rating != null)
         ? `<div style="margin-top:.2rem;display:flex;align-items:center;gap:.5rem">${renderStars(event.rating)}${reviewBtn}</div>`
         : '';
-      const pct = event._totalPages ? Math.round((event._currentPage / event._totalPages) * 100) : 0;
-      const progressRow = (event.type === 'started' && event._totalPages && event._currentPage > 0)
-        ? `<div style="margin-top:.3rem;display:flex;align-items:center;gap:.5rem"><div style="font-size:.7rem;color:var(--text-muted);white-space:nowrap">Page ${event._currentPage} of ${event._totalPages} · ${pct}%</div><div style="height:3px;background:var(--bg-alt);border-radius:2px;overflow:hidden;width:60px;flex-shrink:0"><div style="height:100%;background:var(--accent);width:${pct}%"></div></div></div>`
+      const pct = event.totalPages ? Math.round((event.currentPage / event.totalPages) * 100) : 0;
+      const progressRow = (event.type === 'started' && event.totalPages && event.currentPage > 0)
+        ? `<div style="margin-top:.3rem;display:flex;align-items:center;gap:.5rem"><div style="font-size:.7rem;color:var(--text-muted);white-space:nowrap">Page ${event.currentPage} of ${event.totalPages} · ${pct}%</div><div style="height:3px;background:var(--bg-alt);border-radius:2px;overflow:hidden;width:60px;flex-shrink:0"><div style="height:100%;background:var(--accent);width:${pct}%"></div></div></div>`
         : '';
       const coverThumb = isFollowed
         ? (() => {
@@ -403,16 +404,15 @@
           activeUids.has(e.uid)
         );
 
-        // Backfill coverUrl for old entries; also attach progress for in-progress started events
-        const needsFetch = visible.filter(e => e.gbid);
-        if (needsFetch.length) {
-          await Promise.all(needsFetch.map(async e => {
+        // Backfill coverUrl only for old entries that predate storing it on the activity doc
+        const needsCover = visible.filter(e => e.gbid && !e.coverUrl);
+        if (needsCover.length) {
+          await Promise.all(needsCover.map(async e => {
             const book = await getBookByGbid(e.uid, e.gbid);
-            if (!book) return;
-            if (book.coverUrl) e.coverUrl = book.coverUrl;
-            if (e.type === 'started' && book.status === 'reading' && book.totalPages) {
-              e._currentPage = book.currentPage || 0;
-              e._totalPages  = book.totalPages;
+            if (book?.coverUrl) {
+              e.coverUrl = book.coverUrl;
+              // Write back so this event never needs backfilling again
+              updateDoc(doc(db, 'activity', e.id), { coverUrl: book.coverUrl }).catch(() => {});
             }
           }));
         }
