@@ -125,7 +125,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists } from '../js/firebase.js';
+    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists } from '../js/firebase.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -459,6 +459,7 @@
       });
     }
 
+
     async function openCoverPicker(book, wrapEl, coverCell) {
       const overlay = document.createElement('div');
       overlay.className = 'cover-picker-overlay';
@@ -530,8 +531,8 @@
           await updateBookCover(user.uid, book.id, url);
           book.coverUrl = url;
           wrapEl.innerHTML = coverInnerHtml(book);
-          // Sync the grid cell cover
-          if (coverCell) {
+          // Sync the grid cell cover (skip in list mode — list rows have no cover image)
+          if (coverCell && !coverCell.classList.contains('books-list-row')) {
             const existImg = coverCell.querySelector('img:not(.book-cover-img)');
             const existPh  = coverCell.querySelector('.library-cover-placeholder');
             if (existImg) { existImg.src = url; }
@@ -711,10 +712,18 @@
     function makeDateEl(label, ts, field, book, withActivity = true) {
       const precision = book[field + 'Precision'] ?? null;
       const el = document.createElement('div');
-      el.className = 'book-finished-meta book-date-editable';
-      el.textContent = label
-        ? `${label} ${formatDateTs(ts, precision)}`
-        : formatDateTs(ts, precision);
+      el.className = 'book-date-editable';
+      el.style.cssText = 'display:flex;align-items:center;gap:.4rem;margin-top:.35rem';
+      if (label) {
+        const lbl = document.createElement('span');
+        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+        lbl.textContent = label;
+        el.appendChild(lbl);
+      }
+      const val = document.createElement('span');
+      val.style.cssText = 'font-size:.8rem;cursor:pointer;color:var(--text)';
+      val.textContent = (ts && precision) ? formatDateTs(ts, precision) : '—';
+      el.appendChild(val);
 
       el.addEventListener('click', () => {
         const picker = createPartialDatePicker(ts, precision);
@@ -896,10 +905,11 @@
             </div>
             <div class="progress-label">${book.totalPages ? `Page ${book.currentPage} of ${book.totalPages} · ${pct}%` : `Page ${book.currentPage}`}</div>
             <div class="progress-controls">
-              <input class="page-input" type="number" value="${book.currentPage}" min="0" max="9999" aria-label="Current page">
+              <input class="page-input" type="text" inputmode="numeric" value="${book.currentPage}" aria-label="Current page">
               <span class="page-sep">/</span>
-              <input class="page-input page-total" type="number" value="${book.totalPages || ''}" min="1" max="9999" aria-label="Total pages" placeholder="?">
-              <button class="btn-finished">Finished</button>
+              <span class="page-total-display" style="font-size:.82rem;cursor:pointer;color:var(--text-muted);min-width:1.5rem;text-align:center" title="Click to edit">${book.totalPages || '?'}</span>
+              <button class="btn-finished" title="Mark as finished" aria-label="Mark as finished"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 9"/></svg></button>
+              <button class="btn-dnf" title="Did not finish" aria-label="Did not finish"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="19.07" x2="19.07" y2="4.93"/></svg></button>
             </div>
           </div>
           ${bookCoverHtml(book)}
@@ -924,7 +934,6 @@
       const coverBtnRow = document.createElement('div');
       coverBtnRow.style.cssText = 'display:flex;gap:.35rem';
       coverBtnRow.append(repairBtn, trashBtn);
-      coverWrap.style.marginTop = '-1.25rem';
       coverWrap.replaceWith(coverCol);
       coverCol.append(coverWrap, coverBtnRow);
       card.querySelector('.book-entry').style.alignItems = 'stretch';
@@ -939,7 +948,7 @@
             if (updates.title) { const el = card.querySelector('.book-title'); if (el) el.textContent = updates.title; }
             if ('author' in updates) { const el = card.querySelector('.book-author'); if (el) { el.textContent = updates.author || ''; if (el.tagName === 'A') el.href = `../author/?slug=${toAuthorSlug(updates.author || '')}`; } }
             if (updates.coverUrl) { const img = coverWrap.querySelector('img'); if (img) img.src = updates.coverUrl; }
-            if (updates.totalPages) { const inp = card.querySelector('.page-total'); if (inp) { inp.value = updates.totalPages; inp.dispatchEvent(new Event('input')); } }
+            if (updates.totalPages) { totalPagesVal = updates.totalPages; const disp = card.querySelector('.page-total-display'); if (disp) disp.textContent = updates.totalPages; saveProgress(); }
             card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
           }
           const keys = Object.keys(updates);
@@ -1013,18 +1022,41 @@
         return sel;
       }, val => { book.format = val; updateBookMeta(user.uid, book.id, { format: val }); }));
 
-      const inputs   = card.querySelector('.progress-controls').querySelectorAll('.page-input');
       const fillEl   = card.querySelector('.progress-bar-fill');
       const labelEl  = card.querySelector('.progress-label');
       const controls = card.querySelector('.progress-controls');
+      const curInput = controls.querySelector('.page-input');
+      let totalPagesVal = book.totalPages || null;
+
+      curInput.style.cssText = 'border-radius:var(--radius-sm) 0 0 var(--radius-sm);border-right:none';
+      const pgNumWrap = document.createElement('div');
+      pgNumWrap.className = 'date-num-wrap';
+      const pgNumBtns = document.createElement('div');
+      pgNumBtns.className = 'date-num-btns';
+      const pgUp = document.createElement('button');
+      pgUp.type = 'button'; pgUp.className = 'date-num-btn'; pgUp.textContent = '▲';
+      pgUp.addEventListener('click', () => {
+        const v = parseInt(curInput.value) || 0;
+        curInput.value = totalPagesVal ? Math.min(v + 1, totalPagesVal) : v + 1;
+        curInput.dispatchEvent(new Event('input'));
+      });
+      const pgDown = document.createElement('button');
+      pgDown.type = 'button'; pgDown.className = 'date-num-btn'; pgDown.textContent = '▼';
+      pgDown.addEventListener('click', () => {
+        const v = parseInt(curInput.value) || 0;
+        if (v > 0) { curInput.value = v - 1; curInput.dispatchEvent(new Event('input')); }
+      });
+      pgNumBtns.append(pgUp, pgDown);
+      curInput.replaceWith(pgNumWrap);
+      pgNumWrap.append(curInput, pgNumBtns);
 
       let pgSaveTimer;
       async function saveProgress() {
         clearTimeout(pgSaveTimer);
-        const cur     = Math.max(0, parseInt(inputs[0].value) || 0);
-        const total   = parseInt(inputs[1].value) || null;
+        const cur     = Math.max(0, parseInt(curInput.value) || 0);
+        const total   = totalPagesVal;
         const clamped = total ? Math.min(cur, total) : cur;
-        inputs[0].value = clamped;
+        curInput.value = clamped;
         if (total) {
           const pct = Math.round((clamped / total) * 100);
           fillEl.style.width  = pct + '%';
@@ -1056,20 +1088,53 @@
         }
       }
 
-      inputs.forEach(inp => inp.addEventListener('input', () => {
+      curInput.addEventListener('input', () => {
         clearTimeout(pgSaveTimer);
-        const cur   = Math.max(0, parseInt(inputs[0].value) || 0);
-        const total = parseInt(inputs[1].value) || book.totalPages || null;
+        const cur   = Math.max(0, parseInt(curInput.value) || 0);
+        const total = totalPagesVal;
         if (total) {
           fillEl.style.width = Math.round((Math.min(cur, total) / total) * 100) + '%';
         }
         pgSaveTimer = setTimeout(saveProgress, 700);
-      }));
+      });
 
       controls.addEventListener('focusout', e => {
         if (controls.contains(e.relatedTarget)) return;
         clearTimeout(pgSaveTimer);
         saveProgress();
+      });
+
+      const totalDisplay = controls.querySelector('.page-total-display');
+      totalDisplay.addEventListener('click', () => {
+        const inp = document.createElement('input');
+        inp.type = 'text'; inp.inputMode = 'numeric'; inp.className = 'page-input page-total';
+        inp.value = totalPagesVal || '';
+        inp.setAttribute('aria-label', 'Total pages');
+        inp.style.cssText = 'border-radius:var(--radius-sm) 0 0 var(--radius-sm);border-right:none';
+        const tNumWrap = document.createElement('div');
+        tNumWrap.className = 'date-num-wrap';
+        const tNumBtns = document.createElement('div');
+        tNumBtns.className = 'date-num-btns';
+        const tUp = document.createElement('button');
+        tUp.type = 'button'; tUp.className = 'date-num-btn'; tUp.textContent = '▲';
+        tUp.addEventListener('mousedown', e => e.preventDefault());
+        tUp.addEventListener('click', () => { const v = parseInt(inp.value) || 0; inp.value = v + 1; });
+        const tDown = document.createElement('button');
+        tDown.type = 'button'; tDown.className = 'date-num-btn'; tDown.textContent = '▼';
+        tDown.addEventListener('mousedown', e => e.preventDefault());
+        tDown.addEventListener('click', () => { const v = parseInt(inp.value) || 0; if (v > 1) inp.value = v - 1; });
+        tNumBtns.append(tUp, tDown);
+        tNumWrap.append(inp, tNumBtns);
+        totalDisplay.replaceWith(tNumWrap);
+        inp.focus(); inp.select();
+        function commitTotal() {
+          totalPagesVal = parseInt(inp.value) || null;
+          totalDisplay.textContent = totalPagesVal || '?';
+          tNumWrap.replaceWith(totalDisplay);
+          saveProgress();
+        }
+        inp.addEventListener('blur', commitTotal);
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
       });
 
       card.querySelector('.btn-finished').addEventListener('click', () => {
@@ -1156,14 +1221,28 @@
         });
       });
 
+      card.querySelector('.btn-dnf').addEventListener('click', async () => {
+        if (!confirm(`Mark "${book.title}" as did not finish?`)) return;
+        await dnfBook(user.uid, book.id, book);
+        const idx = allBooks.findIndex(b => b.id === book.id);
+        if (idx !== -1) allBooks.splice(idx, 1);
+        if (coverCell) coverCell.remove();
+        closeModal();
+        if (!readingList.querySelector('[data-title]')) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
+        updateCounts();
+      });
+
       trashBtn.addEventListener('click', async () => {
         if (!confirm(`Remove "${book.title}" from your library?`)) return;
         await deleteBook(user.uid, book.id, { title: book.title });
+        const idx = allBooks.findIndex(b => b.id === book.id);
+        if (idx !== -1) allBooks.splice(idx, 1);
         if (coverCell) coverCell.remove();
         closeModal();
         if (!readingList.querySelector('[data-title]')) {
           showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
         }
+        updateCounts();
       });
 
       const detailsSection = addDetailsEditor(card, book, coverCell, [
@@ -1236,7 +1315,6 @@
       const coverBtnRow = document.createElement('div');
       coverBtnRow.style.cssText = 'display:flex;gap:.35rem';
       coverBtnRow.append(repairBtn, trashBtn);
-      coverWrap.style.marginTop = '-1.25rem';
       coverWrap.replaceWith(coverCol);
       coverCol.append(coverWrap, coverBtnRow);
       card.querySelector('.book-entry').style.alignItems = 'stretch';
@@ -1431,11 +1509,14 @@
       trashBtn.addEventListener('click', async () => {
         if (!confirm(`Remove "${book.title}" from your library?`)) return;
         await deleteBook(user.uid, book.id, { title: book.title });
+        const idx = allBooks.findIndex(b => b.id === book.id);
+        if (idx !== -1) allBooks.splice(idx, 1);
         if (coverCell) coverCell.remove();
         closeModal();
         if (!finishedList.querySelector('[data-title]')) {
           showEmpty(finishedList, 'finished-empty', 'No finished books yet.');
         }
+        updateCounts();
       });
 
 
@@ -1598,9 +1679,12 @@
             if (reads.length === 1) {
               if (!confirm(`Remove "${book.title}" from your library?`)) return;
               await deleteBook(user.uid, book.id, { title: book.title });
+              const idx = allBooks.findIndex(b => b.id === book.id);
+              if (idx !== -1) allBooks.splice(idx, 1);
               if (coverCell) coverCell.remove();
               closeModal();
               if (!finishedList.querySelector('[data-title]')) showEmpty(finishedList, 'finished-empty', 'No finished books yet.');
+              updateCounts();
               return;
             }
             clearTimeout(saveTimer);
@@ -1919,7 +2003,7 @@
       }
 
       function setTitles(reading, finished) {
-        document.getElementById('reading-title').textContent = `Currently Reading · ${reading.length}`;
+        document.getElementById('reading-title').textContent  = `Currently Reading · ${reading.length}`;
         document.getElementById('finished-title').textContent = `Finished · ${finished.length}`;
       }
 
@@ -2497,10 +2581,18 @@
       const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, coverUrl: cover, releaseYear, country }, profile.username);
       const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, addedAt: { toDate: () => new Date() } };
 
+      allBooks.push(book);
       document.getElementById('reading-empty')?.remove();
-      const newCell = makeBookCoverCell(book);
-      attachReadingCell(newCell, book);
-      readingList.prepend(newCell);
+      if (viewMode === 'list') {
+        const newRow = makeBookListRow(book);
+        newRow.addEventListener('click', () => { let ov; const c = renderReading(book, newRow, () => ov?.remove()); ov = createBookModal(c); c.querySelector('.page-input:not(.page-total)')?.select(); });
+        readingList.prepend(newRow);
+      } else {
+        const newCell = makeBookCoverCell(book);
+        attachReadingCell(newCell, book);
+        readingList.prepend(newCell);
+      }
+      updateCounts();
 
       saveBtn.disabled    = false;
       saveBtn.textContent = 'Start reading';

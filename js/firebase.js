@@ -478,6 +478,28 @@ export async function deleteBook(uid, bookId, { title }) {
   ]);
 }
 
+export async function ensureDnfList(uid) {
+  const lists = await getLists(uid);
+  const existing = lists.find(l => l.isDnf);
+  if (existing) return existing.id;
+  const ref = await addDoc(collection(db, 'users', uid, 'lists'), {
+    name: 'Did not finish',
+    isDnf: true,
+    isDefault: false,
+    createdAt: new Date().toISOString(),
+    books: []
+  });
+  return ref.id;
+}
+
+export async function dnfBook(uid, bookId, book) {
+  const dnfListId = await ensureDnfList(uid);
+  await Promise.all([
+    addBookToList(uid, dnfListId, book),
+    deleteBook(uid, bookId, { title: book.title })
+  ]);
+}
+
 export async function unfinishBook(uid, bookId, { title }) {
   await Promise.all([
     updateDoc(doc(db, 'users', uid, 'books', bookId), { status: 'reading', finishedAt: deleteField() }),
@@ -496,7 +518,13 @@ export async function getLists(uid) {
   const snap = await getDocs(collection(db, 'users', uid, 'lists'));
   const lists = snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => (a.isDefault ? -1 : b.isDefault ? 1 : 0));
+    .sort((a, b) => {
+      if (a.isDefault && !b.isDefault) return -1;
+      if (!a.isDefault && b.isDefault) return 1;
+      if (a.isDnf && !b.isDnf) return -1;
+      if (!a.isDnf && b.isDnf) return 1;
+      return 0;
+    });
   const stale = lists.find(l => l.isDefault && (l.name === 'Want to Read' || l.name === 'Reading List'));
   if (stale) {
     await updateDoc(doc(db, 'users', uid, 'lists', stale.id), { name: 'Reading list' });

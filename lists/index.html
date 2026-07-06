@@ -76,7 +76,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getProfileByUsername, getLists, ensureDefaultList, createList, deleteList } from '../js/firebase.js';
+    import { getProfileByUsername, getLists, ensureDefaultList, ensureDnfList, createList, deleteList } from '../js/firebase.js';
 
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -111,9 +111,11 @@
         }
 
         let lists = await getLists(ownerUid);
-        if (isOwn && !lists.find(l => l.isDefault)) {
-          await ensureDefaultList(ownerUid);
-          lists = await getLists(ownerUid);
+        if (isOwn) {
+          const promises = [];
+          if (!lists.find(l => l.isDefault)) promises.push(ensureDefaultList(ownerUid));
+          if (!lists.find(l => l.isDnf))     promises.push(ensureDnfList(ownerUid));
+          if (promises.length) { await Promise.all(promises); lists = await getLists(ownerUid); }
         }
         renderLists(lists);
 
@@ -133,9 +135,9 @@
                 <span class="profile-link-meta">${count} book${count === 1 ? '' : 's'}</span>
                 ${chevron}
               </a>
-              ${isOwn && !list.isDefault ? `<button class="btn-danger" data-id="${esc(list.id)}" style="font-size:.75rem;padding:.3rem .65rem;flex-shrink:0">Delete</button>` : ''}
+              ${isOwn && !list.isDefault && !list.isDnf ? `<button class="btn-danger" data-id="${esc(list.id)}" style="font-size:.75rem;padding:.3rem .65rem;flex-shrink:0">Delete</button>` : ''}
             </div>`;
-            if (isOwn && !list.isDefault) {
+            if (isOwn && !list.isDefault && !list.isDnf) {
               row.querySelector('[data-id]').addEventListener('click', async () => {
                 const name = list.name;
                 if (!confirm(`Delete "${name}"?`)) return;
