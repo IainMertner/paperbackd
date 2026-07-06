@@ -187,7 +187,16 @@ export async function followUser(currentUid, targetUsername) {
 }
 
 export async function unfollowUser(currentUid, targetUid) {
-  await updateDoc(doc(db, 'users', currentUid), { following: arrayRemove(targetUid) });
+  const actSnap = await getDocs(query(
+    collection(db, 'activity'),
+    where('uid', '==', currentUid),
+    where('type', '==', 'followed'),
+    where('targetUid', '==', targetUid)
+  ));
+  await Promise.all([
+    updateDoc(doc(db, 'users', currentUid), { following: arrayRemove(targetUid) }),
+    ...actSnap.docs.map(d => deleteDoc(d.ref)),
+  ]);
 }
 
 export function updateAvatarUrl(uid, dataUrl) {
