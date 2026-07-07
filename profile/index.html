@@ -24,7 +24,7 @@
         <a href="../search/"   data-nav="search">Search</a>
         <a href="../library/"  data-nav="library">Library</a>
         <a href="../profile/"  data-nav="profile">Profile</a>
-        <a href="../settings/" data-nav="settings">Settings</a>
+        <a href="../stats/"    data-nav="stats">Stats</a>
       </nav>
       <button class="theme-toggle" aria-label="Toggle theme"></button>
     </div>
@@ -40,8 +40,15 @@
         <div class="profile-name-row">
           <div class="profile-name" id="profile-name"></div>
         </div>
-        <div id="own-actions" style="display:none;margin-top:.35rem">
-          <a href="../edit-profile/" class="profile-action-btn profile-action-secondary" style="text-decoration:none">Edit profile</a>
+        <div id="own-actions" style="display:none;margin-top:.35rem;position:relative">
+          <button id="profile-menu-btn" class="profile-action-btn profile-action-secondary" style="cursor:pointer;display:inline-flex;align-items:center;gap:.35rem">
+            Edit profile
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div id="profile-menu" style="display:none;position:absolute;top:calc(100% + .35rem);left:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:50;min-width:140px;overflow:hidden">
+            <a href="../edit-profile/" style="display:block;padding:.5rem .85rem;font-size:.875rem;color:var(--text);text-decoration:none">Edit profile</a>
+            <a href="../settings/"     style="display:block;padding:.5rem .85rem;font-size:.875rem;color:var(--text);text-decoration:none">Settings</a>
+          </div>
         </div>
         <div class="profile-actions" id="profile-actions" hidden style="margin-top:.35rem">
           <button id="follow-btn" class="profile-action-btn profile-action-follow">Follow</button>
@@ -127,12 +134,13 @@
       </svg>
       Profile
     </a>
-    <a class="mobile-nav-item" href="../settings/" data-nav="settings">
+    <a class="mobile-nav-item" href="../stats/" data-nav="stats">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+        <rect x="3" y="13" width="4" height="7" rx="0.5"/>
+        <rect x="10" y="3" width="4" height="17" rx="0.5"/>
+        <rect x="17" y="9" width="4" height="11" rx="0.5"/>
       </svg>
-      Settings
+      Stats
     </a>
   </nav>
 
@@ -173,6 +181,13 @@
 
         renderShelf(myProfile.shelf, myProfile.username);
         document.getElementById('own-actions').style.display  = '';
+        const profileMenuBtn = document.getElementById('profile-menu-btn');
+        const profileMenu    = document.getElementById('profile-menu');
+        profileMenuBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          profileMenu.style.display = profileMenu.style.display === 'none' ? 'block' : 'none';
+        });
+        document.addEventListener('click', () => { profileMenu.style.display = 'none'; });
         document.getElementById('profile-name').textContent    = myProfile.username;
         const statsLinkOwn = document.getElementById('stats-link');
         statsLinkOwn.href = `../stats/?u=${encodeURIComponent(myProfile.username)}`;
