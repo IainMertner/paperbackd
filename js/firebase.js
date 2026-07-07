@@ -49,8 +49,8 @@ export const ROOT = new URL('..', import.meta.url).href;
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
 export async function signUp(username, password) {
-  if (!/^[a-z0-9_]{3,20}$/.test(username)) {
-    throw new Error('Username must be 3–20 characters: lowercase letters, numbers, underscores.');
+  if (!/^[a-z0-9_]{3,16}$/.test(username)) {
+    throw new Error('Username must be 3–16 characters: lowercase letters, numbers, underscores.');
   }
   const taken = await getDoc(doc(db, 'usernames', username));
   if (taken.exists()) throw new Error('That username is already taken.');
@@ -77,8 +77,8 @@ export async function signIn(username, password) {
 }
 
 export async function changeUsername(uid, oldUsername, newUsername) {
-  if (!/^[a-z0-9_]{3,20}$/.test(newUsername)) {
-    throw new Error('Username must be 3–20 characters: lowercase letters, numbers, underscores.');
+  if (!/^[a-z0-9_]{3,16}$/.test(newUsername)) {
+    throw new Error('Username must be 3–16 characters: lowercase letters, numbers, underscores.');
   }
   const taken = await getDoc(doc(db, 'usernames', newUsername));
   if (taken.exists()) throw new Error('That username is already taken.');
@@ -222,6 +222,10 @@ export function updateShelf(uid, items) {
 
 export function updateAvatarBorderColor(uid, color) {
   return updateDoc(doc(db, 'users', uid), { avatarBorderColor: color || deleteField() });
+}
+
+export function updateDisplayName(uid, name) {
+  return updateDoc(doc(db, 'users', uid), { displayName: name || deleteField() });
 }
 
 export async function updateBookCover(uid, bookId, coverUrl, { gbid, title } = {}) {

@@ -56,6 +56,11 @@
     </div>
 
     <div class="card" style="margin-bottom:.625rem">
+      <div class="edit-field-label" style="margin-bottom:.35rem">Display name <span style="font-weight:400;color:var(--text-muted);font-size:.78rem">- optional, to help other users know who you are</span></div>
+      <input type="text" id="display-name-input" class="join-club-input" placeholder="Your name" maxlength="50" autocomplete="off" style="width:100%;box-sizing:border-box">
+    </div>
+
+    <div class="card" style="margin-bottom:.625rem">
       <div class="edit-field-label" style="margin-bottom:.6rem">Shelf <span style="font-weight:400;color:var(--text-muted);font-size:.78rem">- choose up to 4 books from your library to display on your profile</span></div>
       <div id="shelf-edit-list" class="shelf-edit-list"></div>
       <div id="shelf-add-section">
@@ -116,10 +121,13 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, updateAvatarUrl, updateShelf, updateAvatarBorderColor } from '../js/firebase.js';
+    import { getBooks, updateAvatarUrl, updateShelf, updateAvatarBorderColor, updateDisplayName } from '../js/firebase.js';
 
     const { user, profile } = await requireAuth();
     const libraryBooks = (await getBooks(user.uid)).filter(b => b.coverUrl);
+
+    const displayNameInput = document.getElementById('display-name-input');
+    displayNameInput.value = profile.displayName || '';
 
     // ── Avatar ────────────────────────────────────────────────────────────────
     const avatarPreview  = document.getElementById('avatar-preview');
@@ -269,16 +277,19 @@
     saveBtn.addEventListener('click', async () => {
       saveBtn.disabled = true;
       try {
+        const newDisplayName = displayNameInput.value.trim();
         const saves = [];
         if (pendingAvatarUrl) saves.push(updateAvatarUrl(user.uid, pendingAvatarUrl));
         saves.push(updateShelf(user.uid, shelfItems));
         saves.push(updateAvatarBorderColor(user.uid, selectedBorderColor));
+        saves.push(updateDisplayName(user.uid, newDisplayName));
         await Promise.all(saves);
 
         const cached = JSON.parse(localStorage.getItem('rl_profile') || '{}');
         if (pendingAvatarUrl) cached.avatarUrl = pendingAvatarUrl;
         cached.shelf = shelfItems;
         cached.avatarBorderColor = selectedBorderColor;
+        cached.displayName = newDisplayName || null;
         localStorage.setItem('rl_profile', JSON.stringify(cached));
 
         location.replace('../profile/');

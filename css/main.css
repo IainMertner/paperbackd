@@ -793,13 +793,18 @@ a { color: inherit; }
 .border-color-swatch.selected { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--text); }
 
 .profile-avatar-change {
-  font-size: 0.7rem;
-  color: var(--accent);
+  font-size: .8rem;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-muted);
   background: none;
-  border: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: .3rem .65rem;
   cursor: pointer;
-  padding: 0;
+  transition: color .15s, border-color .15s;
 }
+.profile-avatar-change:hover { color: var(--text); border-color: var(--text-muted); }
 
 .edit-photo-row { display: flex; align-items: center; gap: .875rem; }
 .edit-field-label { font-size: .85rem; font-weight: 600; margin-bottom: .25rem; }
