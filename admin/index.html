@@ -74,6 +74,13 @@
           <div id="repair-activity-status" style="display:none;font-size:.85rem"></div>
         </div>
 
+        <div class="settings-row" id="change-password-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.5rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Change password</span>
+          <input type="password" id="admin-new-password" class="join-club-input" placeholder="New password" autocomplete="new-password" style="width:100%;box-sizing:border-box">
+          <button class="btn-update" id="admin-change-password-btn" type="button">Set password</button>
+          <div id="change-password-status" style="display:none;font-size:.85rem"></div>
+        </div>
+
 
       </div>
     </div>
@@ -149,6 +156,7 @@
     const clearCountrySection    = document.getElementById('clear-country-section');
     const repairSection          = document.getElementById('repair-section');
     const repairActivitySection  = document.getElementById('repair-activity-section');
+    const changePasswordSection  = document.getElementById('change-password-section');
 
     lookupBtn.addEventListener('click', async () => {
       const username = document.getElementById('target-username').value.trim().toLowerCase();
@@ -162,6 +170,7 @@
       clearCountrySection.style.display    = 'none';
       repairSection.style.display          = 'none';
       repairActivitySection.style.display  = 'none';
+      changePasswordSection.style.display  = 'none';
       targetUid = null;
 
       try {
@@ -180,10 +189,13 @@
         clearCountrySection.style.display    = '';
         repairSection.style.display          = '';
         repairActivitySection.style.display  = '';
+        changePasswordSection.style.display  = '';
         document.getElementById('export-status').style.display           = 'none';
         document.getElementById('clear-country-status').style.display    = 'none';
         document.getElementById('repair-status').style.display           = 'none';
         document.getElementById('repair-activity-status').style.display  = 'none';
+        document.getElementById('change-password-status').style.display  = 'none';
+        document.getElementById('admin-new-password').value              = '';
       } catch (err) {
         console.error(err);
         lookupStatus.textContent = 'Lookup failed.';
@@ -195,6 +207,37 @@
 
     document.getElementById('target-username').addEventListener('keydown', e => {
       if (e.key === 'Enter') lookupBtn.click();
+    });
+
+    // ── Change password ───────────────────────────────────────────────────────
+    document.getElementById('admin-change-password-btn').addEventListener('click', async () => {
+      const status   = document.getElementById('change-password-status');
+      const password = document.getElementById('admin-new-password').value;
+      if (!targetUid) return;
+      if (!password) { status.textContent = 'Enter a password.'; status.style.color = 'var(--danger,#d44)'; status.style.display = ''; return; }
+      if (password.length < 6) { status.textContent = 'Must be at least 6 characters.'; status.style.color = 'var(--danger,#d44)'; status.style.display = ''; return; }
+      document.getElementById('admin-change-password-btn').disabled = true;
+      status.style.display = 'none';
+      try {
+        const idToken = await currentUser.getIdToken();
+        const res     = await fetch('https://frosty-paper-e53b.phixel66.workers.dev/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken, uid: targetUid, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed');
+        status.textContent = 'Password updated.';
+        status.style.color = 'var(--text-muted)';
+        status.style.display = '';
+        document.getElementById('admin-new-password').value = '';
+      } catch (err) {
+        status.textContent = err.message || 'Failed.';
+        status.style.color = 'var(--danger,#d44)';
+        status.style.display = '';
+      } finally {
+        document.getElementById('admin-change-password-btn').disabled = false;
+      }
     });
 
     // ── Export ────────────────────────────────────────────────────────────────

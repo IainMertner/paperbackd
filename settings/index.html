@@ -52,6 +52,20 @@
           <div id="username-error" style="font-size:.82rem;color:var(--danger,#d44);display:none"></div>
         </div>
         <div class="settings-row">
+          <span class="settings-row-label">Password</span>
+          <button class="btn-update" id="change-password-btn" type="button" style="font-size:.75rem;padding:.2rem .5rem">Change</button>
+        </div>
+        <div class="settings-row" id="change-password-row" style="display:none;flex-direction:column;align-items:flex-start;gap:.5rem;padding:.75rem 1rem">
+          <input type="password" id="current-password-input" class="join-club-input" placeholder="Current password" autocomplete="current-password" style="width:100%;box-sizing:border-box">
+          <input type="password" id="new-password-input" class="join-club-input" placeholder="New password" autocomplete="new-password" style="width:100%;box-sizing:border-box">
+          <input type="password" id="confirm-password-input" class="join-club-input" placeholder="Confirm new password" autocomplete="new-password" style="width:100%;box-sizing:border-box">
+          <div style="display:flex;gap:.5rem">
+            <button class="join-club-btn" id="save-password-btn" type="button">Save</button>
+            <button class="btn-update" id="cancel-password-btn" type="button">Cancel</button>
+          </div>
+          <div id="password-error" style="font-size:.82rem;color:var(--danger,#d44);display:none"></div>
+        </div>
+        <div class="settings-row">
           <span class="settings-row-label">Sign out</span>
           <button class="btn-danger" id="signout-btn">Sign out</button>
         </div>
@@ -201,6 +215,7 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary } from '../js/firebase.js';
+    import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
     let currentUser = null;
 
@@ -256,6 +271,53 @@
         usernameError.style.display = '';
       } finally {
         saveUsernameBtn.disabled = false;
+      }
+    });
+
+    // ── Change password ───────────────────────────────────────────────────────
+    const changePasswordBtn  = document.getElementById('change-password-btn');
+    const changePasswordRow  = document.getElementById('change-password-row');
+    const currentPasswordInput = document.getElementById('current-password-input');
+    const newPasswordInput   = document.getElementById('new-password-input');
+    const confirmPasswordInput = document.getElementById('confirm-password-input');
+    const savePasswordBtn    = document.getElementById('save-password-btn');
+    const cancelPasswordBtn  = document.getElementById('cancel-password-btn');
+    const passwordError      = document.getElementById('password-error');
+
+    changePasswordBtn.addEventListener('click', () => {
+      changePasswordRow.style.display = '';
+      currentPasswordInput.value = '';
+      newPasswordInput.value = '';
+      confirmPasswordInput.value = '';
+      passwordError.style.display = 'none';
+      currentPasswordInput.focus();
+    });
+
+    cancelPasswordBtn.addEventListener('click', () => {
+      changePasswordRow.style.display = 'none';
+    });
+
+    savePasswordBtn.addEventListener('click', async () => {
+      passwordError.style.display = 'none';
+      const current = currentPasswordInput.value;
+      const next    = newPasswordInput.value;
+      const confirm = confirmPasswordInput.value;
+      if (!current || !next) { passwordError.textContent = 'Please fill in all fields.'; passwordError.style.display = ''; return; }
+      if (next.length < 6)   { passwordError.textContent = 'New password must be at least 6 characters.'; passwordError.style.display = ''; return; }
+      if (next !== confirm)  { passwordError.textContent = 'Passwords do not match.'; passwordError.style.display = ''; return; }
+      savePasswordBtn.disabled = true;
+      try {
+        const credential = EmailAuthProvider.credential(currentUser.email, current);
+        await reauthenticateWithCredential(currentUser, credential);
+        await updatePassword(currentUser, next);
+        changePasswordRow.style.display = 'none';
+      } catch (e) {
+        passwordError.textContent = e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential'
+          ? 'Current password is incorrect.'
+          : (e.message || 'Something went wrong.');
+        passwordError.style.display = '';
+      } finally {
+        savePasswordBtn.disabled = false;
       }
     });
 
