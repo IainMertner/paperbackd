@@ -787,18 +787,34 @@ export async function searchUsers(q, currentUid, pageSize = 10) {
 
 export async function getFeed(currentUid, followingUids, cursor = null, pageSize = 20) {
   const uids = [...new Set([currentUid, ...followingUids])];
-  if (!uids.length) return { events: [], lastDoc: null };
 
   const chunks = [];
   for (let i = 0; i < uids.length; i += 30) chunks.push(uids.slice(i, i + 30));
 
-  const snaps = await Promise.all(chunks.map(chunk => {
-    const constraints = [where('uid', 'in', chunk), orderBy('timestamp', 'desc'), limit(pageSize)];
-    if (cursor) constraints.push(startAfter(cursor));
-    return getDocs(query(collection(db, 'activity'), ...constraints));
-  }));
+  const queries = [
+    // Activity from you and people you follow
+    ...chunks.map(chunk => {
+      const constraints = [where('uid', 'in', chunk), orderBy('timestamp', 'desc'), limit(pageSize)];
+      if (cursor) constraints.push(startAfter(cursor));
+      return getDocs(query(collection(db, 'activity'), ...constraints));
+    }),
+    // Anyone following you
+    getDocs(query(
+      collection(db, 'activity'),
+      where('type', '==', 'followed'),
+      where('targetUid', '==', currentUid),
+      orderBy('timestamp', 'desc'),
+      limit(pageSize)
+    )),
+  ];
 
-  const allDocs = snaps.flatMap(s => s.docs);
+  const snaps = await Promise.all(queries);
+  const seen = new Set();
+  const allDocs = snaps.flatMap(s => s.docs).filter(d => {
+    if (seen.has(d.id)) return false;
+    seen.add(d.id);
+    return true;
+  });
   allDocs.sort((a, b) => (b.data().timestamp?.seconds ?? 0) - (a.data().timestamp?.seconds ?? 0));
   const page = allDocs.slice(0, pageSize);
 

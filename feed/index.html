@@ -172,6 +172,7 @@
       const card   = document.createElement('div');
       card.className = 'card';
       const username   = usernameMap[event.uid] || event.username;
+      const isMe       = event.uid === user.uid;
       const initial    = (username?.[0] || '?').toUpperCase();
       const avatarUrl  = avatarMap[event.uid];
       const avatarContent = avatarUrl
@@ -180,11 +181,12 @@
       const borderColor = borderColorMap[event.uid];
       const borderStyle = borderColor ? `border-color:${borderColor};` : '';
       const isFollowed = event.type === 'followed';
+      const followedMe = isFollowed && event.targetUid === user.uid;
       const bookLink = event.gbid
         ? `<a href="../book/?gbid=${esc(event.gbid)}" style="font-style:italic;color:inherit;text-decoration:none">${esc(event.bookTitle)}</a>`
         : `<em>${esc(event.bookTitle)}</em>`;
       const action = isFollowed
-        ? `started following <a href="../profile/?u=${esc(event.targetUsername)}" style="font-weight:600;color:inherit;text-decoration:none">${esc(event.targetUsername)}</a>`
+        ? `started following ${followedMe ? 'you' : `<a href="../profile/?u=${esc(event.targetUsername)}" style="font-weight:600;color:inherit;text-decoration:none">${esc(event.targetUsername)}</a>`}`
         : event.type === 'started'
           ? `started reading ${bookLink}`
           : `finished ${bookLink}`;
@@ -220,7 +222,7 @@
           ${coverThumb}
         </div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:.9rem;line-height:1.4"><a href="../profile/?u=${esc(username)}" style="font-weight:600;color:inherit;text-decoration:none">${esc(username)}</a> ${action}${author}</div>
+          <div style="font-size:.9rem;line-height:1.4">${isMe ? `<span>You</span>` : `<a href="../profile/?u=${esc(username)}" style="font-weight:600;color:inherit;text-decoration:none">${esc(username)}</a>`} ${action}${author}</div>
           ${progressRow}${ratingRow}
           <div class="book-finished-meta">${timeAgo(event.timestamp)}</div>
         </div>
@@ -480,8 +482,10 @@
         loading = true;
         const { events, lastDoc: newCursor } = await getFeed(user.uid, followingUids, lastDoc);
         const visible = events.filter(e => {
-          if (!activeUids.has(e.uid)) return false;
           if (!activeTypes.has(e.type)) return false;
+          // Always show "someone followed you" events (bypass person filter)
+          if (e.type === 'followed' && e.targetUid === user.uid) return true;
+          if (!activeUids.has(e.uid)) return false;
           if (e.type === 'followed' && e.uid === user.uid && !followingUids.includes(e.targetUid)) return false;
           return true;
         });

@@ -102,39 +102,25 @@
       <div class="settings-group-label">Import / Export</div>
       <div class="settings-list">
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
-          <span class="settings-row-label">Import from Goodreads</span>
-          <p style="font-size:.82rem;color:var(--text-muted);margin:0">My Books → Import and Export</p>
-          <input type="file" id="gr-file" accept=".csv" style="display:none">
+          <div style="display:flex;align-items:center;gap:.75rem">
+            <span class="settings-row-label" style="white-space:nowrap">Import from</span>
+            <select class="settings-select" id="import-source">
+              <option value="goodreads">Goodreads</option>
+              <option value="storygraph">StoryGraph</option>
+              <option value="paperbackd">paperbackd</option>
+            </select>
+          </div>
+          <p id="import-hint" style="font-size:.82rem;color:var(--text-muted);margin:0">My Books → Import and Export</p>
+          <input type="file" id="import-file" accept=".csv" style="display:none">
           <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-            <button class="btn-update" id="gr-select-btn" type="button">Choose CSV…</button>
-            <span id="gr-filename" style="font-size:.82rem;color:var(--text-muted)"></span>
+            <button class="btn-update" id="import-select-btn" type="button">Choose file…</button>
+            <span id="import-filename" style="font-size:.82rem;color:var(--text-muted)"></span>
           </div>
-          <div id="gr-preview" style="display:none;width:100%">
-            <div id="gr-preview-text" style="font-size:.85rem;color:var(--text-muted);margin-bottom:.5rem"></div>
-            <button id="gr-import-btn" class="join-club-btn" type="button">Import</button>
+          <div id="import-preview" style="display:none;width:100%">
+            <div id="import-preview-text" style="font-size:.85rem;color:var(--text-muted);margin-bottom:.5rem"></div>
+            <button id="import-btn" class="join-club-btn" type="button">Import</button>
           </div>
-          <div id="gr-status" style="display:none;font-size:.85rem"></div>
-        </div>
-        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
-          <span class="settings-row-label">Import from StoryGraph</span>
-          <p style="font-size:.82rem;color:var(--text-muted);margin:0">My Books → Export your data</p>
-          <input type="file" id="sg-file" accept=".csv" style="display:none">
-          <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-            <button class="btn-update" id="sg-select-btn" type="button">Choose CSV…</button>
-            <span id="sg-filename" style="font-size:.82rem;color:var(--text-muted)"></span>
-          </div>
-          <div id="sg-preview" style="display:none;width:100%">
-            <div id="sg-preview-text" style="font-size:.85rem;color:var(--text-muted);margin-bottom:.5rem"></div>
-            <button id="sg-import-btn" class="join-club-btn" type="button">Import</button>
-          </div>
-          <div id="sg-status" style="display:none;font-size:.85rem"></div>
-        </div>
-        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
-          <span class="settings-row-label">Import from paperbackd</span>
-          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Add books from a previously exported file.</p>
-          <input type="file" id="backup-file" accept=".json" style="display:none">
-          <button class="btn-update" id="import-backup-btn" type="button">Choose file…</button>
-          <div id="import-backup-status" style="display:none;font-size:.85rem"></div>
+          <div id="import-status" style="display:none;font-size:.85rem"></div>
         </div>
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
           <span class="settings-row-label">Export library</span>
@@ -324,126 +310,125 @@
     // ── Goodreads import ──────────────────────────────────────────────────────
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
-    const grFile        = document.getElementById('gr-file');
-    const grSelectBtn   = document.getElementById('gr-select-btn');
-    const grFilename    = document.getElementById('gr-filename');
-    const grPreview     = document.getElementById('gr-preview');
-    const grPreviewText = document.getElementById('gr-preview-text');
-    const grImportBtn   = document.getElementById('gr-import-btn');
-    const grStatus      = document.getElementById('gr-status');
-    let parsedBooks     = [];
+    // ── Unified import ────────────────────────────────────────────────────────
+    const importSource    = document.getElementById('import-source');
+    const importHint      = document.getElementById('import-hint');
+    const importFile      = document.getElementById('import-file');
+    const importSelectBtn = document.getElementById('import-select-btn');
+    const importFilename  = document.getElementById('import-filename');
+    const importPreview   = document.getElementById('import-preview');
+    const importPreviewText = document.getElementById('import-preview-text');
+    const importBtn       = document.getElementById('import-btn');
+    const importStatus    = document.getElementById('import-status');
 
-    grSelectBtn.addEventListener('click', () => grFile.click());
+    const importConfig = {
+      goodreads:  { hint: 'My Books → Import and Export', accept: '.csv' },
+      storygraph: { hint: 'My Books → Export your data',  accept: '.csv' },
+      paperbackd: { hint: 'Add books from a previously exported file.', accept: '.json' },
+    };
 
-    grFile.addEventListener('change', () => {
-      const file = grFile.files[0];
+    let parsedBooks = [];
+
+    function resetImport() {
+      parsedBooks = [];
+      importFile.value = '';
+      importFilename.textContent = '';
+      importPreview.style.display = 'none';
+      importStatus.style.display = 'none';
+      importBtn.disabled = false;
+    }
+
+    importSource.addEventListener('change', () => {
+      const cfg = importConfig[importSource.value];
+      importHint.textContent = cfg.hint;
+      importFile.accept = cfg.accept;
+      resetImport();
+    });
+
+    importSelectBtn.addEventListener('click', () => importFile.click());
+
+    importFile.addEventListener('change', () => {
+      const file = importFile.files[0];
       if (!file) return;
-      grFilename.textContent = file.name;
-      grStatus.style.display = 'none';
+      importFilename.textContent = file.name;
+      importStatus.style.display = 'none';
+      const source = importSource.value;
+
+      if (source === 'paperbackd') {
+        // paperbackd: read JSON and show preview
+        file.text().then(text => {
+          try {
+            const data = JSON.parse(text);
+            if (!data.version || !Array.isArray(data.books)) {
+              importStatus.textContent = 'Invalid backup file.';
+              importStatus.style.color = 'var(--danger, #d44)';
+              importStatus.style.display = '';
+              return;
+            }
+            parsedBooks = data;
+            importPreviewText.textContent = `Found ${data.books.length} book${data.books.length === 1 ? '' : 's'} and ${(data.lists || []).length} list${(data.lists || []).length === 1 ? '' : 's'}.`;
+            importPreview.style.display = '';
+          } catch {
+            importStatus.textContent = 'Invalid backup file.';
+            importStatus.style.color = 'var(--danger, #d44)';
+            importStatus.style.display = '';
+          }
+        });
+        return;
+      }
+
       const reader = new FileReader();
       reader.onload = e => {
-        parsedBooks = parseGoodreads(e.target.result);
+        parsedBooks = source === 'goodreads' ? parseGoodreads(e.target.result) : parseStorygraph(e.target.result);
         const finished = parsedBooks.filter(b => b.status === 'finished').length;
         const reading  = parsedBooks.filter(b => b.status === 'reading').length;
-        grPreviewText.textContent = `Found ${parsedBooks.length} book${parsedBooks.length !== 1 ? 's' : ''}: ${finished} finished, ${reading} currently reading.`;
-        grPreview.style.display = '';
-        grImportBtn.disabled = false;
+        importPreviewText.textContent = `Found ${parsedBooks.length} book${parsedBooks.length !== 1 ? 's' : ''}: ${finished} finished, ${reading} currently reading.`;
+        importPreview.style.display = '';
+        importBtn.disabled = false;
       };
       reader.readAsText(file);
     });
 
-    grImportBtn.addEventListener('click', async () => {
-      if (!parsedBooks.length || !currentUser) return;
-      grImportBtn.disabled = true;
-      grStatus.style.display = '';
-      grStatus.style.color = 'var(--text-muted)';
+    importBtn.addEventListener('click', async () => {
+      if (!parsedBooks || !currentUser) return;
+      const source = importSource.value;
+      importBtn.disabled = true;
+      importStatus.style.display = '';
+      importStatus.style.color = 'var(--text-muted)';
 
-      // Enrich with Hardcover data - batch GR ID + ISBN lookups, then individual title searches
-      const total    = parsedBooks.length;
-      grStatus.textContent = `Don't close this tab - matching your books with Hardcover…`;
-      const enrichedRaw = await enrichBatch(parsedBooks, (i, remaining, title) => {
-        grStatus.textContent = `Don't close this tab - searching ${i + 1}/${remaining}: ${title}…`;
-      });
-      const matched  = enrichedRaw.filter(b => b._hardcoverMatched).length;
-      // Strip private lookup fields before saving
-      const enriched = enrichedRaw.map(({ _grId, _isbn13, _hardcoverMatched, ...b }) => b);
-
-      grStatus.textContent = `Matched ${matched}/${total} books. Saving to library…`;
       try {
-        await importBooks(currentUser.uid, enriched, (saved, total) => {
-          grStatus.textContent = `Saving to library - ${saved}/${total} done…`;
+        if (source === 'paperbackd') {
+          importStatus.textContent = 'Importing…';
+          const result = await importLibraryData(currentUser.uid, parsedBooks);
+          importStatus.textContent = `Restored ${result.books} book${result.books === 1 ? '' : 's'} and ${result.lists} list${result.lists === 1 ? '' : 's'}.`;
+          importStatus.style.color = 'var(--accent)';
+          importPreview.style.display = 'none';
+          resetImport();
+          return;
+        }
+
+        const total = parsedBooks.length;
+        importStatus.textContent = `Don't close this tab - matching your books with Hardcover…`;
+        const enrichedRaw = await enrichBatch(parsedBooks, (i, remaining, title) => {
+          importStatus.textContent = `Don't close this tab - searching ${i + 1}/${remaining}: ${title}…`;
         });
-        grStatus.textContent = `All done! Imported ${total} books (${matched} matched with Hardcover).`;
-        grStatus.style.color = 'var(--accent)';
-        grPreview.style.display = 'none';
-        parsedBooks = [];
-        grFile.value = '';
-        grFilename.textContent = '';
-      } catch (err) {
-        console.error(err);
-        grStatus.textContent = 'Import failed. Please try again.';
-        grStatus.style.color = 'var(--danger, #d44)';
-        grImportBtn.disabled = false;
-      }
-    });
-
-    // ── StoryGraph import ─────────────────────────────────────────────────────
-    const sgFile        = document.getElementById('sg-file');
-    const sgSelectBtn   = document.getElementById('sg-select-btn');
-    const sgFilename    = document.getElementById('sg-filename');
-    const sgPreview     = document.getElementById('sg-preview');
-    const sgPreviewText = document.getElementById('sg-preview-text');
-    const sgImportBtn   = document.getElementById('sg-import-btn');
-    const sgStatus      = document.getElementById('sg-status');
-    let parsedSGBooks   = [];
-
-    sgSelectBtn.addEventListener('click', () => sgFile.click());
-
-    sgFile.addEventListener('change', () => {
-      const file = sgFile.files[0];
-      if (!file) return;
-      sgFilename.textContent = file.name;
-      sgStatus.style.display = 'none';
-      const reader = new FileReader();
-      reader.onload = e => {
-        parsedSGBooks = parseStorygraph(e.target.result);
-        const finished = parsedSGBooks.filter(b => b.status === 'finished').length;
-        const reading  = parsedSGBooks.filter(b => b.status === 'reading').length;
-        sgPreviewText.textContent = `Found ${parsedSGBooks.length} book${parsedSGBooks.length !== 1 ? 's' : ''}: ${finished} finished, ${reading} currently reading.`;
-        sgPreview.style.display = '';
-        sgImportBtn.disabled = false;
-      };
-      reader.readAsText(file);
-    });
-
-    sgImportBtn.addEventListener('click', async () => {
-      if (!parsedSGBooks.length || !currentUser) return;
-      sgImportBtn.disabled = true;
-      sgStatus.style.display = '';
-      sgStatus.style.color = 'var(--text-muted)';
-      const total = parsedSGBooks.length;
-      sgStatus.textContent = `Don't close this tab - matching your books with Hardcover…`;
-      const enrichedRaw = await enrichBatch(parsedSGBooks, (i, remaining, title) => {
-        sgStatus.textContent = `Don't close this tab - searching ${i + 1}/${remaining}: ${title}…`;
-      });
-      const matched  = enrichedRaw.filter(b => b._hardcoverMatched).length;
-      const enriched = enrichedRaw.map(({ _isbn13, _hardcoverMatched, ...b }) => b);
-      sgStatus.textContent = `Matched ${matched}/${total} books. Saving to library…`;
-      try {
+        const matched = enrichedRaw.filter(b => b._hardcoverMatched).length;
+        const enriched = source === 'goodreads'
+          ? enrichedRaw.map(({ _grId, _isbn13, _hardcoverMatched, ...b }) => b)
+          : enrichedRaw.map(({ _isbn13, _hardcoverMatched, ...b }) => b);
+        importStatus.textContent = `Matched ${matched}/${total} books. Saving to library…`;
         await importBooks(currentUser.uid, enriched, (saved, tot) => {
-          sgStatus.textContent = `Saving to library - ${saved}/${tot} done…`;
+          importStatus.textContent = `Saving to library - ${saved}/${tot} done…`;
         });
-        sgStatus.textContent = `All done! Imported ${total} books (${matched} matched with Hardcover).`;
-        sgStatus.style.color = 'var(--accent)';
-        sgPreview.style.display = 'none';
-        parsedSGBooks = [];
-        sgFile.value = '';
-        sgFilename.textContent = '';
+        importStatus.textContent = `All done! Imported ${total} books (${matched} matched with Hardcover).`;
+        importStatus.style.color = 'var(--accent)';
+        importPreview.style.display = 'none';
+        resetImport();
       } catch (err) {
         console.error(err);
-        sgStatus.textContent = 'Import failed. Please try again.';
-        sgStatus.style.color = 'var(--danger, #d44)';
-        sgImportBtn.disabled = false;
+        importStatus.textContent = 'Import failed. Please try again.';
+        importStatus.style.color = 'var(--danger, #d44)';
+        importBtn.disabled = false;
       }
     });
 
@@ -896,41 +881,6 @@
       }
     });
 
-    // ── Import backup ─────────────────────────────────────────────────────────
-    const backupFile   = document.getElementById('backup-file');
-    const importBackupBtn    = document.getElementById('import-backup-btn');
-    const importBackupStatus = document.getElementById('import-backup-status');
-
-    importBackupBtn.addEventListener('click', () => backupFile.click());
-
-    backupFile.addEventListener('change', async () => {
-      const file = backupFile.files[0];
-      if (!file || !currentUser) return;
-      backupFile.value = '';
-      importBackupStatus.style.display = '';
-      importBackupStatus.style.color   = 'var(--text-muted)';
-      importBackupStatus.textContent   = 'Reading file…';
-      try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-        if (!data.version || !Array.isArray(data.books)) {
-          importBackupStatus.textContent = 'Invalid backup file.';
-          importBackupStatus.style.color = 'var(--danger, #d44)';
-          return;
-        }
-        importBackupStatus.textContent = 'Importing…';
-        importBackupBtn.disabled = true;
-        const result = await importLibraryData(currentUser.uid, data);
-        importBackupStatus.textContent = `Restored ${result.books} book${result.books === 1 ? '' : 's'} and ${result.lists} list${result.lists === 1 ? '' : 's'}.`;
-        importBackupStatus.style.color = 'var(--accent)';
-      } catch (err) {
-        console.error(err);
-        importBackupStatus.textContent = 'Import failed. Check the file and try again.';
-        importBackupStatus.style.color = 'var(--danger, #d44)';
-      } finally {
-        importBackupBtn.disabled = false;
-      }
-    });
 
     // ── Clear library ─────────────────────────────────────────────────────────
     document.getElementById('clear-library-btn').addEventListener('click', async () => {
