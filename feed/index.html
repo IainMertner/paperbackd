@@ -287,24 +287,22 @@
         { uid: user.uid, username: myProfile?.username || 'You' },
         ...following.map(f => ({ uid: f.uid, username: f.username || f.uid }))
       ];
-      const filterKey  = `feedFilter_${user.uid}`;
-      const savedHidden = new Set(JSON.parse(localStorage.getItem(filterKey) || '[]'));
+      const savedHidden = new Set(myProfile?.feedFilter || []);
       const activeUids  = new Set(allPeople.map(p => p.uid).filter(uid => !savedHidden.has(uid)));
 
       function saveFilter() {
         const hidden = allPeople.map(p => p.uid).filter(uid => !activeUids.has(uid));
-        localStorage.setItem(filterKey, JSON.stringify(hidden));
+        updateDoc(doc(db, 'users', user.uid), { feedFilter: hidden }).catch(() => {});
       }
 
       const allTypes   = ['started', 'finished', 'followed'];
       const typeLabels = { started: 'Started reading', finished: 'Finished', followed: 'Following' };
-      const typeKey        = `feedTypeFilter_${user.uid}`;
-      const savedHiddenTypes = new Set(JSON.parse(localStorage.getItem(typeKey) || '[]'));
-      const activeTypes    = new Set(allTypes.filter(t => !savedHiddenTypes.has(t)));
+      const savedHiddenTypes = new Set(myProfile?.feedTypeFilter || []);
+      const activeTypes      = new Set(allTypes.filter(t => !savedHiddenTypes.has(t)));
 
       function saveTypeFilter() {
         const hidden = allTypes.filter(t => !activeTypes.has(t));
-        localStorage.setItem(typeKey, JSON.stringify(hidden));
+        updateDoc(doc(db, 'users', user.uid), { feedTypeFilter: hidden }).catch(() => {});
       }
 
       const filterWrap = document.createElement('div');

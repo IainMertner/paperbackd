@@ -207,6 +207,15 @@
         const suggestBox  = addEl.querySelector('#list-suggestions');
         let searchTimer;
 
+        function showToast(msg) {
+          let t = document.getElementById('global-toast');
+          if (!t) { t = document.createElement('div'); t.id = 'global-toast'; t.className = 'global-toast'; document.body.appendChild(t); }
+          t.textContent = msg;
+          t.classList.add('visible');
+          clearTimeout(t._timer);
+          t._timer = setTimeout(() => t.classList.remove('visible'), 5000);
+        }
+
         searchInput.addEventListener('input', () => {
           clearTimeout(searchTimer);
           const q = searchInput.value.trim();
@@ -221,6 +230,7 @@
                   variables: { q }
                 })
               });
+              if (res.status === 429) { showToast('Our servers are busy — give it a moment and try again.'); return; }
               const data = res.ok ? await res.json() : {};
               const hits = data?.data?.search?.results?.hits || [];
               suggestBox.innerHTML = '';

@@ -697,7 +697,6 @@
     function makeDateEl(label, ts, field, book, withActivity = true) {
       const precision = book[field + 'Precision'] ?? null;
       const el = document.createElement('div');
-      el.className = 'book-date-editable';
       el.style.cssText = 'display:flex;align-items:center;gap:.4rem;margin-top:.35rem';
       if (label) {
         const lbl = document.createElement('span');
@@ -706,57 +705,59 @@
         el.appendChild(lbl);
       }
       const val = document.createElement('span');
-      val.style.cssText = 'font-size:.8rem;cursor:pointer;color:var(--text)';
+      val.className = 'book-date-editable';
+      val.style.cssText = 'font-size:.8rem;color:var(--text)';
       val.textContent = (ts && precision) ? formatDateTs(ts, precision) : '—';
-      el.appendChild(val);
 
-      el.addEventListener('click', () => {
-        const picker = createPartialDatePicker(ts, precision);
+      const picker = createPartialDatePicker(ts, precision);
+      picker.style.display = 'none';
 
-        const editorWrap = document.createElement('div');
-        editorWrap.className = 'date-editor-wrap';
-        editorWrap.append(picker);
-        el.replaceWith(editorWrap);
+      el.append(val, picker);
 
-        let committing = false;
-
-        async function commitDate() {
-          if (committing) return;
-          committing = true;
-          try {
-            const { date, precision: newPrec } = picker.getDate();
-            if (!date) {
-              if (ts && document.contains(editorWrap)) {
-                await clearBookDate(user.uid, book.id, field);
-                book[field] = null;
-                book[field + 'Precision'] = null;
-              }
-              if (document.contains(editorWrap)) editorWrap.replaceWith(makeDateEl(label, null, field, book, withActivity));
-              return;
-            }
-            const updates = { [field]: date, [field + 'Precision']: newPrec };
-            const bookInfo = withActivity ? {
-              title: book.title, author: book.author, gbid: book.gbid,
-              rating: book.rating, review: book.review, username: profile.username
-            } : null;
-            await updateBookDates(user.uid, book.id, updates, bookInfo);
-            book[field] = { toDate: () => date };
-            book[field + 'Precision'] = newPrec;
-            if (document.contains(editorWrap)) editorWrap.replaceWith(makeDateEl(label, book[field], field, book, withActivity));
-          } catch (err) {
-            console.error('Date save failed:', err);
-            committing = false;
+      function collapse() {
+        const { date, precision: newPrec } = picker.getDate();
+        picker.style.display = 'none';
+        val.style.display = '';
+        if (!date) {
+          val.textContent = '—';
+          if (book[field]) {
+            book[field] = null;
+            book[field + 'Precision'] = null;
+            clearBookDate(user.uid, book.id, field).catch(console.error);
           }
+          return;
         }
+        book[field] = { toDate: () => date };
+        book[field + 'Precision'] = newPrec;
+        val.textContent = formatDateTs(book[field], newPrec);
+        const updates = { [field]: date, [field + 'Precision']: newPrec };
+        const bookInfo = withActivity ? {
+          title: book.title, author: book.author, gbid: book.gbid,
+          rating: book.rating, review: book.review, username: profile.username, bookId: book.id
+        } : null;
+        updateBookDates(user.uid, book.id, updates, bookInfo).catch(console.error);
+      }
 
-        editorWrap.addEventListener('focusout', e => {
-          if (!editorWrap.contains(e.relatedTarget)) commitDate();
-        });
+      val.addEventListener('click', () => {
+        val.style.display = 'none';
+        picker.style.display = '';
+        picker.querySelector('select, input')?.focus();
+        function onOutside(e) {
+          if (picker.contains(e.target)) return;
+          collapse();
+          document.removeEventListener('mousedown', onOutside);
+        }
+        document.addEventListener('mousedown', onOutside);
+      });
 
-        editorWrap.addEventListener('keydown', e => {
-          if (e.key === 'Escape') { e.stopPropagation(); editorWrap.replaceWith(makeDateEl(label, ts, field, book, withActivity)); }
-          if (e.key === 'Enter')  commitDate();
-        });
+      picker.addEventListener('focusout', e => {
+        if (picker.contains(e.relatedTarget)) return;
+        collapse();
+      });
+
+      picker.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { e.stopPropagation(); picker.style.display = 'none'; val.style.display = ''; }
+        if (e.key === 'Enter')  collapse();
       });
 
       return el;
@@ -963,7 +964,8 @@
         lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
         lbl.textContent = labelText;
         const textEl = document.createElement('span');
-        textEl.style.cssText = 'font-size:.8rem;cursor:pointer;color:var(--text)';
+        textEl.className = 'book-date-editable';
+        textEl.style.cssText = 'font-size:.8rem;color:var(--text)';
         textEl.textContent = displayVal || '—';
         const ctrl = buildControl();
         ctrl.style.display = 'none';
@@ -1104,7 +1106,7 @@
 
       trashBtn.addEventListener('click', async () => {
         if (!confirm(`Remove "${book.title}" from your library?`)) return;
-        await deleteBook(user.uid, book.id, { title: book.title });
+        await deleteBook(user.uid, book.id, { title: book.title, author: book.author });
         const idx = allBooks.findIndex(b => b.id === book.id);
         if (idx !== -1) allBooks.splice(idx, 1);
         if (coverCell) coverCell.remove();
@@ -1202,7 +1204,7 @@
 
           if (existingFinished) {
             await finishBook(user.uid, existingFinished.id, { title: existingFinished.title, author: existingFinished.author, gbid: existingFinished.gbid, rating, review, language: book.language, format: book.format, coverUrl: existingFinished.coverUrl }, profile.username);
-            await deleteBook(user.uid, book.id, { title: book.title });
+            await deleteBook(user.uid, book.id, { title: book.title, author: book.author });
             existingFinished.rating = rating;
             existingFinished.review = review;
             existingFinished.reads  = (existingFinished.reads || []).concat([newReadLocal]);
@@ -1368,7 +1370,8 @@
           picker.style.display = 'none';
 
           const textEl = document.createElement('span');
-          textEl.style.cssText = 'font-size:.8rem;cursor:pointer;color:var(--text)';
+          textEl.className = 'book-date-editable';
+          textEl.style.cssText = 'font-size:.8rem;color:var(--text)';
           textEl.textContent = (ts && prec) ? formatDateTs(ts, prec) : '—';
 
           function collapseDateRow() {
@@ -1414,7 +1417,8 @@
         function textToggleRow(labelText, displayVal, buildControl) {
           const { row, lbl } = labelRow(labelText);
           const textEl = document.createElement('span');
-          textEl.style.cssText = 'font-size:.8rem;cursor:pointer;color:var(--text)';
+          textEl.className = 'book-date-editable';
+          textEl.style.cssText = 'font-size:.8rem;color:var(--text)';
           textEl.textContent = displayVal || '—';
           const ctrl = buildControl();
           ctrl.style.display = 'none';
@@ -1493,7 +1497,7 @@
 
       trashBtn.addEventListener('click', async () => {
         if (!confirm(`Remove "${book.title}" from your library?`)) return;
-        await deleteBook(user.uid, book.id, { title: book.title });
+        await deleteBook(user.uid, book.id, { title: book.title, author: book.author });
         const idx = allBooks.findIndex(b => b.id === book.id);
         if (idx !== -1) allBooks.splice(idx, 1);
         if (coverCell) coverCell.remove();
@@ -1530,7 +1534,7 @@
         const selectedRead = reads[selectedReadIdx];
         const bookInfo = { title: book.title, author: book.author, gbid: book.gbid,
           rating: mostRecent?.rating ?? null, review: mostRecent?.review ?? null,
-          username: profile.username };
+          username: profile.username, bookId: book.id };
         try {
           await syncBookActivity(user.uid, 'finished',
             mostRecent?.finishedAt?.toDate?.() ?? null,
@@ -1689,7 +1693,7 @@
             e.stopPropagation();
             if (reads.length === 1) {
               if (!confirm(`Remove "${book.title}" from your library?`)) return;
-              await deleteBook(user.uid, book.id, { title: book.title });
+              await deleteBook(user.uid, book.id, { title: book.title, author: book.author });
               const idx = allBooks.findIndex(b => b.id === book.id);
               if (idx !== -1) allBooks.splice(idx, 1);
               if (coverCell) coverCell.remove();
@@ -2425,6 +2429,15 @@
       searchTimer = setTimeout(() => fetchSuggestions(q), 250);
     });
 
+    function showToast(msg) {
+      let t = document.getElementById('global-toast');
+      if (!t) { t = document.createElement('div'); t.id = 'global-toast'; t.className = 'global-toast'; document.body.appendChild(t); }
+      t.textContent = msg;
+      t.classList.add('visible');
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => t.classList.remove('visible'), 5000);
+    }
+
     async function fetchSuggestions(q) {
       try {
         const res = await fetch(HARDCOVER_PROXY, {
@@ -2437,6 +2450,7 @@
             variables: { q }
           })
         });
+        if (res.status === 429) { showToast('Our servers are busy - give it a moment and try again.'); return; }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         const hits = data.data?.search?.results?.hits || [];

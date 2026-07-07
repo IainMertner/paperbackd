@@ -1163,3 +1163,25 @@ body.auth-loading .mobile-nav { visibility: hidden; animation: auth-reveal 0s 8s
   background: var(--border);
 }
 .feed-day-divider:first-child { padding-top: 0; }
+
+/* ── Global toast ───────────────────────────────────────────── */
+.global-toast {
+  position: fixed;
+  bottom: 5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--bg);
+  padding: .5rem 1rem;
+  border-radius: 20px;
+  font-size: .82rem;
+  font-weight: 500;
+  z-index: 9999;
+  opacity: 0;
+  transition: opacity .2s;
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: calc(100vw - 2rem);
+  text-align: center;
+}
+.global-toast.visible { opacity: 1; }

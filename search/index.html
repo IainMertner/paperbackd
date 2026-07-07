@@ -141,6 +141,15 @@
       else                              fetchUsers(q);
     }
 
+    function showToast(msg) {
+      let t = document.getElementById('global-toast');
+      if (!t) { t = document.createElement('div'); t.id = 'global-toast'; t.className = 'global-toast'; document.body.appendChild(t); }
+      t.textContent = msg;
+      t.classList.add('visible');
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => t.classList.remove('visible'), 5000);
+    }
+
     async function fetchBooks(q) {
       results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">Searching…</p>';
       try {
@@ -152,6 +161,7 @@
             variables: { q }
           })
         });
+        if (res.status === 429) { results.innerHTML = ''; showToast('Our servers are busy — give it a moment and try again.'); return; }
         const data = await res.json();
         const hits = data?.data?.search?.results?.hits || [];
         renderBooks(hits.map(h => h.document));
@@ -171,6 +181,7 @@
             variables: { q }
           })
         });
+        if (res.status === 429) { results.innerHTML = ''; showToast('Our servers are busy — give it a moment and try again.'); return; }
         const data = await res.json();
         const hits = data?.data?.search?.results?.hits || [];
         renderAuthors(hits.map(h => h.document));

@@ -199,6 +199,19 @@ export async function unfollowUser(currentUid, targetUid) {
   ]);
 }
 
+export async function removeFollower(myUid, followerUid) {
+  const actSnap = await getDocs(query(
+    collection(db, 'activity'),
+    where('uid', '==', followerUid),
+    where('type', '==', 'followed'),
+    where('targetUid', '==', myUid)
+  ));
+  await Promise.all([
+    updateDoc(doc(db, 'users', followerUid), { following: arrayRemove(myUid) }),
+    ...actSnap.docs.map(d => deleteDoc(d.ref)),
+  ]);
+}
+
 export function updateAvatarUrl(uid, dataUrl) {
   return updateDoc(doc(db, 'users', uid), { avatarUrl: dataUrl });
 }
@@ -219,11 +232,11 @@ export async function updateBookCover(uid, bookId, coverUrl, { gbid, title } = {
   }
 }
 
-async function activityDocsForBook(uid, { gbid, title }) {
+async function activityDocsForBook(uid, { gbid, title, author }) {
   const snap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
   return snap.docs.filter(d => {
     const data = d.data();
-    return (gbid && data.gbid === gbid) || data.bookTitle === title;
+    return (gbid && data.gbid === gbid) || (data.bookTitle === title && data.bookAuthor === author);
   });
 }
 
@@ -355,6 +368,7 @@ export function finishBook(uid, bookId, { title, author, gbid, rating, review, l
       uid,
       username,
       type:       'finished',
+      bookId:     bookId || '',
       bookTitle:  title || '',
       bookAuthor: author || '',
       gbid:       gbid || '',
@@ -372,7 +386,7 @@ async function upsertActivityTimestamp(uid, type, date, { title, author, gbid, r
     const data = d.data();
     if (data.type !== type) return false;
     if (gbid && data.gbid && data.gbid === gbid) return true;
-    return data.bookTitle === title;
+    return data.bookTitle === title && data.bookAuthor === author;
   });
   if (matching.length > 0) {
     await Promise.all(matching.map(d => updateDoc(d.ref, { timestamp: date })));
@@ -399,11 +413,11 @@ export async function updateBookDates(uid, bookId, updates, bookInfo) {
     try {
       if (updates.addedAt instanceof Date) {
         if (updates.addedAtPrecision === 'day') await upsertActivityTimestamp(uid, 'started', updates.addedAt, bookInfo);
-        else await deleteActivityForBook(uid, bookInfo.title, 'started');
+        else await deleteActivityForBook(uid, bookInfo.title, bookInfo.author, 'started');
       }
       if (updates.finishedAt instanceof Date) {
         if (updates.finishedAtPrecision === 'day') await upsertActivityTimestamp(uid, 'finished', updates.finishedAt, bookInfo);
-        else await deleteActivityForBook(uid, bookInfo.title, 'finished');
+        else await deleteActivityForBook(uid, bookInfo.title, bookInfo.author, 'finished');
       }
     } catch (e) { console.error('Activity sync failed:', e); }
   }
@@ -505,15 +519,18 @@ export async function syncBookActivity(uid, type, date, precision, bookInfo) {
   if (date && precision === 'day') {
     await upsertActivityTimestamp(uid, type, date, bookInfo);
   } else {
-    await deleteActivityForBook(uid, bookInfo.title, type);
+    await deleteActivityForBook(uid, bookInfo.title, bookInfo.author, type);
   }
 }
 
-async function deleteActivityForBook(uid, bookTitle, type) {
+async function deleteActivityForBook(uid, bookTitle, bookAuthor, type) {
   const snap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
   await Promise.all(
     snap.docs
-      .filter(d => d.data().bookTitle === bookTitle && (type == null || d.data().type === type))
+      .filter(d => {
+        const data = d.data();
+        return data.bookTitle === bookTitle && data.bookAuthor === bookAuthor && (type == null || data.type === type);
+      })
       .map(d => deleteDoc(d.ref))
   );
 }
@@ -531,10 +548,10 @@ export function deleteBookDoc(uid, bookId) {
   return deleteDoc(doc(db, 'users', uid, 'books', bookId));
 }
 
-export async function deleteBook(uid, bookId, { title }) {
+export async function deleteBook(uid, bookId, { title, author }) {
   await Promise.all([
     deleteDoc(doc(db, 'users', uid, 'books', bookId)),
-    deleteActivityForBook(uid, title, null)
+    deleteActivityForBook(uid, title, author, null)
   ]);
 }
 
@@ -560,10 +577,10 @@ export async function dnfBook(uid, bookId, book) {
   ]);
 }
 
-export async function unfinishBook(uid, bookId, { title }) {
+export async function unfinishBook(uid, bookId, { title, author }) {
   await Promise.all([
     updateDoc(doc(db, 'users', uid, 'books', bookId), { status: 'reading', finishedAt: deleteField() }),
-    deleteActivityForBook(uid, title, 'finished')
+    deleteActivityForBook(uid, title, author, 'finished')
   ]);
 }
 
