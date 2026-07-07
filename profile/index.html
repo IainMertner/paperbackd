@@ -39,15 +39,17 @@
       <div class="profile-name-wrap">
         <div class="profile-name-row">
           <div class="profile-name" id="profile-name"></div>
-          <div id="own-actions" style="display:none">
-            <a href="../edit-profile/" class="profile-action-btn profile-action-secondary" style="text-decoration:none">Edit profile</a>
-          </div>
-          <div class="profile-actions" id="profile-actions" hidden>
-            <button id="follow-btn" class="profile-action-btn profile-action-follow">Follow</button>
-          </div>
         </div>
-        <a id="activity-link" href="#" style="font-size:.78rem;color:var(--text-muted);text-decoration:none;margin-top:.4rem;display:inline-flex;align-items:center;gap:.25rem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Show activity</a>
+        <div id="own-actions" style="display:none;margin-top:.35rem">
+          <a href="../edit-profile/" class="profile-action-btn profile-action-secondary" style="text-decoration:none">Edit profile</a>
+        </div>
+        <div class="profile-actions" id="profile-actions" hidden style="margin-top:.35rem">
+          <button id="follow-btn" class="profile-action-btn profile-action-follow">Follow</button>
+        </div>
       </div>
+      <a id="stats-link" href="#" title="Stats" aria-label="Stats" style="display:none;align-self:stretch;align-items:center;justify-content:center;padding:0 .25rem;color:var(--text-muted);opacity:.6;text-decoration:none;flex-shrink:0">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="36" height="36"><rect x="4.5" y="14" width="3" height="6" rx="1"/><rect x="10.5" y="4" width="3" height="16" rx="1"/><rect x="16.5" y="10" width="3" height="10" rx="1"/></svg>
+      </a>
     </div>
 
     <div id="shelf-card" style="display:none;margin-top:.75rem;margin-bottom:.625rem">
@@ -172,7 +174,9 @@
         renderShelf(myProfile.shelf, myProfile.username);
         document.getElementById('own-actions').style.display  = '';
         document.getElementById('profile-name').textContent    = myProfile.username;
-        document.getElementById('activity-link').href          = `../activity/?u=${encodeURIComponent(myProfile.username)}`;
+        const statsLinkOwn = document.getElementById('stats-link');
+        statsLinkOwn.href = `../stats/?u=${encodeURIComponent(myProfile.username)}`;
+        statsLinkOwn.style.display = 'inline-flex';
         document.getElementById('following-count').textContent = (myProfile.following || myProfile.friends || []).length;
         document.getElementById('own-links').style.display     = '';
         getFollowers(user.uid).then(f => {
@@ -203,7 +207,9 @@
           if (target.avatarBorderColor) avatarEl.style.borderColor = target.avatarBorderColor;
           renderShelf(target.shelf, target.username);
           document.getElementById('profile-name').textContent = target.username;
-          document.getElementById('activity-link').href       = `../activity/?u=${encodeURIComponent(target.username)}`;
+          const statsLinkOther = document.getElementById('stats-link');
+          statsLinkOther.href = `../stats/?u=${encodeURIComponent(target.username)}`;
+          statsLinkOther.style.display = 'inline-flex';
 
           document.getElementById('other-following-count').textContent = (target.following || []).length;
           document.getElementById('other-counts-link').href = `../friends/?u=${encodeURIComponent(target.username)}`;

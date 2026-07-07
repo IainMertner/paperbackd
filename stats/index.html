@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stats - paperbackd</title>
+  <link rel="stylesheet" href="../css/main.css">
+  <script>
+    (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
+  </script>
+  <style>
+    .stats-tab-bar {
+      display: flex;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: .75rem;
+    }
+    .stats-tab-btn {
+      flex: 1;
+      padding: .5rem .25rem;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      font-size: .9rem;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-weight: 400;
+      transition: color .15s;
+    }
+    .stats-tab-btn.active {
+      border-bottom-color: var(--accent);
+      color: var(--text);
+      font-weight: 600;
+    }
+    .target-card {
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .6rem;
+      margin-top: 0 !important;
+    }
+    .target-label {
+      font-size: .8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      font-weight: 500;
+    }
+    .target-ring-wrap {
+      width: 110px;
+      height: 110px;
+      position: relative;
+    }
+    .target-ring-wrap svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+    .target-ring-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      line-height: 1.2;
+    }
+    .target-ring-num {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .target-ring-denom {
+      font-size: .75rem;
+      color: var(--text-muted);
+    }
+    .target-input-row {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      width: 100%;
+      justify-content: center;
+    }
+    .target-input-row input {
+      width: 64px;
+      padding: .3rem .4rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg);
+      color: var(--text);
+      font-size: .85rem;
+      font-family: inherit;
+      text-align: center;
+    }
+    .target-save-btn {
+      padding: .3rem .65rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: .8rem;
+      font-family: inherit;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .target-save-btn:hover { opacity: .85; }
+    .chart-card {
+      padding: 1rem;
+      margin-bottom: .75rem;
+    }
+    .chart-title {
+      font-size: .85rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: .75rem;
+    }
+    .chart-wrap {
+      position: relative;
+      width: 100%;
+    }
+    .chart-empty {
+      text-align: center;
+      padding: 2rem 0;
+      color: var(--text-muted);
+      font-size: .85rem;
+    }
+    canvas.scatter {
+      display: block;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/feed/">paperbackd</a>
+      <nav class="desktop-nav">
+        <a href="../feed/"     data-nav="feed">Feed</a>
+        <a href="../search/"   data-nav="search">Search</a>
+        <a href="../library/"  data-nav="library">Library</a>
+        <a href="../profile/"  data-nav="profile">Profile</a>
+        <a href="../settings/" data-nav="settings">Settings</a>
+      </nav>
+      <button class="theme-toggle" aria-label="Toggle theme"></button>
+    </div>
+  </header>
+
+  <main class="page-content">
+
+    <h1 class="page-title" id="page-heading"></h1>
+
+    <div class="stats-tab-bar">
+      <button class="stats-tab-btn active" id="tab-targets">Yearly Targets</button>
+      <button class="stats-tab-btn"        id="tab-general">Stats</button>
+    </div>
+
+    <!-- Yearly Targets panel -->
+    <div id="panel-targets">
+      <div id="year-label" style="font-size:.8rem;color:var(--text-muted);margin-bottom:.6rem"></div>
+      <div id="targets-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:.625rem;align-items:start"></div>
+      <div id="targets-empty" style="display:none;padding:2rem 0;text-align:center;color:var(--text-muted);font-size:.875rem">No targets set.</div>
+    </div>
+
+    <!-- General Stats panel -->
+    <div id="panel-general" hidden>
+      <div class="card chart-card" id="chart-pages-card">
+        <div class="chart-title">Rating vs Pages</div>
+        <div class="chart-wrap"><canvas id="chart-pages" class="scatter"></canvas></div>
+        <div class="chart-empty" id="chart-pages-empty" style="display:none">Not enough data yet.</div>
+      </div>
+      <div class="card chart-card" id="chart-age-card">
+        <div class="chart-title">Rating vs Publication Year</div>
+        <div class="chart-wrap"><canvas id="chart-age" class="scatter"></canvas></div>
+        <div class="chart-empty" id="chart-age-empty" style="display:none">Not enough data yet.</div>
+      </div>
+    </div>
+
+  </main>
+
+  <nav class="mobile-nav">
+    <a class="mobile-nav-item" href="../feed/" data-nav="feed">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+      </svg>
+      Feed
+    </a>
+    <a class="mobile-nav-item" href="../search/" data-nav="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      Search
+    </a>
+    <a class="mobile-nav-item" href="../library/" data-nav="library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
+        <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+      </svg>
+      Library
+    </a>
+    <a class="mobile-nav-item" href="../profile/" data-nav="profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      Profile
+    </a>
+    <a class="mobile-nav-item" href="../settings/" data-nav="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+      </svg>
+      Settings
+    </a>
+  </nav>
+
+  <script src="../js/main.js"></script>
+  <script>document.body.classList.add('auth-loading');</script>
+  <script type="module">
+    import { requireAuth } from '../js/auth.js';
+    import { getProfileByUsername, getProfile, getBooks, db } from '../js/firebase.js';
+    import { doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+    const YEAR = new Date().getFullYear();
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    function linearRegression(pts) {
+      const n = pts.length;
+      if (n < 2) return null;
+      const sx = pts.reduce((s, p) => s + p.x, 0);
+      const sy = pts.reduce((s, p) => s + p.y, 0);
+      const sxy = pts.reduce((s, p) => s + p.x * p.y, 0);
+      const sx2 = pts.reduce((s, p) => s + p.x * p.x, 0);
+      const denom = n * sx2 - sx * sx;
+      if (!denom) return null;
+      const m = (n * sxy - sx * sy) / denom;
+      const b = (sy - m * sx) / n;
+      return { m, b };
+    }
+
+    function drawScatter(canvasEl, points, { xLabel, yLabel, yMin = 0, yMax = 5 }) {
+      const dpr = window.devicePixelRatio || 1;
+      const W_CSS = canvasEl.parentElement.clientWidth;
+      const H_CSS = 240;
+      canvasEl.width  = W_CSS * dpr;
+      canvasEl.height = H_CSS * dpr;
+      canvasEl.style.width  = W_CSS + 'px';
+      canvasEl.style.height = H_CSS + 'px';
+
+      const ctx = canvasEl.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      const pad = { top: 16, right: 20, bottom: 44, left: 44 };
+      const W = W_CSS, H = H_CSS;
+      const plotW = W - pad.left - pad.right;
+      const plotH = H - pad.top  - pad.bottom;
+
+      const text      = cssVar('--text');
+      const muted     = cssVar('--text-muted');
+      const border    = cssVar('--border');
+      const accent    = cssVar('--accent');
+      const bgAlt     = cssVar('--bg-alt');
+
+      ctx.clearRect(0, 0, W, H);
+
+      const xs = points.map(p => p.x);
+      const xMin = Math.min(...xs);
+      const xMax = Math.max(...xs);
+      const xRange = xMax - xMin || 1;
+
+      const toX = x => pad.left + ((x - xMin) / xRange) * plotW;
+      const toY = y => pad.top  + (1 - (y - yMin) / (yMax - yMin)) * plotH;
+
+      // Y grid lines at each integer rating
+      ctx.strokeStyle = border;
+      ctx.lineWidth = 1;
+      for (let r = yMin; r <= yMax; r++) {
+        const y = toY(r);
+        ctx.beginPath();
+        ctx.moveTo(pad.left, y);
+        ctx.lineTo(W - pad.right, y);
+        ctx.stroke();
+        ctx.fillStyle = muted;
+        ctx.font = `${11 * dpr / dpr}px -apple-system, sans-serif`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(r === 0 ? '' : r, pad.left - 6, y);
+      }
+
+      // Trend line
+      const reg = linearRegression(points);
+      if (reg) {
+        const x0 = xMin, x1 = xMax;
+        const y0 = Math.max(yMin, Math.min(yMax, reg.m * x0 + reg.b));
+        const y1 = Math.max(yMin, Math.min(yMax, reg.m * x1 + reg.b));
+        ctx.beginPath();
+        ctx.strokeStyle = '#3730a3';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 4]);
+        ctx.globalAlpha = 0.8;
+        ctx.moveTo(toX(x0), toY(y0));
+        ctx.lineTo(toX(x1), toY(y1));
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+      }
+
+      // Points
+      for (const p of points) {
+        ctx.beginPath();
+        ctx.arc(toX(p.x), toY(p.y), 4, 0, Math.PI * 2);
+        ctx.fillStyle = accent;
+        ctx.globalAlpha = 0.7;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      // X axis labels — pick ~5 nice ticks
+      const xTicks = niceTicks(xMin, xMax, 5);
+      ctx.fillStyle = muted;
+      ctx.font = `11px -apple-system, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      for (const t of xTicks) {
+        ctx.fillText(t, toX(t), H - pad.bottom + 6);
+      }
+
+      // Axis labels
+      ctx.fillStyle = muted;
+      ctx.font = `11px -apple-system, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(xLabel, W / 2, H - 2);
+
+      ctx.save();
+      ctx.translate(12, pad.top + plotH / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(yLabel, 0, 0);
+      ctx.restore();
+    }
+
+    function niceTicks(min, max, count) {
+      const range = max - min || 1;
+      const step  = Math.pow(10, Math.floor(Math.log10(range / count)));
+      const nice  = [1, 2, 5, 10].map(f => f * step).find(s => range / s <= count * 1.5) || step;
+      const start = Math.ceil(min / nice) * nice;
+      const ticks = [];
+      for (let t = start; t <= max + nice * 0.01; t += nice) ticks.push(Math.round(t * 1000) / 1000);
+      return ticks;
+    }
+
+    // ── Ring SVG ───────────────────────────────────────────────────────────────
+
+    function buildRingCard(label, current, target, isOwn, onSave) {
+      const R = 44, CX = 55, CY = 55, SW = 9;
+      const circ = 2 * Math.PI * R;
+      const pct  = target > 0 ? Math.min(1, current / target) : 0;
+      const offset = circ * (1 - pct);
+      const done = target > 0 && current >= target;
+
+      const card = document.createElement('div');
+      card.className = 'card target-card';
+
+      const lbl = document.createElement('div');
+      lbl.className = 'target-label';
+      lbl.textContent = label;
+      card.appendChild(lbl);
+
+      const ringWrap = document.createElement('div');
+      ringWrap.className = 'target-ring-wrap';
+
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', `0 0 110 110`);
+
+      const track = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      track.setAttribute('cx', CX); track.setAttribute('cy', CY); track.setAttribute('r', R);
+      track.setAttribute('fill', 'none');
+      track.setAttribute('stroke', 'var(--border)');
+      track.setAttribute('stroke-width', SW);
+      svg.appendChild(track);
+
+      const prog = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      prog.setAttribute('cx', CX); prog.setAttribute('cy', CY); prog.setAttribute('r', R);
+      prog.setAttribute('fill', 'none');
+      prog.setAttribute('stroke', done ? '#22c55e' : 'var(--accent)');
+      prog.setAttribute('stroke-width', SW);
+      prog.setAttribute('stroke-linecap', 'round');
+      prog.setAttribute('stroke-dasharray', circ);
+      prog.setAttribute('stroke-dashoffset', target > 0 ? offset : circ);
+      svg.appendChild(prog);
+
+      ringWrap.appendChild(svg);
+
+      const center = document.createElement('div');
+      center.className = 'target-ring-center';
+      const num = document.createElement('div');
+      num.className = 'target-ring-num';
+      num.textContent = current;
+      const denom = document.createElement('div');
+      denom.className = 'target-ring-denom';
+      denom.textContent = target > 0 ? `of ${target}` : 'no target';
+      center.appendChild(num);
+      center.appendChild(denom);
+      ringWrap.appendChild(center);
+      card.appendChild(ringWrap);
+
+      if (isOwn) {
+        const row = document.createElement('div');
+        row.className = 'target-input-row';
+        const input = document.createElement('input');
+        input.type = 'number'; input.min = '1'; input.max = '9999';
+        input.value = target > 0 ? target : '';
+        input.placeholder = 'Target';
+        const btn = document.createElement('button');
+        btn.className = 'target-save-btn';
+        btn.textContent = 'Set';
+        btn.addEventListener('click', () => onSave(parseInt(input.value, 10) || 0));
+        row.appendChild(input); row.appendChild(btn);
+        card.appendChild(row);
+      } else if (target > 0) {
+        const pctEl = document.createElement('div');
+        pctEl.style.cssText = 'font-size:.8rem;color:var(--text-muted)';
+        pctEl.textContent = `${Math.round(pct * 100)}%`;
+        card.appendChild(pctEl);
+      }
+
+      return card;
+    }
+
+    // ── Main ───────────────────────────────────────────────────────────────────
+
+    const { user, profile: myProfile } = await requireAuth();
+    try {
+    const params      = new URLSearchParams(location.search);
+    const targetParam = params.get('u')?.toLowerCase();
+    const isOwn       = !targetParam || targetParam === myProfile.username;
+
+    let targetProfile;
+    if (isOwn) {
+      targetProfile = myProfile;
+    } else {
+      targetProfile = await getProfileByUsername(targetParam);
+    }
+
+    if (!targetProfile) {
+      document.getElementById('page-heading').textContent = 'User not found';
+    } else {
+
+    document.getElementById('page-heading').innerHTML = isOwn
+      ? 'Your stats'
+      : `<a href="../profile/?u=${encodeURIComponent(targetProfile.username)}" style="color:inherit;text-decoration:none">${targetProfile.username}</a>'s stats`;
+
+    const books = await getBooks(targetProfile.uid);
+
+    // ── Tab switching ──────────────────────────────────────────────────────────
+
+    const tabTargets = document.getElementById('tab-targets');
+    const tabGeneral = document.getElementById('tab-general');
+    const panelTargets = document.getElementById('panel-targets');
+    const panelGeneral = document.getElementById('panel-general');
+    let chartsDrawn = false;
+
+    function switchTab(name) {
+      const onTargets = name === 'targets';
+      tabTargets.classList.toggle('active', onTargets);
+      tabGeneral.classList.toggle('active', !onTargets);
+      panelTargets.hidden = !onTargets;
+      panelGeneral.hidden = onTargets;
+      if (!onTargets && !chartsDrawn) { drawCharts(); chartsDrawn = true; }
+    }
+
+    tabTargets.addEventListener('click', () => switchTab('targets'));
+    tabGeneral.addEventListener('click', () => switchTab('general'));
+
+    // ── Yearly Targets ─────────────────────────────────────────────────────────
+
+    document.getElementById('year-label').textContent = YEAR;
+
+    const yearlyTargets = (targetProfile.yearlyTargets || {})[YEAR] || {};
+    let booksTarget     = yearlyTargets.books     || 0;
+    let countriesTarget = yearlyTargets.countries || 0;
+
+    const finishedThisYear = books.filter(b => {
+      if (b.status !== 'finished') return false;
+      const ts = b.finishedAt;
+      if (!ts) return false;
+      const d = ts.toDate ? ts.toDate() : new Date(ts);
+      return d.getFullYear() === YEAR;
+    });
+
+    const booksCount     = finishedThisYear.length;
+    const countriesCount = new Set(finishedThisYear.map(b => b.country).filter(Boolean)).size;
+
+    async function saveTarget(field, value) {
+      const key = `yearlyTargets.${YEAR}.${field}`;
+      await updateDoc(doc(db, 'users', targetProfile.uid), { [key]: value });
+      if (field === 'books') booksTarget = value;
+      else countriesTarget = value;
+      rebuildTargets();
+    }
+
+    const grid = document.getElementById('targets-grid');
+
+    function rebuildTargets() {
+      grid.innerHTML = '';
+      grid.appendChild(buildRingCard('Books read', booksCount, booksTarget, isOwn, v => saveTarget('books', v)));
+      grid.appendChild(buildRingCard('Countries', countriesCount, countriesTarget, isOwn, v => saveTarget('countries', v)));
+    }
+
+    rebuildTargets();
+
+    // ── Scatter charts ─────────────────────────────────────────────────────────
+
+    function drawCharts() {
+      const finished = books.filter(b => b.status === 'finished' && b.rating != null);
+
+      const ptsPages = finished
+        .filter(b => b.totalPages > 0)
+        .map(b => ({ x: b.totalPages, y: b.rating }));
+
+      const ptsAge = finished
+        .filter(b => b.releaseYear > 0)
+        .map(b => ({ x: b.releaseYear, y: b.rating }));
+
+      const pagesCanvas = document.getElementById('chart-pages');
+      const ageCanvas   = document.getElementById('chart-age');
+
+      if (ptsPages.length >= 2) {
+        drawScatter(pagesCanvas, ptsPages, { xLabel: 'Pages', yLabel: 'Rating', yMin: 0, yMax: 5 });
+      } else {
+        pagesCanvas.style.display = 'none';
+        document.getElementById('chart-pages-empty').style.display = '';
+      }
+
+      if (ptsAge.length >= 2) {
+        drawScatter(ageCanvas, ptsAge, { xLabel: 'Publication year', yLabel: 'Rating', yMin: 0, yMax: 5 });
+      } else {
+        ageCanvas.style.display = 'none';
+        document.getElementById('chart-age-empty').style.display = '';
+      }
+    }
+
+    // Redraw on theme change
+    new MutationObserver(() => { if (chartsDrawn) drawCharts(); })
+      .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    window.addEventListener('resize', () => { if (chartsDrawn) drawCharts(); });
+
+    } // end if (targetProfile)
+    } finally {
+      document.body.classList.remove('auth-loading');
+    }
+  </script>
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
+</body>
+</html>
