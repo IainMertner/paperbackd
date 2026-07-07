@@ -236,6 +236,7 @@
     const TARGET_TYPES  = { books: 'Books read', countries: 'Countries' };
     const PERIODS       = ['monthly', 'yearly', 'overall'];
     const PERIOD_LABELS = { monthly: 'Monthly', yearly: 'Yearly', overall: 'Overall' };
+    const PERIOD_COLORS = { monthly: '#3b82f6', yearly: '#f59e0b', overall: '#8b5cf6' };
 
     let editMode = false;
 
@@ -383,7 +384,7 @@
 
     // ── Ring SVG ───────────────────────────────────────────────────────────────
 
-    function buildRingCard(type, period, target, current, isOwn, { onSet, onRemove } = {}) {
+    function buildRingCard(type, period, target, current, isOwn, { onSet, onRemove, color = 'var(--accent)' } = {}) {
       const label = TARGET_TYPES[type] || type;
       const R = 44, CX = 55, CY = 55, SW = 9;
       const circ = 2 * Math.PI * R;
@@ -412,10 +413,18 @@
       track.setAttribute('stroke-width', SW);
       svg.appendChild(track);
 
+      if (done) {
+        // Solid disc fill behind the outer ring stroke
+        const disc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        disc.setAttribute('cx', CX); disc.setAttribute('cy', CY); disc.setAttribute('r', R);
+        disc.setAttribute('fill', color);
+        svg.appendChild(disc);
+      }
+
       const prog = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       prog.setAttribute('cx', CX); prog.setAttribute('cy', CY); prog.setAttribute('r', R);
       prog.setAttribute('fill', 'none');
-      prog.setAttribute('stroke', done ? '#22c55e' : 'var(--accent)');
+      prog.setAttribute('stroke', color);
       prog.setAttribute('stroke-width', SW);
       prog.setAttribute('stroke-linecap', 'round');
       prog.setAttribute('stroke-dasharray', circ);
@@ -424,14 +433,20 @@
 
       ringWrap.appendChild(svg);
 
+      if (done) {
+        ringWrap.style.filter = `drop-shadow(0 0 10px ${color})`;
+      }
+
       const center = document.createElement('div');
       center.className = 'target-ring-center';
       const num = document.createElement('div');
       num.className = 'target-ring-num';
       num.textContent = current;
+      if (done) num.style.color = '#fff';
       const denom = document.createElement('div');
       denom.className = 'target-ring-denom';
       denom.textContent = target > 0 ? `of ${target}` : 'no target';
+      if (done) denom.style.color = 'rgba(255,255,255,.75)';
       center.appendChild(num);
       center.appendChild(denom);
       ringWrap.appendChild(center);
@@ -448,6 +463,7 @@
 
         const row = document.createElement('div');
         row.className = 'target-input-row';
+        row.style.display = editMode ? 'flex' : 'none';
         const input = document.createElement('input');
         input.type = 'number'; input.min = '1'; input.max = '9999';
         input.value = target > 0 ? target : '';
@@ -559,8 +575,10 @@
         const section = document.createElement('div');
         section.style.marginBottom = '1rem';
 
+        const color = PERIOD_COLORS[period] || 'var(--accent)';
+
         const heading = document.createElement('div');
-        heading.style.cssText = 'font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:.5rem';
+        heading.style.cssText = `font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin-bottom:.5rem`;
         heading.textContent = PERIOD_LABELS[period];
         section.appendChild(heading);
 
@@ -571,6 +589,7 @@
           sectionGrid.appendChild(buildRingCard(type, period, value, current, isOwn, {
             onSet:    v => saveTarget(type, period, v),
             onRemove: () => { showToast('Target removed'); saveTarget(type, period, 0); },
+            color,
           }));
         }
         section.appendChild(sectionGrid);
@@ -615,11 +634,11 @@
 
       headerRow.appendChild(addBtn);
       headerRow.appendChild(lockBtn);
-      targetsContent.appendChild(headerRow);
+      headerRow.style.cssText = 'display:flex;align-items:center;gap:.5rem;margin-top:.75rem';
 
       // Add target form
       const addForm = document.createElement('div');
-      addForm.style.cssText = 'display:none;background:var(--bg-alt);border-radius:var(--radius-sm);padding:.75rem;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem;align-items:flex-end';
+      addForm.style.cssText = 'display:none;background:var(--bg-alt);border-radius:var(--radius-sm);padding:.75rem;margin-top:.75rem;flex-wrap:wrap;gap:.5rem;align-items:flex-end';
 
       const selStyle = 'flex:1;min-width:100px;padding:.3rem .4rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font-size:.85rem;font-family:inherit';
 
@@ -662,9 +681,11 @@
         editMode = !editMode;
         addForm.style.display = editMode ? 'flex' : 'none';
         sectionsEl.querySelectorAll('.target-remove-btn').forEach(b => { b.style.display = editMode ? 'block' : 'none'; });
+        sectionsEl.querySelectorAll('.target-input-row').forEach(r => { r.style.display = editMode ? 'flex' : 'none'; });
       });
-      targetsContent.appendChild(addForm);
       targetsContent.appendChild(sectionsEl);
+      targetsContent.appendChild(addForm);
+      targetsContent.appendChild(headerRow);
       rebuildSections();
 
     } else if (targetProfile.targetsPrivate) {

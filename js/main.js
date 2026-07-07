@@ -210,7 +210,7 @@ function setActiveNav() {
   let page = null;
   if (/\/feed\/?$/.test(path))                  page = 'feed';
   else if (/\/search\/?$/.test(path))           page = 'search';
-  else if (/\/stats\/?$/.test(path))            page = 'stats';
+  else if (/\/stats\/?$/.test(path)   && !hasU) page = 'stats';
   else if (/\/settings\/?$/.test(path))         page = 'profile';
   else if (/\/library\/?$/.test(path) && !hasU) page = 'library';
   else if (/\/profile\/?$/.test(path) && !hasU) page = 'profile';

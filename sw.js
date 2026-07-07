@@ -1,4 +1,4 @@
-const CACHE = 'paperbackd-v3';
+const CACHE = 'paperbackd-v4';
 
 // Firebase API hosts — never intercept these
 const PASS_THROUGH = [
@@ -34,6 +34,8 @@ const PRECACHE = [
   '/book/index.html',
   '/edit-profile/',
   '/edit-profile/index.html',
+  '/stats/',
+  '/stats/index.html',
   '/js/firebase.js',
   '/js/auth.js',
   '/js/main.js',
