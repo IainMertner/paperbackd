@@ -165,9 +165,13 @@
 
     <!-- General Stats panel -->
     <div id="panel-general" hidden>
-      <div class="card chart-card" id="chart-countries-card">
+      <div class="card chart-card" id="chart-countries-card" style="padding-top:.5rem;padding-bottom:.5rem">
         <div class="chart-title">Countries</div>
-        <div class="chart-wrap"><canvas id="chart-countries"></canvas></div>
+        <div class="chart-wrap" style="position:relative"><canvas id="chart-countries"></canvas><div id="bubble-sel" style="position:absolute;border-radius:50%;background:rgba(0,0,0,0.07);pointer-events:none;display:none"></div></div>
+        <div id="chart-countries-label" style="height:2rem;display:flex;align-items:center;justify-content:center;gap:.5rem;font-size:.8rem;visibility:hidden">
+          <span id="chart-countries-label-name" style="font-weight:600"></span>
+          <span id="chart-countries-label-pct" style="color:var(--text-muted)"></span>
+        </div>
         <div id="chart-countries-legend" style="display:none;grid-template-columns:1fr 1fr;gap:.3rem .75rem;margin-top:.75rem"></div>
         <div class="chart-empty" id="chart-countries-empty" style="display:none">No country data yet.</div>
       </div>
@@ -283,8 +287,9 @@
       'iran': 'ir', 'turkey': 'tr', 'israel': 'il', 'jordan': 'jo', 'iraq': 'iq',
       'saudi arabia': 'sa', 'united arab emirates': 'ae', 'uae': 'ae',
       'canada': 'ca', 'mexico': 'mx', 'cuba': 'cu', 'guatemala': 'gt', 'costa rica': 'cr',
+      'trinidad and tobago': 'tt', 'trinidad': 'tt', 'tobago': 'tt', 'jamaica': 'jm', 'haiti': 'ht', 'dominican republic': 'do',
       'brazil': 'br', 'argentina': 'ar', 'colombia': 'co', 'chile': 'cl',
-      'peru': 'pe', 'venezuela': 've', 'ecuador': 'ec', 'bolivia': 'bo', 'uruguay': 'uy',
+      'peru': 'pe', 'venezuela': 've', 'ecuador': 'ec', 'bolivia': 'bo', 'uruguay': 'uy', 'paraguay': 'py',
       'australia': 'au', 'new zealand': 'nz',
       'nigeria': 'ng', 'south africa': 'za', 'egypt': 'eg', 'kenya': 'ke',
       'ghana': 'gh', 'ethiopia': 'et', 'morocco': 'ma', 'tanzania': 'tz',
@@ -301,7 +306,7 @@
         img.crossOrigin = 'anonymous';
         img.onload  = () => { flagImageCache.set(code, img); resolve(img); };
         img.onerror = () => resolve(null);
-        img.src = `https://flagcdn.com/${code}.svg`;
+        img.src = `https://cdn.jsdelivr.net/gh/HatScripts/circle-flags@latest/flags/${code}.svg`;
       });
     }
 
@@ -812,6 +817,59 @@
 
     // ── Charts ─────────────────────────────────────────────────────────────────
 
+    function layoutBubbles(items, W, H) {
+      const maxVal = items[0].value;
+      let maxR = Math.min(W, H) * 0.18;
+      const nodes = items.map((item, i) => ({
+        ...item,
+        r: Math.sqrt(item.value / maxVal) * maxR,
+        x: W / 2 + Math.cos(i * 2.399) * maxR * Math.sqrt(i + 1),
+        y: H / 2 + Math.sin(i * 2.399) * maxR * Math.sqrt(i + 1),
+      }));
+
+      // Scale radii down if circles can't physically fit
+      const totalArea = nodes.reduce((s, n) => s + Math.PI * n.r * n.r, 0);
+      if (totalArea > W * H * 0.78) {
+        const scale = Math.sqrt(W * H * 0.78 / totalArea);
+        nodes.forEach(n => { n.r *= scale; });
+      }
+
+      const clamp = n => {
+        n.x = Math.max(n.r, Math.min(W - n.r, n.x));
+        n.y = Math.max(n.r, Math.min(H - n.r, n.y));
+      };
+      const separate = () => {
+        for (let i = 0; i < nodes.length; i++) {
+          for (let j = i + 1; j < nodes.length; j++) {
+            const a = nodes[i], b = nodes[j];
+            const dx = b.x - a.x || 0.001, dy = b.y - a.y || 0.001;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            const min = a.r + b.r + 6;
+            if (d < min) {
+              const f = (min - d) / d * 0.5;
+              a.x -= dx * f; a.y -= dy * f;
+              b.x += dx * f; b.y += dy * f;
+              clamp(a); clamp(b);
+            }
+          }
+        }
+      };
+
+      for (let t = 0; t < 200; t++) {
+        for (const n of nodes) {
+          n.x += (W / 2 - n.x) * 0.015;
+          n.y += (H / 2 - n.y) * 0.015;
+        }
+        separate(); separate(); separate(); // multiple passes per tick
+        nodes.forEach(clamp);
+      }
+
+      // Final guarantee: keep separating until no overlaps remain
+      for (let pass = 0; pass < 300; pass++) separate();
+
+      return nodes;
+    }
+
     async function drawCountriesPie(canvasEl, legendEl) {
       const counts = {};
       for (const b of books) {
@@ -820,169 +878,178 @@
       const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
       if (!entries.length) return false;
 
-      const total      = entries.reduce((s, [, c]) => s + c, 0);
-      const LABEL_MIN  = 0.025;
-      const significant = entries.filter(([, c]) => c / total >= LABEL_MIN);
-      const small       = entries.filter(([, c]) => c / total < LABEL_MIN);
-      const slices = [...significant];
-      if (small.length) slices.push(['Other', small.reduce((s, [, c]) => s + c, 0)]);
-      const sliceColors = slices.map(([name], i) => name === 'Other' ? PIE_COLOR_OTHER : PIE_COLORS[i % PIE_COLORS.length]);
-
-      const countryNames = slices.map(([name]) => name).filter(n => n !== 'Other');
-      const flagImages = await loadFlagImages(countryNames);
+      const total = entries.reduce((s, [, c]) => s + c, 0);
+      const items = entries.map(([name, value]) => ({ name, value }));
+      const flagImages = await loadFlagImages(items.map(i => i.name));
 
       const dpr     = window.devicePixelRatio || 1;
-      const MAX_CH  = 16;
       const parentW = canvasEl.parentElement.clientWidth;
-      const R       = Math.min(Math.round(parentW * 0.22), 110);
-      const ri      = Math.round(R * 0.55);
-      const FONT    = Math.max(9, Math.min(12, R * 0.135));
-      const SPOKE   = Math.round(R * 0.15);
-      const ELBOW   = Math.round(R * 0.22);
-      const textW   = Math.ceil(MAX_CH * FONT * 0.62);
-      const showLabels = (parentW / 2) >= R + SPOKE + ELBOW + textW + 8;
-      const W       = showLabels
-        ? Math.min(parentW, 2 * (R + SPOKE + ELBOW + textW + 8))
-        : Math.min(parentW, 2 * (R + SPOKE + 8));
-      const H       = 2 * R + 2 * (SPOKE + Math.ceil(FONT) + 8);
+      const W = parentW;
+      const H = Math.min(Math.round(W * 1.1), 520);
+
+      const nodes = layoutBubbles(items, W, H);
+
       canvasEl.width  = W * dpr; canvasEl.height = H * dpr;
-      canvasEl.style.width   = W + 'px';
-      canvasEl.style.height  = H + 'px';
+      canvasEl.style.width  = W + 'px';
+      canvasEl.style.height = H + 'px';
       canvasEl.style.display = 'block';
-      canvasEl.style.margin  = '0 auto';
+      canvasEl.style.margin  = '0';
+      legendEl.style.display = 'none';
 
       const ctx = canvasEl.getContext('2d');
       ctx.scale(dpr, dpr);
-      const cx = W / 2, cy = H / 2;
-      const GAP = 0.022;
 
-      // Draw slices
-      let angle = -Math.PI / 2;
-      const midAngles = slices.map(([name, count], i) => {
-        const sweep  = (count / total) * 2 * Math.PI;
-        const startA = angle + GAP / 2;
-        const endA   = angle + sweep - GAP / 2;
-        const mid    = angle + sweep / 2;
-        const flagImg = flagImages.get(name);
+      const accent = cssVar('--accent');
 
-        if (flagImg) {
-          const midR  = (ri + R) / 2;
-          const mcx   = cx + midR * Math.cos(mid);
-          const mcy   = cy + midR * Math.sin(mid);
-          // inner arc corners sit at local_y = ri*cos(s/2) - midR; must cover that extent
-          const inwardExtent  = midR - ri * Math.cos(sweep / 2);
-          const outwardExtent = R - midR; // = (R-ri)/2
-          const fw = Math.max(midR * sweep, 2 * R * Math.sin(sweep / 2)) * 1.15;
-          const fh = 2 * Math.max(inwardExtent, outwardExtent) * 1.15;
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(cx, cy, R,  startA, endA);
-          ctx.arc(cx, cy, ri, endA,   startA, true);
-          ctx.closePath();
-          ctx.clip();
-          ctx.translate(mcx, mcy);
-          ctx.rotate(mid - Math.PI / 2); // face outward: readable from outside the ring
-          ctx.drawImage(flagImg, -fw / 2, -fh / 2, fw, fh);
-          ctx.restore();
-        } else {
-          ctx.beginPath();
-          ctx.moveTo(cx, cy);
-          ctx.arc(cx, cy, R, startA, endA);
-          ctx.closePath();
-          ctx.fillStyle = sliceColors[i];
-          ctx.fill();
-        }
+      function render(sel = -1) {
+        ctx.clearRect(0, 0, W, H);
+        nodes.forEach((n, ni) => {
+          const { name, value, x, y, r } = n;
 
-        angle += sweep;
-        return mid;
-      });
-
-      // Segment borders — outer ring, inner ring, radial dividers
-      const bw = 2.5;
-      ctx.strokeStyle = cssVar('--text');
-      ctx.lineWidth = bw;
-      ctx.beginPath();
-      ctx.arc(cx, cy, R  - bw / 2, 0, Math.PI * 2); // inset so full stroke is inside ring
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(cx, cy, ri + bw / 2, 0, Math.PI * 2); // outset so full stroke is inside ring
-      ctx.stroke();
-      let bAngle = -Math.PI / 2;
-      slices.forEach(([, count]) => {
-        const sw = (count / total) * 2 * Math.PI;
-        ctx.beginPath();
-        ctx.moveTo(cx + ri * Math.cos(bAngle), cy + ri * Math.sin(bAngle));
-        ctx.lineTo(cx + R  * Math.cos(bAngle), cy + R  * Math.sin(bAngle));
-        ctx.stroke();
-        bAngle += sw;
-      });
-
-      // Donut hole (covers center for solid-fill fallback slices)
-      ctx.beginPath();
-      ctx.arc(cx, cy, ri, 0, Math.PI * 2);
-      ctx.fillStyle = cssVar('--bg-card') || cssVar('--bg');
-      ctx.fill();
-
-      // Centre text
-      const numSz = Math.round(ri * 0.62);
-      ctx.fillStyle = cssVar('--text');
-      ctx.font = `700 ${numSz}px -apple-system, sans-serif`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(entries.length, cx, cy - numSz * 0.36);
-      ctx.fillStyle = cssVar('--text-muted');
-      ctx.font = `${Math.round(numSz * 0.56)}px -apple-system, sans-serif`;
-      ctx.fillText('countries', cx, cy + numSz * 0.52);
-
-      // When too narrow for leader lines, fall back to a legend below the chart
-      if (!showLabels) {
-        legendEl.innerHTML = '';
-        slices.forEach(([country, count], i) => {
-          const item  = document.createElement('div');
-          item.style.cssText = 'display:flex;align-items:center;gap:.35rem;min-width:0';
-          const flagImg = flagImages.get(country);
+          const flagImg = flagImages.get(name);
           if (flagImg) {
-            const fi = document.createElement('img');
-            fi.src = flagImg.src;
-            fi.style.cssText = 'width:18px;height:12px;object-fit:cover;border-radius:2px;flex-shrink:0;display:block';
-            item.appendChild(fi);
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+            ctx.restore();
+            ctx.filter = 'brightness(1.08)';
+            ctx.drawImage(flagImg, x - r, y - r, r * 2, r * 2);
+            ctx.filter = 'none';
+            // 3D bubble shading
+            ctx.save();
+            ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.clip();
+            const sGrad = ctx.createRadialGradient(x, y + r * 0.4, 0, x, y, r);
+            sGrad.addColorStop(0.4, 'rgba(0,0,0,0)');
+            sGrad.addColorStop(1,   'rgba(0,0,0,0.09)');
+            ctx.fillStyle = sGrad;
+            ctx.fillRect(x - r, y - r, r * 2, r * 2);
+            const hGrad = ctx.createRadialGradient(x + r * 0.55, y - r * 0.55, 0, x + r * 0.3, y - r * 0.3, r * 1.05);
+            hGrad.addColorStop(0,    'rgba(255,255,255,0.18)');
+            hGrad.addColorStop(0.3,  'rgba(255,255,255,0.04)');
+            hGrad.addColorStop(1,    'rgba(255,255,255,0)');
+            ctx.fillStyle = hGrad;
+            ctx.fillRect(x - r, y - r, r * 2, r * 2);
+            ctx.restore();
           } else {
-            const dot = document.createElement('div');
-            dot.style.cssText = `width:9px;height:9px;border-radius:2px;flex-shrink:0;background:${sliceColors[i]}`;
-            item.appendChild(dot);
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fillStyle = PIE_COLOR_OTHER;
+            ctx.fill();
+            ctx.restore();
           }
-          const label = document.createElement('span');
-          label.style.cssText = 'font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-          label.textContent = `${country} · ${count}`;
-          item.append(label);
-          legendEl.appendChild(item);
+
+
+          ctx.save();
+          ctx.shadowColor = 'rgba(0,0,0,0.35)';
+          ctx.shadowBlur = 8;
+          ctx.shadowOffsetY = 3;
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.strokeStyle = ni === sel ? accent : 'rgba(0,0,0,0.15)';
+          ctx.globalAlpha = ni === sel ? 0.55 : 1;
+          ctx.lineWidth = ni === sel ? 2 : 1;
+          ctx.stroke();
+          ctx.restore();
+
+
+          if (r >= 20) {
+            const pct = Math.round(value / total * 100);
+            const fs = Math.max(10, Math.min(15, r * 0.28));
+            ctx.save();
+            ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.clip();
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.font = `700 ${fs}px -apple-system, sans-serif`;
+            ctx.lineJoin = 'round';
+            ctx.lineWidth = fs * 0.22;
+            ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+            ctx.strokeText(`${pct}%`, x, y + 1);
+            ctx.fillStyle = '#fff';
+            ctx.fillText(`${pct}%`, x, y + 1);
+            ctx.restore();
+          }
         });
-        legendEl.style.display = 'grid';
-        return true;
+
       }
-      legendEl.style.display = 'none';
-      ctx.font = `${FONT}px -apple-system, sans-serif`;
-      ctx.lineWidth = 1;
-      slices.forEach(([country, count], i) => {
-        const mid = midAngles[i];
-        const cos = Math.cos(mid), sin = Math.sin(mid);
-        const onRight = cos >= 0;
-        const ax = cx + R * cos,              ay = cy + R * sin;
-        const bx = cx + (R + SPOKE) * cos,    by = cy + (R + SPOKE) * sin;
-        const ex = bx + (onRight ? ELBOW : -ELBOW);
 
-        ctx.strokeStyle = cssVar('--text-muted');
-        ctx.beginPath();
-        ctx.moveTo(ax, ay);
-        ctx.lineTo(bx, by);
-        ctx.lineTo(ex, by);
-        ctx.stroke();
+      render();
 
-        const label = `${country.length > MAX_CH ? country.slice(0, MAX_CH) + '…' : country} (${count})`;
-        ctx.fillStyle = cssVar('--text');
-        ctx.textAlign = onRight ? 'left' : 'right';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(label, ex + (onRight ? 3 : -3), by);
+      const selOverlay = document.getElementById('bubble-sel');
+      function updateSelectionOverlay(idx = selected) {
+        if (idx < 0) { selOverlay.style.display = 'none'; return; }
+        const n = nodes[idx];
+        const scaleX = canvasEl.offsetWidth / W;
+        const scaleY = canvasEl.offsetHeight / H;
+        selOverlay.style.display = '';
+        selOverlay.style.left   = (n.x - n.r) * scaleX + 'px';
+        selOverlay.style.top    = (n.y - n.r) * scaleY + 'px';
+        selOverlay.style.width  = n.r * 2 * scaleX + 'px';
+        selOverlay.style.height = n.r * 2 * scaleY + 'px';
+      }
+
+      const labelEl  = document.getElementById('chart-countries-label');
+      const labelName = document.getElementById('chart-countries-label-name');
+      const labelPct  = document.getElementById('chart-countries-label-pct');
+
+      let selected = -1;
+
+      function showLabel(idx) {
+        const display = idx >= 0 ? idx : selected;
+        if (display < 0) {
+          labelEl.style.visibility = 'hidden';
+        } else {
+          const n = nodes[display];
+          labelName.textContent = n.name;
+          labelPct.textContent  = `${n.value} book${n.value === 1 ? '' : 's'}`;
+          labelEl.style.visibility = 'visible';
+        }
+      }
+
+      let hovered = -1;
+      function hitTest(cx, cy) {
+        for (let i = 0; i < nodes.length; i++) {
+          const n = nodes[i], dx = cx - n.x, dy = cy - n.y;
+          if (dx * dx + dy * dy <= n.r * n.r) return i;
+        }
+        return -1;
+      }
+      function canvasCoords(clientX, clientY) {
+        const rect = canvasEl.getBoundingClientRect();
+        return [(clientX - rect.left) * (W / rect.width), (clientY - rect.top) * (H / rect.height)];
+      }
+      canvasEl.addEventListener('mousemove', e => {
+        const [cx, cy] = canvasCoords(e.clientX, e.clientY);
+        const hit = hitTest(cx, cy);
+        canvasEl.style.cursor = hit >= 0 ? 'pointer' : '';
+        if (hit !== hovered) { hovered = hit; showLabel(hovered); updateSelectionOverlay(hovered); }
       });
+      canvasEl.addEventListener('mouseleave', () => {
+        hovered = -1; showLabel(-1); canvasEl.style.cursor = '';
+        updateSelectionOverlay(-1);
+      });
+      canvasEl.addEventListener('click', e => {
+        const [cx, cy] = canvasCoords(e.clientX, e.clientY);
+        const hit = hitTest(cx, cy);
+        if (hit >= 0 && hit === selected) {
+          const country = encodeURIComponent(nodes[hit].name.toLowerCase());
+          const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
+          location.href = `../library/?country=${country}${u}`;
+        } else {
+          selected = hit;
+          render(selected);
+          showLabel(hovered);
+        }
+      });
+      canvasEl.addEventListener('touchstart', e => {
+        const t = e.touches[0];
+        const [cx, cy] = canvasCoords(t.clientX, t.clientY);
+        const hit = hitTest(cx, cy);
+        hovered = hit === hovered ? -1 : hit;
+        showLabel(hovered);
+        if (hit >= 0) e.preventDefault();
+      }, { passive: false });
 
       return true;
     }

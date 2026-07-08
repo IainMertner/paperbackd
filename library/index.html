@@ -2350,6 +2350,15 @@
 
         if (!filterDropdown.children.length) filterDropdownBtn.style.display = 'none';
 
+        const preCountry = params.get('country');
+        if (preCountry) {
+          activeFilters.country.add(preCountry);
+          const cb = [...filterDropdown.querySelectorAll('input[type=checkbox]')]
+            .find(el => el.closest('label')?.textContent.trim().toLowerCase().startsWith(preCountry));
+          if (cb) cb.checked = true;
+          applyFilter();
+        }
+
         function updateToggleUI() {
           gridBtn.style.opacity = viewMode === 'grid' ? '1' : '0.45';
           listBtn.style.opacity = viewMode === 'list' ? '1' : '0.45';
