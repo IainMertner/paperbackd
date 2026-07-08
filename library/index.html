@@ -127,6 +127,7 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, syncBookActivity } from '../js/firebase.js';
+    import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -2144,8 +2145,8 @@
               const paramStr = [slugs.length && '$slugs:[String!]!', ids.length && '$ids:[Int!]!'].filter(Boolean).join(',');
               const d = await hcPost(`query(${paramStr}){${parts.join(' ')}}`, vars);
               const yearMap = new Map();
-              (d?.data?.bySlug || []).forEach(b => { if (b.release_year) yearMap.set(b.slug, b.release_year); });
-              (d?.data?.byId   || []).forEach(b => { if (b.release_year) yearMap.set(String(b.id), b.release_year); });
+              (d?.data?.bySlug || []).forEach(b => { const y = parseInt(b.release_year, 10); if (y >= 1000 && y <= 2100) yearMap.set(b.slug, y); });
+              (d?.data?.byId   || []).forEach(b => { const y = parseInt(b.release_year, 10); if (y >= 1000 && y <= 2100) yearMap.set(String(b.id), y); });
               let updated = false;
               missing.forEach(b => { const y = yearMap.get(b.gbid); if (y) { b.releaseYear = y; updated = true; } });
               if (updated && sortState.key === 'release') renderFinishedSorted();
@@ -2541,7 +2542,7 @@
           pages: parseInt(pagesInp.value) || 0,
           gbid: '',
           cover: '',
-          releaseYear: parseInt(yearInp.value) || null,
+          releaseYear: (() => { const y = parseInt(yearInp.value, 10); return y >= 1000 && y <= 2100 ? y : null; })(),
         };
         searchInput.value        = title;
         suggestBox.innerHTML     = '';
@@ -2575,7 +2576,7 @@
         const pages       = doc.pages || 0;
         const cover       = doc.image?.url || '';
         const slug        = doc.slug || String(doc.id);
-        const releaseYear = doc.release_year ? parseInt(doc.release_year, 10) : null;
+        const releaseYear = (() => { const y = parseInt(doc.release_year, 10); return y >= 1000 && y <= 2100 ? y : null; })();
 
         const el = document.createElement('div');
         el.className = 'book-suggestion-item';

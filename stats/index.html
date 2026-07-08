@@ -405,8 +405,10 @@
 
       // Points — tiny and faint; trend line is the signal, these are just context
       for (const p of points) {
+        const jitter  = (Math.random() - 0.5) * 0.28;
+        const xJitter = (Math.random() - 0.5) * xRange * 0.012;
         ctx.beginPath();
-        ctx.arc(toX(p.x), toY(p.y), 2.5, 0, Math.PI * 2);
+        ctx.arc(toX(p.x + xJitter), toY(p.y + jitter), 2.5, 0, Math.PI * 2);
         ctx.fillStyle = muted;
         ctx.globalAlpha = 0.35;
         ctx.fill();
@@ -993,6 +995,14 @@
       const labelName = document.getElementById('chart-countries-label-name');
       const labelPct  = document.getElementById('chart-countries-label-pct');
 
+      labelEl.style.cursor = 'pointer';
+      labelEl.addEventListener('click', () => {
+        if (selected < 0) return;
+        const country = encodeURIComponent(nodes[selected].name.toLowerCase());
+        const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
+        location.href = `../library/?country=${country}${u}`;
+      });
+
       let selected = -1;
 
       function showLabel(idx) {
@@ -1046,10 +1056,22 @@
         const t = e.touches[0];
         const [cx, cy] = canvasCoords(t.clientX, t.clientY);
         const hit = hitTest(cx, cy);
-        hovered = hit === hovered ? -1 : hit;
-        showLabel(hovered);
+        if (hit >= 0 && hit === selected) {
+          const country = encodeURIComponent(nodes[hit].name.toLowerCase());
+          const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
+          location.href = `../library/?country=${country}${u}`;
+        } else {
+          selected = hit;
+          render(selected);
+          showLabel(hit);
+        }
         if (hit >= 0) e.preventDefault();
       }, { passive: false });
+      canvasEl.addEventListener('touchend', () => {
+        hovered = -1;
+        updateSelectionOverlay(-1);
+        showLabel(-1);
+      });
 
       return true;
     }
