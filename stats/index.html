@@ -261,6 +261,61 @@
       return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     }
 
+    const PIE_COLOR_OTHER = '#6b7280';
+
+    const PIE_COLORS = ['#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#6366f1','#14b8a6','#f43f5e','#eab308','#a855f7'];
+
+    const COUNTRY_ISO = {
+      'united states': 'us', 'usa': 'us', 'us': 'us',
+      'united kingdom': 'gb', 'uk': 'gb', 'england': 'gb', 'great britain': 'gb', 'britain': 'gb', 'scotland': 'gb', 'wales': 'gb', 'northern ireland': 'gb',
+      'france': 'fr', 'germany': 'de', 'italy': 'it', 'spain': 'es', 'portugal': 'pt',
+      'netherlands': 'nl', 'belgium': 'be', 'switzerland': 'ch', 'austria': 'at',
+      'sweden': 'se', 'norway': 'no', 'denmark': 'dk', 'finland': 'fi',
+      'poland': 'pl', 'ukraine': 'ua', 'greece': 'gr',
+      'czech republic': 'cz', 'czechia': 'cz', 'hungary': 'hu', 'romania': 'ro',
+      'serbia': 'rs', 'croatia': 'hr', 'slovakia': 'sk', 'bulgaria': 'bg',
+      'russia': 'ru', 'ireland': 'ie', 'iceland': 'is', 'luxembourg': 'lu',
+      'estonia': 'ee', 'latvia': 'lv', 'lithuania': 'lt',
+      'japan': 'jp', 'china': 'cn', 'south korea': 'kr', 'korea': 'kr', 'taiwan': 'tw',
+      'india': 'in', 'pakistan': 'pk', 'bangladesh': 'bd', 'sri lanka': 'lk',
+      'vietnam': 'vn', 'thailand': 'th', 'indonesia': 'id', 'philippines': 'ph',
+      'malaysia': 'my', 'singapore': 'sg', 'myanmar': 'mm', 'cambodia': 'kh',
+      'iran': 'ir', 'turkey': 'tr', 'israel': 'il', 'jordan': 'jo', 'iraq': 'iq',
+      'saudi arabia': 'sa', 'united arab emirates': 'ae', 'uae': 'ae',
+      'canada': 'ca', 'mexico': 'mx', 'cuba': 'cu', 'guatemala': 'gt', 'costa rica': 'cr',
+      'brazil': 'br', 'argentina': 'ar', 'colombia': 'co', 'chile': 'cl',
+      'peru': 'pe', 'venezuela': 've', 'ecuador': 'ec', 'bolivia': 'bo', 'uruguay': 'uy',
+      'australia': 'au', 'new zealand': 'nz',
+      'nigeria': 'ng', 'south africa': 'za', 'egypt': 'eg', 'kenya': 'ke',
+      'ghana': 'gh', 'ethiopia': 'et', 'morocco': 'ma', 'tanzania': 'tz',
+      'uganda': 'ug', 'zimbabwe': 'zw', 'rwanda': 'rw', 'angola': 'ao',
+      'hong kong': 'hk',
+    };
+
+    const flagImageCache = new Map();
+
+    function loadFlagImage(code) {
+      if (flagImageCache.has(code)) return Promise.resolve(flagImageCache.get(code));
+      return new Promise(resolve => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload  = () => { flagImageCache.set(code, img); resolve(img); };
+        img.onerror = () => resolve(null);
+        img.src = `https://flagcdn.com/${code}.svg`;
+      });
+    }
+
+    async function loadFlagImages(names) {
+      const result = new Map();
+      await Promise.all(names.map(async name => {
+        const code = COUNTRY_ISO[name.toLowerCase()];
+        if (!code) return;
+        const img = await loadFlagImage(code);
+        if (img) result.set(name, img);
+      }));
+      return result;
+    }
+
     function linearRegression(pts) {
       const n = pts.length;
       if (n < 2) return null;
@@ -275,10 +330,10 @@
       return { m, b };
     }
 
-    function drawScatter(canvasEl, points, { xLabel, yLabel, yMin = 0, yMax = 5 }) {
+    function drawScatter(canvasEl, points, { xLabel, yMin = 0, yMax = 5 }) {
       const dpr = window.devicePixelRatio || 1;
       const W_CSS = canvasEl.parentElement.clientWidth;
-      const H_CSS = 240;
+      const H_CSS = 256;
       canvasEl.width  = W_CSS * dpr;
       canvasEl.height = H_CSS * dpr;
       canvasEl.style.width  = W_CSS + 'px';
@@ -287,16 +342,19 @@
       const ctx = canvasEl.getContext('2d');
       ctx.scale(dpr, dpr);
 
-      const pad = { top: 16, right: 20, bottom: 44, left: 44 };
+      // measure star label width so left padding is exactly what's needed
+      ctx.font = `11px -apple-system, "Segoe UI Symbol", sans-serif`;
+      const starLabelW = Math.ceil(ctx.measureText('★★★★★').width);
+      const pad = { top: 18, right: 18, bottom: 46, left: starLabelW + 10 };
       const W = W_CSS, H = H_CSS;
       const plotW = W - pad.left - pad.right;
       const plotH = H - pad.top  - pad.bottom;
 
-      const text      = cssVar('--text');
-      const muted     = cssVar('--text-muted');
-      const border    = cssVar('--border');
-      const accent    = cssVar('--accent');
-      const bgAlt     = cssVar('--bg-alt');
+      const muted  = cssVar('--text-muted');
+      const border = cssVar('--border');
+      const accent = cssVar('--accent');
+      const bgCard = cssVar('--bg-card') || cssVar('--bg');
+      const bgAlt  = cssVar('--bg-alt');
 
       ctx.clearRect(0, 0, W, H);
 
@@ -308,74 +366,112 @@
       const toX = x => pad.left + ((x - xMin) / xRange) * plotW;
       const toY = y => pad.top  + (1 - (y - yMin) / (yMax - yMin)) * plotH;
 
-      // Y grid lines at each integer rating
-      ctx.strokeStyle = border;
-      ctx.lineWidth = 1;
-      for (let r = yMin; r <= yMax; r++) {
-        const y = toY(r);
-        ctx.beginPath();
-        ctx.moveTo(pad.left, y);
-        ctx.lineTo(W - pad.right, y);
-        ctx.stroke();
-        ctx.fillStyle = muted;
-        ctx.font = `${11 * dpr / dpr}px -apple-system, sans-serif`;
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(r === 0 ? '' : r, pad.left - 6, y);
+      // Plot area background
+      ctx.fillStyle = bgAlt;
+      if (ctx.roundRect) {
+        ctx.beginPath(); ctx.roundRect(pad.left, pad.top, plotW, plotH, 6); ctx.fill();
+      } else {
+        ctx.fillRect(pad.left, pad.top, plotW, plotH);
       }
 
-      // Trend line
+      // Dashed horizontal grid lines + star Y labels
+      ctx.font = `11px -apple-system, "Segoe UI Symbol", sans-serif`;
+      for (let r = yMin; r <= yMax; r++) {
+        const y = toY(r);
+        if (r > yMin) {
+          ctx.strokeStyle = border;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 6]);
+          ctx.globalAlpha = 0.55;
+          ctx.beginPath();
+          ctx.moveTo(pad.left, y);
+          ctx.lineTo(pad.left + plotW, y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 1;
+        }
+        if (r > 0) {
+          ctx.fillStyle = '#f59e0b';
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('★'.repeat(r), pad.left - 5, y);
+        }
+      }
+
+      // Points — tiny and faint; trend line is the signal, these are just context
+      for (const p of points) {
+        ctx.beginPath();
+        ctx.arc(toX(p.x), toY(p.y), 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = muted;
+        ctx.globalAlpha = 0.35;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      // Trend line — the hero: thick, solid, with a strong gradient area underneath
       const reg = linearRegression(points);
       if (reg) {
         const x0 = xMin, x1 = xMax;
         const y0 = Math.max(yMin, Math.min(yMax, reg.m * x0 + reg.b));
         const y1 = Math.max(yMin, Math.min(yMax, reg.m * x1 + reg.b));
+        ctx.save();
+        ctx.beginPath(); ctx.rect(pad.left, pad.top, plotW, plotH); ctx.clip();
+        const areaGrad = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
+        areaGrad.addColorStop(0, accent + '40');
+        areaGrad.addColorStop(1, accent + '06');
         ctx.beginPath();
-        ctx.strokeStyle = '#3730a3';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 4]);
-        ctx.globalAlpha = 0.8;
         ctx.moveTo(toX(x0), toY(y0));
         ctx.lineTo(toX(x1), toY(y1));
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.globalAlpha = 1;
-      }
-
-      // Points
-      for (const p of points) {
-        ctx.beginPath();
-        ctx.arc(toX(p.x), toY(p.y), 4, 0, Math.PI * 2);
-        ctx.fillStyle = accent;
-        ctx.globalAlpha = 0.7;
+        ctx.lineTo(toX(x1), toY(yMin));
+        ctx.lineTo(toX(x0), toY(yMin));
+        ctx.closePath();
+        ctx.fillStyle = areaGrad;
         ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(toX(x0), toY(y0));
+        ctx.lineTo(toX(x1), toY(y1));
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 3;
         ctx.globalAlpha = 1;
+        ctx.stroke();
+        ctx.restore();
       }
 
-      // X axis labels — pick ~5 nice ticks
+      // Bottom axis line
+      ctx.strokeStyle = border;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(pad.left, pad.top + plotH);
+      ctx.lineTo(pad.left + plotW, pad.top + plotH);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // X tick marks + labels
       const xTicks = niceTicks(xMin, xMax, 5);
       ctx.fillStyle = muted;
       ctx.font = `11px -apple-system, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       for (const t of xTicks) {
-        ctx.fillText(t, toX(t), H - pad.bottom + 6);
+        const tx = toX(t);
+        ctx.strokeStyle = border;
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(tx, pad.top + plotH);
+        ctx.lineTo(tx, pad.top + plotH + 4);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.fillText(t, tx, pad.top + plotH + 7);
       }
 
-      // Axis labels
+      // X axis label
       ctx.fillStyle = muted;
       ctx.font = `11px -apple-system, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
       ctx.fillText(xLabel, W / 2, H - 2);
-
-      ctx.save();
-      ctx.translate(12, pad.top + plotH / 2);
-      ctx.rotate(-Math.PI / 2);
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillText(yLabel, 0, 0);
-      ctx.restore();
     }
 
     function niceTicks(min, max, count) {
@@ -716,10 +812,7 @@
 
     // ── Charts ─────────────────────────────────────────────────────────────────
 
-    const PIE_COLORS      = ['#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#6366f1','#14b8a6','#f43f5e','#eab308','#a855f7'];
-    const PIE_COLOR_OTHER = '#6b7280';
-
-    function drawCountriesPie(canvasEl, legendEl) {
+    async function drawCountriesPie(canvasEl, legendEl) {
       const counts = {};
       for (const b of books) {
         if (b.country) counts[b.country] = (counts[b.country] || 0) + 1;
@@ -734,6 +827,9 @@
       const slices = [...significant];
       if (small.length) slices.push(['Other', small.reduce((s, [, c]) => s + c, 0)]);
       const sliceColors = slices.map(([name], i) => name === 'Other' ? PIE_COLOR_OTHER : PIE_COLORS[i % PIE_COLORS.length]);
+
+      const countryNames = slices.map(([name]) => name).filter(n => n !== 'Other');
+      const flagImages = await loadFlagImages(countryNames);
 
       const dpr     = window.devicePixelRatio || 1;
       const MAX_CH  = 16;
@@ -760,22 +856,68 @@
       const cx = W / 2, cy = H / 2;
       const GAP = 0.022;
 
-      // Draw slices, collect midpoint angles
+      // Draw slices
       let angle = -Math.PI / 2;
-      const midAngles = slices.map(([, count], i) => {
-        const sweep = (count / total) * 2 * Math.PI;
-        const mid   = angle + sweep / 2;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.arc(cx, cy, R, angle + GAP / 2, angle + sweep - GAP / 2);
-        ctx.closePath();
-        ctx.fillStyle = sliceColors[i];
-        ctx.fill();
+      const midAngles = slices.map(([name, count], i) => {
+        const sweep  = (count / total) * 2 * Math.PI;
+        const startA = angle + GAP / 2;
+        const endA   = angle + sweep - GAP / 2;
+        const mid    = angle + sweep / 2;
+        const flagImg = flagImages.get(name);
+
+        if (flagImg) {
+          const midR  = (ri + R) / 2;
+          const mcx   = cx + midR * Math.cos(mid);
+          const mcy   = cy + midR * Math.sin(mid);
+          // inner arc corners sit at local_y = ri*cos(s/2) - midR; must cover that extent
+          const inwardExtent  = midR - ri * Math.cos(sweep / 2);
+          const outwardExtent = R - midR; // = (R-ri)/2
+          const fw = Math.max(midR * sweep, 2 * R * Math.sin(sweep / 2)) * 1.15;
+          const fh = 2 * Math.max(inwardExtent, outwardExtent) * 1.15;
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(cx, cy, R,  startA, endA);
+          ctx.arc(cx, cy, ri, endA,   startA, true);
+          ctx.closePath();
+          ctx.clip();
+          ctx.translate(mcx, mcy);
+          ctx.rotate(mid - Math.PI / 2); // face outward: readable from outside the ring
+          ctx.drawImage(flagImg, -fw / 2, -fh / 2, fw, fh);
+          ctx.restore();
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.arc(cx, cy, R, startA, endA);
+          ctx.closePath();
+          ctx.fillStyle = sliceColors[i];
+          ctx.fill();
+        }
+
         angle += sweep;
         return mid;
       });
 
-      // Donut hole
+      // Segment borders — outer ring, inner ring, radial dividers
+      const bw = 2.5;
+      ctx.strokeStyle = cssVar('--text');
+      ctx.lineWidth = bw;
+      ctx.beginPath();
+      ctx.arc(cx, cy, R  - bw / 2, 0, Math.PI * 2); // inset so full stroke is inside ring
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, ri + bw / 2, 0, Math.PI * 2); // outset so full stroke is inside ring
+      ctx.stroke();
+      let bAngle = -Math.PI / 2;
+      slices.forEach(([, count]) => {
+        const sw = (count / total) * 2 * Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(cx + ri * Math.cos(bAngle), cy + ri * Math.sin(bAngle));
+        ctx.lineTo(cx + R  * Math.cos(bAngle), cy + R  * Math.sin(bAngle));
+        ctx.stroke();
+        bAngle += sw;
+      });
+
+      // Donut hole (covers center for solid-fill fallback slices)
       ctx.beginPath();
       ctx.arc(cx, cy, ri, 0, Math.PI * 2);
       ctx.fillStyle = cssVar('--bg-card') || cssVar('--bg');
@@ -797,12 +939,21 @@
         slices.forEach(([country, count], i) => {
           const item  = document.createElement('div');
           item.style.cssText = 'display:flex;align-items:center;gap:.35rem;min-width:0';
-          const dot   = document.createElement('div');
-          dot.style.cssText = `width:9px;height:9px;border-radius:2px;flex-shrink:0;background:${sliceColors[i]}`;
+          const flagImg = flagImages.get(country);
+          if (flagImg) {
+            const fi = document.createElement('img');
+            fi.src = flagImg.src;
+            fi.style.cssText = 'width:18px;height:12px;object-fit:cover;border-radius:2px;flex-shrink:0;display:block';
+            item.appendChild(fi);
+          } else {
+            const dot = document.createElement('div');
+            dot.style.cssText = `width:9px;height:9px;border-radius:2px;flex-shrink:0;background:${sliceColors[i]}`;
+            item.appendChild(dot);
+          }
           const label = document.createElement('span');
           label.style.cssText = 'font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
           label.textContent = `${country} · ${count}`;
-          item.append(dot, label);
+          item.append(label);
           legendEl.appendChild(item);
         });
         legendEl.style.display = 'grid';
@@ -819,15 +970,14 @@
         const bx = cx + (R + SPOKE) * cos,    by = cy + (R + SPOKE) * sin;
         const ex = bx + (onRight ? ELBOW : -ELBOW);
 
-        ctx.strokeStyle = sliceColors[i];
+        ctx.strokeStyle = cssVar('--text-muted');
         ctx.beginPath();
         ctx.moveTo(ax, ay);
         ctx.lineTo(bx, by);
         ctx.lineTo(ex, by);
         ctx.stroke();
 
-        const name  = country.length > MAX_CH ? country.slice(0, MAX_CH) + '…' : country;
-        const label = `${name} (${count})`;
+        const label = `${country.length > MAX_CH ? country.slice(0, MAX_CH) + '…' : country} (${count})`;
         ctx.fillStyle = cssVar('--text');
         ctx.textAlign = onRight ? 'left' : 'right';
         ctx.textBaseline = 'middle';
@@ -837,7 +987,7 @@
       return true;
     }
 
-    function drawCharts() {
+    async function drawCharts() {
       const finished = books.filter(b => b.rating != null);
 
       const ptsPages = finished
@@ -850,7 +1000,7 @@
 
       const countriesCanvas = document.getElementById('chart-countries');
       const countriesLegend = document.getElementById('chart-countries-legend');
-      if (drawCountriesPie(countriesCanvas, countriesLegend)) {
+      if (await drawCountriesPie(countriesCanvas, countriesLegend)) {
         document.getElementById('chart-countries-empty').style.display = 'none';
       } else {
         countriesCanvas.style.display = 'none';
@@ -861,14 +1011,14 @@
       const ageCanvas   = document.getElementById('chart-age');
 
       if (ptsPages.length >= 2) {
-        drawScatter(pagesCanvas, ptsPages, { xLabel: 'Pages', yLabel: 'Rating', yMin: 0, yMax: 5 });
+        drawScatter(pagesCanvas, ptsPages, { xLabel: 'Pages', yMin: 0, yMax: 5 });
       } else {
         pagesCanvas.style.display = 'none';
         document.getElementById('chart-pages-empty').style.display = '';
       }
 
       if (ptsAge.length >= 2) {
-        drawScatter(ageCanvas, ptsAge, { xLabel: 'Publication year', yLabel: 'Rating', yMin: 0, yMax: 5 });
+        drawScatter(ageCanvas, ptsAge, { xLabel: 'Publication year', yMin: 0, yMax: 5 });
       } else {
         ageCanvas.style.display = 'none';
         document.getElementById('chart-age-empty').style.display = '';
