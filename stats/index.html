@@ -160,11 +160,17 @@
 
     <div class="stats-tab-bar">
       <button class="stats-tab-btn active" id="tab-targets">Targets</button>
-      <button class="stats-tab-btn"        id="tab-general">Stats</button>
+      <button class="stats-tab-btn"        id="tab-general">Graphs</button>
     </div>
 
     <!-- General Stats panel -->
     <div id="panel-general" hidden>
+      <div class="card chart-card" id="chart-countries-card">
+        <div class="chart-title">Countries</div>
+        <div class="chart-wrap"><canvas id="chart-countries"></canvas></div>
+        <div id="chart-countries-legend" style="display:none;grid-template-columns:1fr 1fr;gap:.3rem .75rem;margin-top:.75rem"></div>
+        <div class="chart-empty" id="chart-countries-empty" style="display:none">No country data yet.</div>
+      </div>
       <div class="card chart-card" id="chart-pages-card">
         <div class="chart-title">Rating vs Pages</div>
         <div class="chart-wrap"><canvas id="chart-pages" class="scatter"></canvas></div>
@@ -226,7 +232,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getProfileByUsername, getProfile, getBooks, db } from '../js/firebase.js';
+    import { getProfileByUsername, getProfile, getFinishedBooks, db } from '../js/firebase.js';
     import { doc, updateDoc, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const NOW  = new Date();
@@ -506,7 +512,7 @@
       ? 'Stats'
       : `<a href="../profile/?u=${encodeURIComponent(targetProfile.username)}" style="color:inherit;text-decoration:none">${targetProfile.username}</a>'s stats`;
 
-    const books = await getBooks(targetProfile.uid);
+    const books = await getFinishedBooks(targetProfile.uid);
 
     // ── Tab switching ──────────────────────────────────────────────────────────
 
@@ -515,12 +521,15 @@
     const panelTargets = document.getElementById('panel-targets');
     const panelGeneral = document.getElementById('panel-general');
 
+    let chartsDrawn = false;
+
     function switchTab(name) {
       const onGeneral = name === 'general';
       tabGeneral.classList.toggle('active', onGeneral);
       tabTargets.classList.toggle('active', !onGeneral);
       panelGeneral.hidden = !onGeneral;
       panelTargets.hidden = onGeneral;
+      if (onGeneral) { drawCharts(); chartsDrawn = true; }
     }
 
     tabGeneral.addEventListener('click', () => switchTab('general'));
@@ -532,7 +541,6 @@
 
     function computeProgress(type, period) {
       const finished = books.filter(b => {
-        if (b.status !== 'finished') return false;
         if (period === 'overall') return true;
         const ts = b.finishedAt;
         if (!ts) return false;
@@ -604,7 +612,7 @@
     }
 
     if (isOwn) {
-      let isPrivate = !!targetProfile.targetsPrivate;
+      let isPrivate = targetProfile.targetsPrivate !== false;
 
       const headerRow = document.createElement('div');
       headerRow.style.cssText = 'display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem';
@@ -688,7 +696,7 @@
       targetsContent.appendChild(headerRow);
       rebuildSections();
 
-    } else if (targetProfile.targetsPrivate) {
+    } else if (targetProfile.targetsPrivate !== false) {
       switchTab('general');
       const msg = document.createElement('div');
       msg.style.cssText = 'text-align:center;padding:2.5rem 1rem;color:var(--text-muted)';
@@ -703,12 +711,134 @@
     } else {
       targetsContent.appendChild(sectionsEl);
       rebuildSections();
+      if (!Object.keys(targetsData).length) switchTab('general');
     }
 
-    // ── Scatter charts ─────────────────────────────────────────────────────────
+    // ── Charts ─────────────────────────────────────────────────────────────────
+
+    const PIE_COLORS      = ['#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#6366f1','#14b8a6','#f43f5e','#eab308','#a855f7'];
+    const PIE_COLOR_OTHER = '#6b7280';
+
+    function drawCountriesPie(canvasEl, legendEl) {
+      const counts = {};
+      for (const b of books) {
+        if (b.country) counts[b.country] = (counts[b.country] || 0) + 1;
+      }
+      const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      if (!entries.length) return false;
+
+      const total      = entries.reduce((s, [, c]) => s + c, 0);
+      const LABEL_MIN  = 0.025;
+      const significant = entries.filter(([, c]) => c / total >= LABEL_MIN);
+      const small       = entries.filter(([, c]) => c / total < LABEL_MIN);
+      const slices = [...significant];
+      if (small.length) slices.push(['Other', small.reduce((s, [, c]) => s + c, 0)]);
+      const sliceColors = slices.map(([name], i) => name === 'Other' ? PIE_COLOR_OTHER : PIE_COLORS[i % PIE_COLORS.length]);
+
+      const dpr     = window.devicePixelRatio || 1;
+      const MAX_CH  = 16;
+      const parentW = canvasEl.parentElement.clientWidth;
+      const R       = Math.min(Math.round(parentW * 0.22), 110);
+      const ri      = Math.round(R * 0.55);
+      const FONT    = Math.max(9, Math.min(12, R * 0.135));
+      const SPOKE   = Math.round(R * 0.15);
+      const ELBOW   = Math.round(R * 0.22);
+      const textW   = Math.ceil(MAX_CH * FONT * 0.62);
+      const showLabels = (parentW / 2) >= R + SPOKE + ELBOW + textW + 8;
+      const W       = showLabels
+        ? Math.min(parentW, 2 * (R + SPOKE + ELBOW + textW + 8))
+        : Math.min(parentW, 2 * (R + SPOKE + 8));
+      const H       = 2 * R + 2 * (SPOKE + Math.ceil(FONT) + 8);
+      canvasEl.width  = W * dpr; canvasEl.height = H * dpr;
+      canvasEl.style.width   = W + 'px';
+      canvasEl.style.height  = H + 'px';
+      canvasEl.style.display = 'block';
+      canvasEl.style.margin  = '0 auto';
+
+      const ctx = canvasEl.getContext('2d');
+      ctx.scale(dpr, dpr);
+      const cx = W / 2, cy = H / 2;
+      const GAP = 0.022;
+
+      // Draw slices, collect midpoint angles
+      let angle = -Math.PI / 2;
+      const midAngles = slices.map(([, count], i) => {
+        const sweep = (count / total) * 2 * Math.PI;
+        const mid   = angle + sweep / 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, R, angle + GAP / 2, angle + sweep - GAP / 2);
+        ctx.closePath();
+        ctx.fillStyle = sliceColors[i];
+        ctx.fill();
+        angle += sweep;
+        return mid;
+      });
+
+      // Donut hole
+      ctx.beginPath();
+      ctx.arc(cx, cy, ri, 0, Math.PI * 2);
+      ctx.fillStyle = cssVar('--bg-card') || cssVar('--bg');
+      ctx.fill();
+
+      // Centre text
+      const numSz = Math.round(ri * 0.62);
+      ctx.fillStyle = cssVar('--text');
+      ctx.font = `700 ${numSz}px -apple-system, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(entries.length, cx, cy - numSz * 0.36);
+      ctx.fillStyle = cssVar('--text-muted');
+      ctx.font = `${Math.round(numSz * 0.56)}px -apple-system, sans-serif`;
+      ctx.fillText('countries', cx, cy + numSz * 0.52);
+
+      // When too narrow for leader lines, fall back to a legend below the chart
+      if (!showLabels) {
+        legendEl.innerHTML = '';
+        slices.forEach(([country, count], i) => {
+          const item  = document.createElement('div');
+          item.style.cssText = 'display:flex;align-items:center;gap:.35rem;min-width:0';
+          const dot   = document.createElement('div');
+          dot.style.cssText = `width:9px;height:9px;border-radius:2px;flex-shrink:0;background:${sliceColors[i]}`;
+          const label = document.createElement('span');
+          label.style.cssText = 'font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+          label.textContent = `${country} · ${count}`;
+          item.append(dot, label);
+          legendEl.appendChild(item);
+        });
+        legendEl.style.display = 'grid';
+        return true;
+      }
+      legendEl.style.display = 'none';
+      ctx.font = `${FONT}px -apple-system, sans-serif`;
+      ctx.lineWidth = 1;
+      slices.forEach(([country, count], i) => {
+        const mid = midAngles[i];
+        const cos = Math.cos(mid), sin = Math.sin(mid);
+        const onRight = cos >= 0;
+        const ax = cx + R * cos,              ay = cy + R * sin;
+        const bx = cx + (R + SPOKE) * cos,    by = cy + (R + SPOKE) * sin;
+        const ex = bx + (onRight ? ELBOW : -ELBOW);
+
+        ctx.strokeStyle = sliceColors[i];
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+        ctx.lineTo(ex, by);
+        ctx.stroke();
+
+        const name  = country.length > MAX_CH ? country.slice(0, MAX_CH) + '…' : country;
+        const label = `${name} (${count})`;
+        ctx.fillStyle = cssVar('--text');
+        ctx.textAlign = onRight ? 'left' : 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, ex + (onRight ? 3 : -3), by);
+      });
+
+      return true;
+    }
 
     function drawCharts() {
-      const finished = books.filter(b => b.status === 'finished' && b.rating != null);
+      const finished = books.filter(b => b.rating != null);
 
       const ptsPages = finished
         .filter(b => b.totalPages > 0)
@@ -717,6 +847,15 @@
       const ptsAge = finished
         .filter(b => b.releaseYear > 0)
         .map(b => ({ x: b.releaseYear, y: b.rating }));
+
+      const countriesCanvas = document.getElementById('chart-countries');
+      const countriesLegend = document.getElementById('chart-countries-legend');
+      if (drawCountriesPie(countriesCanvas, countriesLegend)) {
+        document.getElementById('chart-countries-empty').style.display = 'none';
+      } else {
+        countriesCanvas.style.display = 'none';
+        document.getElementById('chart-countries-empty').style.display = '';
+      }
 
       const pagesCanvas = document.getElementById('chart-pages');
       const ageCanvas   = document.getElementById('chart-age');
@@ -736,13 +875,11 @@
       }
     }
 
-    drawCharts();
-
-    // Redraw on theme change or resize
-    new MutationObserver(() => drawCharts())
+    // Redraw on theme change or resize, but only once the tab has been opened
+    new MutationObserver(() => { if (chartsDrawn) drawCharts(); })
       .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
-    window.addEventListener('resize', () => drawCharts());
+    window.addEventListener('resize', () => { if (chartsDrawn) drawCharts(); });
 
     } // end if (targetProfile)
     } finally {

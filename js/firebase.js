@@ -269,6 +269,11 @@ export async function getBooks(uid) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+export async function getFinishedBooks(uid) {
+  const snap = await getDocs(query(collection(db, 'users', uid, 'books'), where('status', '==', 'finished')));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
 export async function addFinishedBook(uid, { title, author, totalPages, gbid, coverUrl, rating, review, releaseYear, country, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
   const data = {
     title,
