@@ -159,6 +159,11 @@
       color: var(--text-muted);
       font-size: .85rem;
     }
+    .chart-summary {
+      font-size: .82rem;
+      color: var(--text-muted);
+      padding: .5rem 0 .1rem;
+    }
     canvas.scatter {
       display: block;
       width: 100%;
@@ -223,11 +228,13 @@
       <div class="card chart-card" id="chart-pages-card">
         <div class="chart-title">Rating vs Pages</div>
         <div class="chart-wrap"><canvas id="chart-pages" class="scatter"></canvas></div>
+        <div class="chart-summary" id="chart-pages-summary"></div>
         <div class="chart-empty" id="chart-pages-empty" style="display:none">Not enough data yet.</div>
       </div>
       <div class="card chart-card" id="chart-age-card">
-        <div class="chart-title">Rating vs Publication Year</div>
+        <div class="chart-title">Rating vs Book Age</div>
         <div class="chart-wrap"><canvas id="chart-age" class="scatter"></canvas></div>
+        <div class="chart-summary" id="chart-age-summary"></div>
         <div class="chart-empty" id="chart-age-empty" style="display:none">Not enough data yet.</div>
       </div>
     </div>
@@ -366,21 +373,58 @@
       return result;
     }
 
+    // Lanczos lgamma, regularised incomplete beta, and two-tailed t p-value
+    function lgamma(z) {
+      const c = [0.99999999999980993,676.5203681218851,-1259.1392167224028,
+                 771.32342877765313,-176.61502916214059,12.507343278686905,
+                 -0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+      if (z < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * z)) - lgamma(1 - z);
+      z--; let x = c[0];
+      for (let i = 1; i <= 8; i++) x += c[i] / (z + i);
+      const t = z + 7.5;
+      return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
+    }
+    function betacf(a, b, x) {
+      const MAXIT = 100, EPS = 3e-7, FP = 1e-30;
+      const qab = a+b, qap = a+1, qam = a-1;
+      let c = 1, d = 1 - qab*x/qap;
+      if (Math.abs(d) < FP) d = FP; d = 1/d; let h = d;
+      for (let m = 1; m <= MAXIT; m++) {
+        const m2 = 2*m;
+        let aa = m*(b-m)*x/((qam+m2)*(a+m2));
+        d = 1+aa*d; if (Math.abs(d)<FP) d=FP; c = 1+aa/c; if (Math.abs(c)<FP) c=FP; d=1/d; h*=d*c;
+        aa = -(a+m)*(qab+m)*x/((a+m2)*(qap+m2));
+        d = 1+aa*d; if (Math.abs(d)<FP) d=FP; c = 1+aa/c; if (Math.abs(c)<FP) c=FP; d=1/d;
+        const del = d*c; h *= del; if (Math.abs(del-1) < EPS) break;
+      }
+      return h;
+    }
+    function betai(a, b, x) {
+      if (x <= 0) return 0; if (x >= 1) return 1;
+      const bt = Math.exp(lgamma(a+b)-lgamma(a)-lgamma(b)+a*Math.log(x)+b*Math.log(1-x));
+      return x < (a+1)/(a+b+2) ? bt*betacf(a,b,x)/a : 1-bt*betacf(b,a,1-x)/b;
+    }
+    function tPValue(t, df) { return betai(df/2, 0.5, df/(df + t*t)); }
+
     function linearRegression(pts) {
       const n = pts.length;
-      if (n < 2) return null;
-      const sx = pts.reduce((s, p) => s + p.x, 0);
-      const sy = pts.reduce((s, p) => s + p.y, 0);
+      if (n < 3) return null; // need df = n-2 ≥ 1 for a meaningful p-value
+      const sx  = pts.reduce((s, p) => s + p.x, 0);
+      const sy  = pts.reduce((s, p) => s + p.y, 0);
       const sxy = pts.reduce((s, p) => s + p.x * p.y, 0);
       const sx2 = pts.reduce((s, p) => s + p.x * p.x, 0);
       const denom = n * sx2 - sx * sx;
       if (!denom) return null;
-      const m = (n * sxy - sx * sy) / denom;
-      const b = (sy - m * sx) / n;
-      return { m, b };
+      const m    = (n * sxy - sx * sy) / denom;
+      const b    = (sy - m * sx) / n;
+      const SSxx = sx2 - sx * sx / n;
+      const SSres = pts.reduce((s, p) => { const e = p.y-(m*p.x+b); return s+e*e; }, 0);
+      if (SSres === 0) return { m, b, pValue: m === 0 ? 1 : 0 };
+      const SE   = Math.sqrt(SSres / ((n - 2) * SSxx));
+      return { m, b, pValue: tPValue(Math.abs(m / SE), n - 2) };
     }
 
-    function drawScatter(canvasEl, points, { xLabel, yMin = 0, yMax = 5 }) {
+    function drawScatter(canvasEl, points, { xLabel, yMin = 0, yMax = 5, logX = false }) {
       const dpr = window.devicePixelRatio || 1;
       const W_CSS = canvasEl.parentElement.clientWidth;
       const H_CSS = 256;
@@ -408,12 +452,15 @@
 
       ctx.clearRect(0, 0, W, H);
 
-      const xs = points.map(p => p.x);
-      const xMin = Math.min(...xs);
-      const xMax = Math.max(...xs);
+      // Support log scale on x-axis: transform coordinates before layout
+      const toRaw   = x => logX ? Math.log(x) : x;
+      const origXMin = Math.min(...points.map(p => p.x));
+      const origXMax = Math.max(...points.map(p => p.x));
+      const xMin = toRaw(origXMin);
+      const xMax = toRaw(origXMax);
       const xRange = xMax - xMin || 1;
 
-      const toX = x => pad.left + ((x - xMin) / xRange) * plotW;
+      const toX = x => pad.left + (toRaw(x) - xMin) / xRange * plotW;
       const toY = y => pad.top  + (1 - (y - yMin) / (yMax - yMin)) * plotH;
 
       // Plot area background
@@ -450,38 +497,42 @@
 
       // Points — tiny and faint; trend line is the signal, these are just context
       for (const p of points) {
-        const jitter  = (Math.random() - 0.5) * 0.28;
-        const xJitter = (Math.random() - 0.5) * xRange * 0.012;
+        const yJitter = (Math.random() - 0.5) * 0.28;
+        // log mode: jitter in pixel space (data jitter would be uneven across the scale)
+        // linear mode: jitter in data space so it scales with the axis range
+        const px = logX
+          ? toX(p.x) + (Math.random() - 0.5) * 8
+          : toX(p.x + (Math.random() - 0.5) * xRange * 0.012);
         ctx.beginPath();
-        ctx.arc(toX(p.x + xJitter), toY(p.y + jitter), 2.5, 0, Math.PI * 2);
+        ctx.arc(px, toY(p.y + yJitter), 2.5, 0, Math.PI * 2);
         ctx.fillStyle = muted;
         ctx.globalAlpha = 0.35;
         ctx.fill();
         ctx.globalAlpha = 1;
       }
 
-      // Trend line — the hero: thick, solid, with a strong gradient area underneath
-      const reg = linearRegression(points);
+      // Trend line — regression computed in transformed (log) space
+      const ptsReg = points.map(p => ({ x: toRaw(p.x), y: p.y }));
+      const reg = linearRegression(ptsReg);
       if (reg) {
-        const x0 = xMin, x1 = xMax;
-        const y0 = Math.max(yMin, Math.min(yMax, reg.m * x0 + reg.b));
-        const y1 = Math.max(yMin, Math.min(yMax, reg.m * x1 + reg.b));
+        const y0 = Math.max(yMin, Math.min(yMax, reg.m * xMin + reg.b));
+        const y1 = Math.max(yMin, Math.min(yMax, reg.m * xMax + reg.b));
         ctx.save();
         ctx.beginPath(); ctx.rect(pad.left, pad.top, plotW, plotH); ctx.clip();
         const areaGrad = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
         areaGrad.addColorStop(0, accent + '40');
         areaGrad.addColorStop(1, accent + '06');
         ctx.beginPath();
-        ctx.moveTo(toX(x0), toY(y0));
-        ctx.lineTo(toX(x1), toY(y1));
-        ctx.lineTo(toX(x1), toY(yMin));
-        ctx.lineTo(toX(x0), toY(yMin));
+        ctx.moveTo(toX(origXMin), toY(y0));
+        ctx.lineTo(toX(origXMax), toY(y1));
+        ctx.lineTo(toX(origXMax), toY(yMin));
+        ctx.lineTo(toX(origXMin), toY(yMin));
         ctx.closePath();
         ctx.fillStyle = areaGrad;
         ctx.fill();
         ctx.beginPath();
-        ctx.moveTo(toX(x0), toY(y0));
-        ctx.lineTo(toX(x1), toY(y1));
+        ctx.moveTo(toX(origXMin), toY(y0));
+        ctx.lineTo(toX(origXMax), toY(y1));
         ctx.strokeStyle = accent;
         ctx.lineWidth = 3;
         ctx.globalAlpha = 1;
@@ -500,7 +551,7 @@
       ctx.globalAlpha = 1;
 
       // X tick marks + labels
-      const xTicks = niceTicks(xMin, xMax, 5);
+      const xTicks = logX ? niceLogTicks(origXMin, origXMax) : niceTicks(origXMin, origXMax, 5);
       ctx.fillStyle = muted;
       ctx.font = `11px -apple-system, sans-serif`;
       ctx.textAlign = 'center';
@@ -524,6 +575,8 @@
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
       ctx.fillText(xLabel, W / 2, H - 2);
+
+      return reg || null;
     }
 
     function niceTicks(min, max, count) {
@@ -533,6 +586,18 @@
       const start = Math.ceil(min / nice) * nice;
       const ticks = [];
       for (let t = start; t <= max + nice * 0.01; t += nice) ticks.push(Math.round(t * 1000) / 1000);
+      return ticks;
+    }
+
+    function niceLogTicks(min, max) {
+      const ticks = [];
+      const lo = Math.pow(10, Math.floor(Math.log10(Math.max(min, 1))));
+      for (let base = lo; base <= max; base *= 10) {
+        for (const f of [1, 2, 5]) {
+          const v = base * f;
+          if (v >= min && v <= max) ticks.push(v);
+        }
+      }
       return ticks;
     }
 
@@ -1322,9 +1387,10 @@
         .filter(b => b.totalPages > 0)
         .map(b => ({ x: b.totalPages, y: b.rating }));
 
+      const thisYear = new Date().getFullYear();
       const ptsAge = finished
         .filter(b => b.releaseYear > 0)
-        .map(b => ({ x: b.releaseYear, y: b.rating }));
+        .map(b => ({ x: Math.max(1, thisYear - b.releaseYear), y: b.rating }));
 
       const countriesCanvas = document.getElementById('chart-countries');
       const countriesLegend = document.getElementById('chart-countries-legend');
@@ -1373,15 +1439,49 @@
       const pagesCanvas = document.getElementById('chart-pages');
       const ageCanvas   = document.getElementById('chart-age');
 
+      // Build subject / possessive depending on whose profile this is
+      const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      let subjHtml, verb, possHtml;
+      if (isOwn) {
+        subjHtml = 'You'; verb = 'tend'; possHtml = 'your';
+      } else {
+        const name = esc(targetProfile.displayName || targetProfile.username);
+        subjHtml = name; verb = 'tends'; possHtml = `${name}'s`;
+      }
+
       if (ptsPages.length >= 2) {
-        drawScatter(pagesCanvas, ptsPages, { xLabel: 'Pages', yMin: 0, yMax: 5 });
+        const reg = drawScatter(pagesCanvas, ptsPages, { xLabel: 'Pages', yMin: 0, yMax: 5, logX: true });
+        if (reg) {
+          const p = reg.pValue, up = reg.m > 0;
+          document.getElementById('chart-pages-summary').innerHTML = p < 0.05 && up
+            ? `${subjHtml} ${verb} to rate longer books more highly.`
+            : p < 0.05 && !up
+            ? `${subjHtml} ${verb} to rate shorter books more highly.`
+            : p < 0.1 && up
+            ? `${subjHtml} ${verb} to rate longer books slightly more highly.`
+            : p < 0.1 && !up
+            ? `${subjHtml} ${verb} to rate shorter books slightly more highly.`
+            : `Book length doesn't seem to have much effect on ${possHtml} ratings.`;
+        }
       } else {
         pagesCanvas.style.display = 'none';
         document.getElementById('chart-pages-empty').style.display = '';
       }
 
       if (ptsAge.length >= 2) {
-        drawScatter(ageCanvas, ptsAge, { xLabel: 'Publication year', yMin: 0, yMax: 5 });
+        const reg = drawScatter(ageCanvas, ptsAge, { xLabel: 'Book age (years)', yMin: 0, yMax: 5, logX: true });
+        if (reg) {
+          const p = reg.pValue, up = reg.m > 0;
+          document.getElementById('chart-age-summary').innerHTML = p < 0.05 && up
+            ? `${subjHtml} ${verb} to rate older books more highly.`
+            : p < 0.05 && !up
+            ? `${subjHtml} ${verb} to rate more recent books more highly.`
+            : p < 0.1 && up
+            ? `${subjHtml} ${verb} to rate older books slightly more highly.`
+            : p < 0.1 && !up
+            ? `${subjHtml} ${verb} to rate more recent books slightly more highly.`
+            : `A book's age doesn't seem to have much effect on ${possHtml} ratings.`;
+        }
       } else {
         ageCanvas.style.display = 'none';
         document.getElementById('chart-age-empty').style.display = '';
