@@ -122,6 +122,33 @@
       color: var(--text);
       margin-bottom: .75rem;
     }
+    .chart-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: .75rem;
+    }
+    .chart-title-row .chart-title { margin-bottom: 0; }
+    .view-toggle {
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      font-size: .72rem;
+    }
+    .view-toggle-btn {
+      padding: .25rem .4rem;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: inherit;
+    }
+    .view-toggle-btn.active {
+      background: var(--accent);
+      color: #fff;
+    }
     .chart-wrap {
       position: relative;
       width: 100%;
@@ -159,15 +186,33 @@
     <h1 class="page-title" id="page-heading"></h1>
 
     <div class="stats-tab-bar">
-      <button class="stats-tab-btn active" id="tab-targets">Targets</button>
-      <button class="stats-tab-btn"        id="tab-general">Graphs</button>
+      <button class="stats-tab-btn active" id="tab-general">Graphs</button>
+      <button class="stats-tab-btn"        id="tab-targets">Targets</button>
     </div>
 
     <!-- General Stats panel -->
-    <div id="panel-general" hidden>
+    <div id="panel-general">
       <div class="card chart-card" id="chart-countries-card" style="padding-top:.5rem;padding-bottom:.5rem">
-        <div class="chart-title">Countries</div>
+        <div class="chart-title-row">
+          <div class="chart-title">Countries</div>
+          <div class="view-toggle" id="countries-view-toggle" style="display:none">
+            <button class="view-toggle-btn active" id="countries-bubble-btn" title="Bubble chart">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+                <circle cx="5.5" cy="10" r="3.5"/>
+                <circle cx="12" cy="6.5" r="2.5"/>
+                <circle cx="10" cy="13" r="1.5"/>
+              </svg>
+            </button>
+            <button class="view-toggle-btn" id="countries-map-btn" title="Map">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="8" cy="8" r="5.5"/>
+                <path d="M2.5 8h11M8 2.5c-2 2-2 7 0 11M8 2.5c2 2 2 7 0 11"/>
+              </svg>
+            </button>
+          </div>
+        </div>
         <div class="chart-wrap" style="position:relative"><canvas id="chart-countries"></canvas><div id="bubble-sel" style="position:absolute;border-radius:50%;background:rgba(0,0,0,0.07);pointer-events:none;display:none"></div></div>
+        <div id="chart-countries-map" style="display:none;line-height:0;border-radius:6px;overflow:hidden"></div>
         <div id="chart-countries-label" style="height:2rem;display:flex;align-items:center;justify-content:center;gap:.5rem;font-size:.8rem;visibility:hidden">
           <span id="chart-countries-label-name" style="font-weight:600"></span>
           <span id="chart-countries-label-pct" style="color:var(--text-muted)"></span>
@@ -188,7 +233,7 @@
     </div>
 
     <!-- Targets panel -->
-    <div id="panel-targets">
+    <div id="panel-targets" hidden>
       <div id="targets-content"></div>
     </div>
 
@@ -624,15 +669,12 @@
     const panelTargets = document.getElementById('panel-targets');
     const panelGeneral = document.getElementById('panel-general');
 
-    let chartsDrawn = false;
-
     function switchTab(name) {
       const onGeneral = name === 'general';
       tabGeneral.classList.toggle('active', onGeneral);
       tabTargets.classList.toggle('active', !onGeneral);
       panelGeneral.hidden = !onGeneral;
       panelTargets.hidden = onGeneral;
-      if (onGeneral) { drawCharts(); chartsDrawn = true; }
     }
 
     tabGeneral.addEventListener('click', () => switchTab('general'));
@@ -800,7 +842,6 @@
       rebuildSections();
 
     } else if (targetProfile.targetsPrivate !== false) {
-      switchTab('general');
       const msg = document.createElement('div');
       msg.style.cssText = 'text-align:center;padding:2.5rem 1rem;color:var(--text-muted)';
       msg.innerHTML = `
@@ -814,14 +855,13 @@
     } else {
       targetsContent.appendChild(sectionsEl);
       rebuildSections();
-      if (!Object.keys(targetsData).length) switchTab('general');
     }
 
     // ── Charts ─────────────────────────────────────────────────────────────────
 
     function layoutBubbles(items, W, H) {
       const maxVal = items[0].value;
-      let maxR = Math.min(W, H) * 0.18;
+      let maxR = Math.min(W, H) * 0.20;
       const nodes = items.map((item, i) => ({
         ...item,
         r: Math.sqrt(item.value / maxVal) * maxR,
@@ -831,8 +871,8 @@
 
       // Scale radii down if circles can't physically fit
       const totalArea = nodes.reduce((s, n) => s + Math.PI * n.r * n.r, 0);
-      if (totalArea > W * H * 0.78) {
-        const scale = Math.sqrt(W * H * 0.78 / totalArea);
+      if (totalArea > W * H * 0.82) {
+        const scale = Math.sqrt(W * H * 0.82 / totalArea);
         nodes.forEach(n => { n.r *= scale; });
       }
 
@@ -846,7 +886,7 @@
             const a = nodes[i], b = nodes[j];
             const dx = b.x - a.x || 0.001, dy = b.y - a.y || 0.001;
             const d = Math.sqrt(dx * dx + dy * dy);
-            const min = a.r + b.r + 6;
+            const min = a.r + b.r + 2;
             if (d < min) {
               const f = (min - d) / d * 0.5;
               a.x -= dx * f; a.y -= dy * f;
@@ -862,12 +902,26 @@
           n.x += (W / 2 - n.x) * 0.015;
           n.y += (H / 2 - n.y) * 0.015;
         }
-        separate(); separate(); separate(); // multiple passes per tick
+        separate(); separate(); separate();
         nodes.forEach(clamp);
       }
-
-      // Final guarantee: keep separating until no overlaps remain
       for (let pass = 0; pass < 300; pass++) separate();
+
+      // Scale the whole pack up to fill the canvas
+      const pad  = 6;
+      const minX = Math.min(...nodes.map(n => n.x - n.r));
+      const maxX = Math.max(...nodes.map(n => n.x + n.r));
+      const minY = Math.min(...nodes.map(n => n.y - n.r));
+      const maxY = Math.max(...nodes.map(n => n.y + n.r));
+      const fill = Math.min((W - pad * 2) / (maxX - minX), (H - pad * 2) / (maxY - minY), 1.4);
+      if (fill > 1) {
+        const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+        nodes.forEach(n => {
+          n.r *= fill;
+          n.x  = W / 2 + (n.x - cx) * fill;
+          n.y  = H / 2 + (n.y - cy) * fill;
+        });
+      }
 
       return nodes;
     }
@@ -887,7 +941,7 @@
       const dpr     = window.devicePixelRatio || 1;
       const parentW = canvasEl.parentElement.clientWidth;
       const W = parentW;
-      const H = Math.min(Math.round(W * 1.1), 520);
+      const H = Math.round(W * MAP_ASPECT);
 
       const nodes = layoutBubbles(items, W, H);
 
@@ -1076,6 +1130,191 @@
       return true;
     }
 
+    // Shared aspect ratio for both the bubble chart and map — derived from Winkel Tripel projection bounds
+    const _phi1    = Math.acos(2 / Math.PI);
+    const _xMax    = Math.PI / 2 + 1;
+    const _xLeft   = (-160 * Math.PI / 360) * (1 + Math.cos(_phi1));
+    const _yRange  = Math.PI / 2 + 60 * Math.PI / 180; // yMax − yBottom (90°N to 60°S)
+    const MAP_ASPECT = _yRange / (_xMax - _xLeft);
+
+    let worldGeoCache = null;
+    async function drawCountriesMap(counts) {
+      const mapEl     = document.getElementById('chart-countries-map');
+      const labelEl   = document.getElementById('chart-countries-label');
+      const labelName = document.getElementById('chart-countries-label-name');
+      const labelPct  = document.getElementById('chart-countries-label-pct');
+
+      if (!worldGeoCache) {
+        const res = await fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson');
+        worldGeoCache = await res.json();
+      }
+
+      // Reverse map: ISO code → original country string from user's books (for library link)
+      const isoToName = {};
+      for (const b of books) {
+        if (b.country) {
+          const code = COUNTRY_ISO[b.country.toLowerCase()];
+          if (code && !isoToName[code]) isoToName[code] = b.country;
+        }
+      }
+
+      // Winkel Tripel projection — average of equirectangular and Aitoff
+      const phi1    = Math.acos(2 / Math.PI);    // standard parallel ≈ 50.47°
+      const xMax    = Math.PI / 2 + 1;           // half-width in projection units
+      const yMax    = Math.PI / 2;               // north pole y
+      const yBottom = -60 * Math.PI / 180;       // clip southern ocean at 60°S
+      // At φ=0, x = λ/2 × (1 + cos(φ₁)) — use this to derive the left edge cutoff longitude
+      const xLeft   = (-160 * Math.PI / 360) * (1 + Math.cos(phi1)); // clip east Pacific at 160°W
+
+      mapEl.innerHTML = '';
+      const canvas = document.createElement('canvas');
+      mapEl.appendChild(canvas);
+
+      const dpr = window.devicePixelRatio || 1;
+      const W   = mapEl.offsetWidth || 600;
+      const H   = Math.round(W * MAP_ASPECT);
+      canvas.width  = W * dpr;
+      canvas.height = H * dpr;
+      canvas.style.cssText = `width:100%;height:${H}px;display:block`;
+
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      const accent  = cssVar('--accent');
+      const border  = cssVar('--border');
+      const bgCard  = cssVar('--bg-card');
+      const max     = Math.max(...Object.values(counts), 1);
+
+      // Parse a hex color into [r, g, b] — getComputedStyle always returns hex here
+      const hexRgb = h => { h = h.trim().replace(/^#/,''); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; };
+      const [ar,ag,ab] = hexRgb(accent);
+      const [br,bg,bb] = hexRgb(bgCard);
+      // Mix accent into background: min 0.2 so even 1-book countries have clear colour
+      const mixColor = t => `rgb(${Math.round(br+(ar-br)*(0.2+t*0.8))},${Math.round(bg+(ag-bg)*(0.2+t*0.8))},${Math.round(bb+(ab-bb)*(0.2+t*0.8))})`;
+      function project([lon, lat]) {
+        const λ = lon * Math.PI / 180;
+        const φ = lat * Math.PI / 180;
+        const α = Math.acos(Math.cos(φ) * Math.cos(λ / 2));
+        const sinc = α < 1e-10 ? 1 : Math.sin(α) / α;
+        const x = 0.5 * (λ * Math.cos(phi1) + 2 * Math.cos(φ) * Math.sin(λ / 2) / sinc);
+        const y = 0.5 * (φ + Math.sin(φ) / sinc);
+        return [(x - xLeft) / (xMax - xLeft) * W, (yMax - y) / (yMax - yBottom) * H];
+      }
+
+      function featurePath(geometry) {
+        const p    = new Path2D();
+        const polys = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+        for (const poly of polys) {
+          for (const ring of poly) {
+            let first = true;
+            for (const coord of ring) {
+              const [x, y] = project(coord);
+              first ? p.moveTo(x, y) : p.lineTo(x, y);
+              first = false;
+            }
+            p.closePath();
+          }
+        }
+        return p;
+      }
+
+      // First pass: fills
+      const drawn = [];
+      for (const feat of worldGeoCache.features) {
+        if (!feat.geometry) continue;
+        let iso = (feat.properties.ISO_A2 || '').toLowerCase();
+        if (iso === '-99') {
+          // Known Natural Earth data quality issue — fall back to ISO_A2_EH, then ADMIN name lookup
+          iso = (feat.properties.ISO_A2_EH || '').toLowerCase();
+          if (!iso || iso === '-99') {
+            const admin = (feat.properties.ADMIN || feat.properties.NAME || '').toLowerCase();
+            iso = COUNTRY_ISO[admin] || '';
+          }
+        }
+        if (!iso || iso === 'aq') continue;
+        const count = counts[iso] || 0;
+        const t     = count > 0 ? Math.pow(count / max, 0.6) : 0;
+        const p     = featurePath(feat.geometry);
+        drawn.push({ p, iso, count, t, name: feat.properties.NAME });
+        ctx.globalAlpha = 1;
+        ctx.fillStyle   = count > 0 ? mixColor(t) : bgCard;
+        ctx.fill(p);
+      }
+      ctx.globalAlpha = 1;
+
+      // Third pass: borders on top
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = cssVar('--text-muted');
+      ctx.lineWidth   = 0.8;
+      for (const { p } of drawn) ctx.stroke(p);
+
+      // Overlay canvas for hover/pin highlight — drawn on top, avoids redrawing base map
+      mapEl.style.position = 'relative';
+      const overlay = document.createElement('canvas');
+      overlay.width  = W * dpr;
+      overlay.height = H * dpr;
+      overlay.style.cssText = `position:absolute;top:0;left:0;width:100%;height:${H}px;pointer-events:none`;
+      mapEl.appendChild(overlay);
+      const octx = overlay.getContext('2d');
+      octx.scale(dpr, dpr);
+
+      // isPointInPath needs physical pixel coords when ctx has a DPR scale transform
+      function hitTest(e) {
+        const rect = canvas.getBoundingClientRect();
+        const sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+        const mx = (e.clientX - rect.left) * sx;
+        const my = (e.clientY - rect.top)  * sy;
+        for (let i = drawn.length - 1; i >= 0; i--) {
+          if (ctx.isPointInPath(drawn[i].p, mx, my)) return drawn[i];
+        }
+        return null;
+      }
+
+      let hovered = null, pinned = null;
+
+      function redrawOverlay() {
+        octx.clearRect(0, 0, W, H);
+        if (hovered) { octx.fillStyle = 'rgba(0,0,0,0.09)'; octx.fill(hovered.p); }
+        if (pinned)  { octx.strokeStyle = accent; octx.lineWidth = 1.5; octx.stroke(pinned.p); }
+      }
+
+      function showLabel(d) {
+        if (!d) { labelEl.style.visibility = 'hidden'; return; }
+        labelName.textContent = d.name;
+        labelPct.textContent  = d.count > 0 ? `${d.count} book${d.count === 1 ? '' : 's'}` : '';
+        labelEl.style.visibility = 'visible';
+      }
+
+      canvas.addEventListener('mousemove', e => {
+        const hit = hitTest(e);
+        if (hit === hovered) return;
+        hovered = hit;
+        canvas.style.cursor = (hit && hit.count > 0) ? 'pointer' : '';
+        redrawOverlay();
+        showLabel(hit || pinned);
+      });
+
+      canvas.addEventListener('mouseleave', () => {
+        hovered = null;
+        canvas.style.cursor = '';
+        redrawOverlay();
+        showLabel(pinned);
+      });
+
+      canvas.addEventListener('click', e => {
+        const hit = hitTest(e);
+        if (!hit) { pinned = null; redrawOverlay(); showLabel(hovered); return; }
+        if (pinned === hit && hit.count > 0) {
+          const name = isoToName[hit.iso] || hit.name;
+          const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
+          location.href = `../library/?country=${encodeURIComponent(name.toLowerCase())}${u}`;
+          return;
+        }
+        pinned = pinned === hit ? null : hit;
+        redrawOverlay();
+        showLabel(pinned || hovered);
+      });
+    }
+
     async function drawCharts() {
       const finished = books.filter(b => b.rating != null);
 
@@ -1089,8 +1328,43 @@
 
       const countriesCanvas = document.getElementById('chart-countries');
       const countriesLegend = document.getElementById('chart-countries-legend');
+      const countriesMapEl  = document.getElementById('chart-countries-map');
+      const toggleEl        = document.getElementById('countries-view-toggle');
+      const bubbleBtn       = document.getElementById('countries-bubble-btn');
+      const mapBtn          = document.getElementById('countries-map-btn');
+
+      // Build counts map (lowercase country name → count)
+      const countryCounts = {};
+      for (const b of books) {
+        if (b.country) {
+          const code = COUNTRY_ISO[b.country.toLowerCase()];
+          if (code) countryCounts[code] = (countryCounts[code] || 0) + 1;
+        }
+      }
+
       if (await drawCountriesPie(countriesCanvas, countriesLegend)) {
         document.getElementById('chart-countries-empty').style.display = 'none';
+        if (!toggleEl._wired) {
+          toggleEl.style.display = '';
+          toggleEl._wired = true;
+          let mapDrawn = false;
+
+          const chartWrap = countriesCanvas.parentElement;
+          const showBubble = () => {
+            bubbleBtn.classList.add('active'); mapBtn.classList.remove('active');
+            chartWrap.style.display = ''; countriesMapEl.style.display = 'none';
+          };
+          const showMap = async () => {
+            mapBtn.classList.add('active'); bubbleBtn.classList.remove('active');
+            chartWrap.style.display = 'none'; countriesMapEl.style.display = '';
+            if (!mapDrawn) { await drawCountriesMap(countryCounts); mapDrawn = true; }
+          };
+
+          bubbleBtn.addEventListener('click', () => { showBubble(); localStorage.setItem('countries-view', 'bubble'); });
+          mapBtn.addEventListener('click',    () => { showMap();   localStorage.setItem('countries-view', 'map'); });
+
+          if (localStorage.getItem('countries-view') === 'map') await showMap();
+        }
       } else {
         countriesCanvas.style.display = 'none';
         document.getElementById('chart-countries-empty').style.display = '';
@@ -1114,11 +1388,12 @@
       }
     }
 
-    // Redraw on theme change or resize, but only once the tab has been opened
-    new MutationObserver(() => { if (chartsDrawn) drawCharts(); })
+    drawCharts();
+
+    new MutationObserver(() => drawCharts())
       .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
-    window.addEventListener('resize', () => { if (chartsDrawn) drawCharts(); });
+    window.addEventListener('resize', () => drawCharts());
 
     } // end if (targetProfile)
     } finally {
