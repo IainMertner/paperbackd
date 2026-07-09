@@ -243,7 +243,7 @@
         });
       }
 
-      if (event.uid === user.uid) {
+      if (event.uid === user.uid && event.type !== 'followed') {
         const dateField = event.type === 'started' ? 'addedAt' : 'finishedAt';
         const dateLabel = event.type === 'started' ? 'start date' : 'finished date';
         const dateStr   = event.timestamp?.seconds

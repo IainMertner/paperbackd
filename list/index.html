@@ -95,7 +95,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getProfileByUsername, getLists, addBookToList, removeBookFromList, deleteList, renameList } from '../js/firebase.js';
+    import { getProfileByUsername, getLists, addBookToList, removeBookFromList, deleteList, renameList, getBooks } from '../js/firebase.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -129,7 +129,13 @@
 
       }
 
-      const lists = await getLists(ownerUid);
+      const [lists, libBooks] = await Promise.all([
+        getLists(ownerUid),
+        getBooks(ownerUid),
+      ]);
+      const libraryCovers = {};
+      for (const b of libBooks) { if (b.gbid && b.coverUrl) libraryCovers[b.gbid] = b.coverUrl; }
+
       const list  = lists.find(l => l.id === listId);
 
       if (!list) {
@@ -456,9 +462,10 @@
         cell.href = `../book/?gbid=${encodeURIComponent(book.gbid)}`;
         cell.dataset.title  = (book.title  || '').toLowerCase();
         cell.dataset.author = (book.author || '').toLowerCase();
-        if (book.coverUrl) {
+        const cover = (book.gbid && libraryCovers[book.gbid]) || book.coverUrl;
+        if (cover) {
           const img = document.createElement('img');
-          img.src = book.coverUrl; img.alt = '';
+          img.src = cover; img.alt = '';
           cell.appendChild(img);
         } else {
           const ph = document.createElement('div');

@@ -727,9 +727,23 @@
       const picker = createPartialDatePicker(ts, precision);
       picker.style.display = 'none';
 
+      const clearDateBtn = document.createElement('button');
+      clearDateBtn.type = 'button';
+      clearDateBtn.textContent = 'Clear';
+      clearDateBtn.style.cssText = 'font-size:.72rem;color:var(--text-muted);background:none;border:none;cursor:pointer;font-family:inherit;padding:0 .1rem;flex-shrink:0';
+      clearDateBtn.addEventListener('mousedown', e => {
+        e.preventDefault();
+        picker.querySelectorAll('select').forEach(s => s.value = '');
+        collapse();
+      });
+      picker.appendChild(clearDateBtn);
+
       el.append(val, picker);
 
+      let collapsing = false;
       function collapse() {
+        if (collapsing) return;
+        collapsing = true;
         const { date, precision: newPrec } = picker.getDate();
         picker.style.display = 'none';
         val.style.display = '';
@@ -739,6 +753,12 @@
             book[field] = null;
             book[field + 'Precision'] = null;
             clearBookDate(user.uid, book.id, field).catch(console.error);
+            if (withActivity) {
+              const type = field === 'addedAt' ? 'started' : 'finished';
+              const bookInfo = { title: book.title, author: book.author, gbid: book.gbid,
+                rating: book.rating, review: book.review, username: profile.username, bookId: book.id };
+              syncBookActivity(user.uid, type, null, null, bookInfo).catch(console.error);
+            }
           }
           return;
         }
@@ -754,6 +774,7 @@
       }
 
       val.addEventListener('click', () => {
+        collapsing = false;
         val.style.display = 'none';
         picker.style.display = '';
         picker.querySelector('select, input')?.focus();
@@ -1532,8 +1553,8 @@
         reads[selectedReadIdx] = {
           startedAt:           startedAtDate  ? { toDate: () => startedAtDate  } : null,
           startedAtPrecision:  startedAtDate  ? startedAtPrec  : null,
-          finishedAt:          finishedAtDate ? { toDate: () => finishedAtDate } : (existing?.finishedAt || null),
-          finishedAtPrecision: finishedAtDate ? finishedAtPrec : (existing?.finishedAtPrecision || null),
+          finishedAt:          finishedAtDate ? { toDate: () => finishedAtDate } : null,
+          finishedAtPrecision: finishedAtDate ? finishedAtPrec : null,
           language: langInput.value.trim() || null,
           format:   fmtSel.value           || null,
           rating:   starPicker.getValue(),
