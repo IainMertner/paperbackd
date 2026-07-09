@@ -126,7 +126,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, syncBookActivity } from '../js/firebase.js';
+    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, syncBookActivity, getAuthorCountryOverrides } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
@@ -180,6 +180,13 @@
       return doc?.slug ? doc : null;
     }
 
+    // Loaded once; used by repairBook and the background country fetch on book-add
+    let _authorOverridesCache = null;
+    async function getOverrides() {
+      if (!_authorOverridesCache) _authorOverridesCache = await getAuthorCountryOverrides();
+      return _authorOverridesCache;
+    }
+
     async function repairBook(book) {
       const updates = {};
 
@@ -225,34 +232,40 @@
         updates.country = normalizeCountry(storedCountry);
       }
 
-      // Phase 3: Wikidata country lookup if missing
+      // Phase 3: country lookup — overrides first, then Wikidata
       const authorForCountry = updates.author || book.author;
       if (!book.country && !updates.country && authorForCountry) {
-        try {
-          const base = 'https://www.wikidata.org/w/api.php';
-          const sr = await fetch(`${base}?action=wbsearchentities&search=${encodeURIComponent(authorForCountry)}&language=en&type=item&format=json&origin=*&limit=1`);
-          if (sr.ok) {
-            const sd = await sr.json();
-            const qid = sd.search?.[0]?.id;
-            if (qid) {
-              const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
-              if (er.ok) {
-                const ed = await er.json();
-                const p27 = ed.entities?.[qid]?.claims?.P27 || [];
-                const bestP27 = p27.find(c => c.rank === 'preferred') || p27.find(c => c.rank === 'normal') || p27[0];
-                const countryQid = bestP27?.mainsnak?.datavalue?.value?.id;
-                if (countryQid) {
-                  const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
-                  if (lr.ok) {
-                    const ld = await lr.json();
-                    const countryName = ld.entities?.[countryQid]?.labels?.en?.value;
-                    if (countryName) updates.country = normalizeCountry(countryName);
+        const overrides = await getOverrides();
+        const overrideKey = authorForCountry.toLowerCase().trim();
+        if (overrides[overrideKey]) {
+          updates.country = overrides[overrideKey];
+        } else {
+          try {
+            const base = 'https://www.wikidata.org/w/api.php';
+            const sr = await fetch(`${base}?action=wbsearchentities&search=${encodeURIComponent(authorForCountry)}&language=en&type=item&format=json&origin=*&limit=1`);
+            if (sr.ok) {
+              const sd = await sr.json();
+              const qid = sd.search?.[0]?.id;
+              if (qid) {
+                const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
+                if (er.ok) {
+                  const ed = await er.json();
+                  const p27 = ed.entities?.[qid]?.claims?.P27 || [];
+                  const bestP27 = p27.find(c => c.rank === 'preferred') || p27.find(c => c.rank === 'normal') || p27[0];
+                  const countryQid = bestP27?.mainsnak?.datavalue?.value?.id;
+                  if (countryQid) {
+                    const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
+                    if (lr.ok) {
+                      const ld = await lr.json();
+                      const countryName = ld.entities?.[countryQid]?.labels?.en?.value;
+                      if (countryName) updates.country = normalizeCountry(countryName);
+                    }
                   }
                 }
               }
             }
-          }
-        } catch (e) { /* silently ignore */ }
+          } catch (e) { /* silently ignore */ }
+        }
       }
 
       return updates;
@@ -2598,11 +2611,17 @@
             suggestBox.innerHTML     = '';
             suggestBox.style.display = 'none';
             setAddEnabled(true);
-            // Background country fetch via Wikidata — store Promise so save handlers can await it
+            // Background country fetch — overrides first, then Wikidata
             if (author) {
               const capturedBook = selectedBook;
               capturedBook._countryFetch = (async () => {
                 try {
+                  const overrides   = await getOverrides();
+                  const overrideKey = author.toLowerCase().trim();
+                  if (overrides[overrideKey]) {
+                    capturedBook.country = overrides[overrideKey];
+                    return;
+                  }
                   const base = 'https://www.wikidata.org/w/api.php';
                   const sr = await fetch(`${base}?action=wbsearchentities&search=${encodeURIComponent(author)}&language=en&type=item&format=json&origin=*&limit=1`);
                   if (!sr.ok) return;

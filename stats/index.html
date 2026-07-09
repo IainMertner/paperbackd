@@ -897,6 +897,7 @@
 
       addBtn.addEventListener('click', () => {
         editMode = !editMode;
+        addBtn.textContent = editMode ? 'Done' : 'Edit targets';
         addForm.style.display = editMode ? 'flex' : 'none';
         sectionsEl.querySelectorAll('.target-remove-btn').forEach(b => { b.style.display = editMode ? 'block' : 'none'; });
         sectionsEl.querySelectorAll('.target-input-row').forEach(r => { r.style.display = editMode ? 'flex' : 'none'; });
@@ -1247,14 +1248,25 @@
       const accent  = cssVar('--accent');
       const border  = cssVar('--border');
       const bgCard  = cssVar('--bg-card');
-      const max     = Math.max(...Object.values(counts), 1);
+      const max      = Math.max(...Object.values(counts), 1);
+      const nonZero  = Object.values(counts).filter(v => v > 0);
+      const minCount = nonZero.length ? Math.min(...nonZero) : 1;
 
       // Parse a hex color into [r, g, b] — getComputedStyle always returns hex here
       const hexRgb = h => { h = h.trim().replace(/^#/,''); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; };
       const [ar,ag,ab] = hexRgb(accent);
-      const [br,bg,bb] = hexRgb(bgCard);
-      // Mix accent into background: min 0.2 so even 1-book countries have clear colour
-      const mixColor = t => `rgb(${Math.round(br+(ar-br)*(0.2+t*0.8))},${Math.round(bg+(ag-bg)*(0.2+t*0.8))},${Math.round(bb+(ab-bb)*(0.2+t*0.8))})`;
+      // 3-stop gradient in the accent hue: very light (t=0) → accent (t=0.5) → very dark (t=1)
+      // Lightness levels match the reference scale: ~87% / ~63% / ~19%
+      const lR = Math.round(255 * 0.85 + ar * 0.15), lG = Math.round(255 * 0.85 + ag * 0.15), lB = Math.round(255 * 0.85 + ab * 0.15);
+      const mR = Math.round(255 * 0.30 + ar * 0.70), mG = Math.round(255 * 0.30 + ag * 0.70), mB = Math.round(255 * 0.30 + ab * 0.70);
+      const dR = Math.round(ar * 0.55),               dG = Math.round(ag * 0.55),               dB = Math.round(ab * 0.55);
+      const mixColor = t => {
+        let r, g, b;
+        if (t <= 0.5) { const u = t * 2; r = Math.round(lR + (mR-lR)*u); g = Math.round(lG + (mG-lG)*u); b = Math.round(lB + (mB-lB)*u); }
+        else          { const u = (t-0.5)*2; r = Math.round(mR + (dR-mR)*u); g = Math.round(mG + (dG-mG)*u); b = Math.round(mB + (dB-mB)*u); }
+        return `rgb(${r},${g},${b})`;
+      };
+      const noValueColor = '#FFFFFF';
       function project([lon, lat]) {
         const λ = lon * Math.PI / 180;
         const φ = lat * Math.PI / 180;
@@ -1297,11 +1309,11 @@
         }
         if (!iso || iso === 'aq') continue;
         const count = counts[iso] || 0;
-        const t     = count > 0 ? Math.pow(count / max, 0.6) : 0;
+        const t     = count > 0 ? (max === minCount ? 1 : (count - minCount) / (max - minCount)) : 0;
         const p     = featurePath(feat.geometry);
         drawn.push({ p, iso, count, t, name: feat.properties.NAME });
         ctx.globalAlpha = 1;
-        ctx.fillStyle   = count > 0 ? mixColor(t) : bgCard;
+        ctx.fillStyle   = count > 0 ? mixColor(t) : noValueColor;
         ctx.fill(p);
       }
       ctx.globalAlpha = 1;

@@ -174,6 +174,13 @@
       return wrap;
     }
 
+    function looksLatin(text) {
+      const letters = (text.match(/\p{L}/gu) || []);
+      if (!letters.length) return true;
+      const nonLatin = letters.filter(c => c > 'ɏ').length;
+      return nonLatin / letters.length < 0.15;
+    }
+
     try {
       const [hcRes, following, myBook] = await Promise.all([
         fetch(HARDCOVER_PROXY, {
@@ -207,11 +214,13 @@
       const authorSlug  = authorData?.slug || author.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       const pages       = hcBook.pages  || myBook?.totalPages || 0;
       const cover       = hcBook.cached_image?.url || myBook?.coverUrl || '';
-      const desc        = hcBook.description || '';
       const releaseYear = hcBook.release_year || null;
-      const isbn        = hcBook.editions?.find(e => e.isbn_13)?.isbn_13
-                       || hcBook.editions?.find(e => e.isbn_10)?.isbn_10
+      const editions    = hcBook.editions || [];
+      const isbn        = editions.find(e => e.isbn_13)?.isbn_13
+                       || editions.find(e => e.isbn_10)?.isbn_10
                        || null;
+      const rawDesc     = hcBook.description || '';
+      const desc        = looksLatin(rawDesc) ? rawDesc : '';
 
       document.title = `${title} - paperbackd`;
 
@@ -231,7 +240,7 @@
           </div>
           ${author ? `<div style="color:var(--text-muted);font-size:.875rem;margin-top:.2rem"><a href="../author/?slug=${encodeURIComponent(authorSlug)}" style="color:inherit;text-decoration:none">${esc(author)}</a></div>` : ''}
           ${pages  ? `<div style="color:var(--text-muted);font-size:.78rem;margin-top:.15rem">${pages} pages</div>` : ''}
-          ${desc   ? `<div class="book-desc" style="font-size:.825rem;color:var(--text-muted);margin-top:.75rem;line-height:1.55">${esc(desc.slice(0, 300))}${desc.length > 300 ? '<span class="book-desc-more" style="cursor:pointer">…</span>' : ''}</div>` : ''}
+          ${desc   ? `<div class="book-desc" style="font-size:.825rem;color:var(--text-muted);margin-top:.75rem;line-height:1.55">${esc(desc.slice(0, 300))}${desc.length > 300 ? '<span class="book-desc-more" style="cursor:pointer;color:var(--accent);white-space:nowrap">… more</span>' : ''}</div>` : ''}
           ${myBook ? `<div style="margin-top:.625rem;font-size:.8rem;color:var(--accent);font-weight:500">${myBook.status === 'reading' ? (myBook.totalPages ? `You're reading this · page ${myBook.currentPage} of ${myBook.totalPages}` : `You're currently reading this`) : `You've finished this`}</div>${myBook.status === 'finished' ? renderStars(myBook.rating) : ''}${myBook.status === 'finished' && myBook.review ? `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(myBook.review.slice(0, 200))}${myBook.review.length > 200 ? '…' : ''}</div>` : ''}` : ''}
         </div>
       </div>`;
@@ -243,42 +252,22 @@
       });
 
       // ── Library actions ──────────────────────────────────────────────────────
-      if (!myBook) {
-        const actionsCard = document.createElement('div');
-        actionsCard.className = 'card';
-
-        const btnRow = document.createElement('div');
-        btnRow.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap';
-
-        const startBtn    = document.createElement('button');
-        startBtn.className = 'join-club-btn';
-        startBtn.textContent = 'Start reading';
-
-        const alreadyBtn  = document.createElement('button');
-        alreadyBtn.className = 'btn-update';
-        alreadyBtn.textContent = 'Mark as finished';
-
-        const addToListWrap = document.createElement('div');
-        addToListWrap.style.cssText = 'position:relative;display:flex';
-        const addToListBtn = document.createElement('button');
-        addToListBtn.className = 'btn-update';
-        addToListBtn.textContent = 'Lists ▾';
-        addToListBtn.disabled = true;
-        const addToListDrop = document.createElement('div');
-        addToListDrop.style.cssText = 'display:none;position:absolute;left:0;top:calc(100% + 4px);background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:100;min-width:160px;padding:.25rem 0';
-        addToListWrap.append(addToListBtn, addToListDrop);
-
-        btnRow.append(startBtn, alreadyBtn, addToListWrap);
-        actionsCard.appendChild(btnRow);
-        detail.appendChild(actionsCard);
-
-        addToListBtn.addEventListener('click', e => {
+      function setupListsButton() {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'position:relative;display:flex';
+        const btn = document.createElement('button');
+        btn.className = 'btn-update';
+        btn.textContent = 'Lists ▾';
+        btn.disabled = true;
+        const drop = document.createElement('div');
+        drop.style.cssText = 'display:none;position:absolute;left:0;top:calc(100% + 4px);background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:100;min-width:160px;padding:.25rem 0';
+        wrap.append(btn, drop);
+        btn.addEventListener('click', e => {
           e.stopPropagation();
-          addToListDrop.style.display = addToListDrop.style.display === 'none' ? '' : 'none';
+          drop.style.display = drop.style.display === 'none' ? '' : 'none';
         });
-        document.addEventListener('click', () => { addToListDrop.style.display = 'none'; });
-        addToListDrop.addEventListener('click', e => e.stopPropagation());
-
+        document.addEventListener('click', () => { drop.style.display = 'none'; });
+        drop.addEventListener('click', e => e.stopPropagation());
         (async () => {
           try {
             let lists = await getLists(user.uid);
@@ -292,9 +281,8 @@
             ];
             const membership = {};
             sortedLists.forEach(l => { membership[l.id] = (l.books || []).some(b => b.gbid === gbid); });
-
-            function buildAddToListDrop() {
-              addToListDrop.innerHTML = '';
+            function buildDrop() {
+              drop.innerHTML = '';
               sortedLists.forEach(l => {
                 const item = document.createElement('div');
                 item.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.4rem .75rem;cursor:pointer;font-size:.85rem';
@@ -317,16 +305,36 @@
                     membership[l.id] = true;
                   }
                   item.style.opacity = '';
-                  buildAddToListDrop();
+                  buildDrop();
                 });
-                addToListDrop.appendChild(item);
+                drop.appendChild(item);
               });
             }
-
-            buildAddToListDrop();
-            addToListBtn.disabled = false;
+            buildDrop();
+            btn.disabled = false;
           } catch (e) { console.error('lists:', e); }
         })();
+        return wrap;
+      }
+
+      if (!myBook) {
+        const actionsCard = document.createElement('div');
+        actionsCard.className = 'card';
+
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap';
+
+        const startBtn    = document.createElement('button');
+        startBtn.className = 'join-club-btn';
+        startBtn.textContent = 'Start reading';
+
+        const alreadyBtn  = document.createElement('button');
+        alreadyBtn.className = 'btn-update';
+        alreadyBtn.textContent = 'Mark as finished';
+
+        btnRow.append(startBtn, alreadyBtn, setupListsButton());
+        actionsCard.appendChild(btnRow);
+        detail.appendChild(actionsCard);
 
         function showDone(msg) {
           actionsCard.innerHTML = `<div style="font-size:.85rem;color:var(--accent);font-weight:500">${msg}</div>`;
@@ -403,6 +411,11 @@
             }
           });
         });
+      } else {
+        const listsCard = document.createElement('div');
+        listsCard.className = 'card';
+        listsCard.appendChild(setupListsButton());
+        detail.appendChild(listsCard);
       }
 
 

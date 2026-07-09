@@ -33,6 +33,22 @@
   <main class="page-content">
 
     <div class="settings-group">
+      <div class="settings-group-label">Author country overrides</div>
+      <div class="settings-list">
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.75rem;padding:.875rem 1rem">
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Map an author name to a country. Repair uses these instead of Wikidata, and new books trigger it automatically.</p>
+          <div style="display:flex;gap:.5rem;width:100%">
+            <input type="text" id="override-author" class="join-club-input" placeholder="Author name" autocomplete="off" spellcheck="false" style="flex:2;min-width:0">
+            <input type="text" id="override-country" class="join-club-input" placeholder="Country" autocomplete="off" spellcheck="false" style="flex:1;min-width:0">
+            <button class="btn-update" id="override-add-btn" type="button">Add</button>
+          </div>
+          <div id="override-status" style="display:none;font-size:.85rem"></div>
+          <div id="override-list" style="width:100%;display:flex;flex-direction:column;gap:.35rem"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
       <div class="settings-group-label">Admin console</div>
       <div class="settings-list">
 
@@ -135,7 +151,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { ROOT, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs } from '../js/firebase.js';
+    import { ROOT, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
@@ -155,6 +171,74 @@
     } finally {
       document.body.classList.remove('auth-loading');
     }
+
+    // ── Author country overrides ──────────────────────────────────────────────
+    const overrideAuthorInput  = document.getElementById('override-author');
+    const overrideCountryInput = document.getElementById('override-country');
+    const overrideAddBtn       = document.getElementById('override-add-btn');
+    const overrideStatus       = document.getElementById('override-status');
+    const overrideList         = document.getElementById('override-list');
+
+    async function renderOverrides() {
+      const overrides = await getAuthorCountryOverrides();
+      overrideList.innerHTML = '';
+      const entries = Object.entries(overrides).sort((a, b) => a[0].localeCompare(b[0]));
+      if (!entries.length) {
+        overrideList.innerHTML = '<span style="font-size:.82rem;color:var(--text-muted)">No overrides yet.</span>';
+        return;
+      }
+      for (const [key, country] of entries) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.5rem;font-size:.85rem';
+        const label = document.createElement('span');
+        label.style.flex = '1';
+        label.textContent = `${key} → ${country}`;
+        const del = document.createElement('button');
+        del.textContent = 'Remove';
+        del.style.cssText = 'padding:.2rem .5rem;font-size:.8rem;font-family:inherit;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;color:var(--text-muted)';
+        del.addEventListener('click', async () => {
+          del.disabled = true;
+          await deleteAuthorCountryOverride(key);
+          await renderOverrides();
+        });
+        row.appendChild(label);
+        row.appendChild(del);
+        overrideList.appendChild(row);
+      }
+    }
+
+    overrideAddBtn.addEventListener('click', async () => {
+      const author  = overrideAuthorInput.value.trim();
+      const country = overrideCountryInput.value.trim();
+      overrideStatus.style.display = 'none';
+      if (!author || !country) {
+        overrideStatus.textContent = 'Enter both an author name and a country.';
+        overrideStatus.style.color = 'var(--danger,#d44)';
+        overrideStatus.style.display = '';
+        return;
+      }
+      overrideAddBtn.disabled = true;
+      try {
+        await setAuthorCountryOverride(author, country);
+        overrideAuthorInput.value = '';
+        overrideCountryInput.value = '';
+        overrideStatus.textContent = `Saved — ${author.toLowerCase().trim()} → ${country}.`;
+        overrideStatus.style.color = 'var(--accent)';
+        overrideStatus.style.display = '';
+        await renderOverrides();
+      } catch (err) {
+        overrideStatus.textContent = `Failed: ${err.message || 'unknown error'}`;
+        overrideStatus.style.color = 'var(--danger,#d44)';
+        overrideStatus.style.display = '';
+      } finally {
+        overrideAddBtn.disabled = false;
+      }
+    });
+
+    overrideAuthorInput.addEventListener('keydown',  e => { if (e.key === 'Enter') overrideCountryInput.focus(); });
+    overrideCountryInput.addEventListener('keydown', e => { if (e.key === 'Enter') overrideAddBtn.click(); });
+
+    renderOverrides();
 
     // ── User lookup ───────────────────────────────────────────────────────────
     const lookupBtn    = document.getElementById('lookup-btn');
@@ -466,12 +550,18 @@
           }
         }
 
-        // ── Phase 3: fill country via Wikidata ────────────────────────────────
+        // ── Phase 3: fill country via overrides then Wikidata ─────────────────
         if (needsCountry.length) {
           repairStatus.textContent = `Looking up countries for ${needsCountry.length} book${needsCountry.length === 1 ? '' : 's'}…`;
-          const authorMap   = new Map();
-          const uniqueAuthors = [...new Set(needsCountry.map(b => b.author))];
+          const authorOverrides = await getAuthorCountryOverrides();
+          const authorMap       = new Map();
+          const uniqueAuthors   = [...new Set(needsCountry.map(b => b.author))];
           for (const authorName of uniqueAuthors) {
+            const overrideKey = authorName.toLowerCase().trim();
+            if (authorOverrides[overrideKey]) {
+              authorMap.set(authorName, authorOverrides[overrideKey]);
+              continue;
+            }
             try {
               const base = 'https://www.wikidata.org/w/api.php';
               const sr = await fetch(`${base}?action=wbsearchentities&search=${encodeURIComponent(authorName)}&language=en&type=item&format=json&origin=*&limit=1`);

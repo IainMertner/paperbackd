@@ -228,6 +228,24 @@ export function updateDisplayName(uid, name) {
   return updateDoc(doc(db, 'users', uid), { displayName: name || deleteField() });
 }
 
+// ── Author country overrides ─────────────────────────────────────────────────
+const OVERRIDES_DOC = () => doc(db, 'config', 'authorCountryOverrides');
+
+export async function getAuthorCountryOverrides() {
+  const snap = await getDoc(OVERRIDES_DOC());
+  return snap.exists() ? (snap.data().overrides || {}) : {};
+}
+
+export async function setAuthorCountryOverride(author, country) {
+  const key = author.toLowerCase().trim();
+  await setDoc(OVERRIDES_DOC(), { overrides: { [key]: country } }, { merge: true });
+}
+
+export async function deleteAuthorCountryOverride(author) {
+  const key = author.toLowerCase().trim();
+  await updateDoc(OVERRIDES_DOC(), { [`overrides.${key}`]: deleteField() });
+}
+
 export async function updateBookCover(uid, bookId, coverUrl, { gbid, title } = {}) {
   await updateDoc(doc(db, 'users', uid, 'books', bookId), { coverUrl });
   if (gbid || title) {
