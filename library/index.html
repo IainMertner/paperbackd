@@ -2413,6 +2413,12 @@
           applyFilter();
         }
 
+        const preQ = params.get('q');
+        if (preQ) {
+          filterInput.value = preQ;
+          applyFilter();
+        }
+
         function updateToggleUI() {
           gridBtn.style.opacity = viewMode === 'grid' ? '1' : '0.45';
           listBtn.style.opacity = viewMode === 'list' ? '1' : '0.45';

@@ -436,7 +436,7 @@
       return { m, b, pValue: tPValue(Math.abs(m / SE), n - 2) };
     }
 
-    function drawScatter(canvasEl, points, { xLabel, yMin = 0, yMax = 5, logX = false }) {
+    function drawScatter(canvasEl, points, { xLabel, yMin = 0, yMax = 5, logX = false, onPointClick = null }) {
       const dpr   = window.devicePixelRatio || 1;
       const W_CSS = canvasEl.parentElement.clientWidth;
       const H_CSS = 256;
@@ -599,15 +599,13 @@
 
       canvasEl.onmousemove = e => {
         const best = nearestPoint(e.clientX, e.clientY);
-        canvasEl.style.cursor = best >= 0 ? 'pointer' : '';
+        canvasEl.style.cursor = (onPointClick && best >= 0) ? 'pointer' : '';
         render(best);
       };
       canvasEl.onmouseleave = () => { canvasEl.style.cursor = ''; render(); };
       canvasEl.onclick = e => {
         const best = nearestPoint(e.clientX, e.clientY);
-        if (best >= 0 && rendered[best].gbid) {
-          location.href = `../book/?gbid=${encodeURIComponent(rendered[best].gbid)}`;
-        }
+        if (best >= 0 && rendered[best].label) onPointClick(rendered[best].label);
       };
 
       return reg || null;
@@ -1070,9 +1068,7 @@
             ctx.fillStyle = '#fff';
             ctx.fill();
             ctx.restore();
-            ctx.filter = 'saturate(0.55) sepia(0.15)';
             ctx.drawImage(flagImg, x - r, y - r, r * 2, r * 2);
-            ctx.filter = 'none';
             // 3D bubble shading
             ctx.save();
             ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.clip();
@@ -1619,7 +1615,8 @@
       }
 
       if (ptsPages.length >= 2) {
-        const reg = drawScatter(pagesCanvas, ptsPages, { xLabel: 'Pages', yMin: 0, yMax: 5, logX: true });
+        const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
+        const reg = drawScatter(pagesCanvas, ptsPages, { xLabel: 'Pages', yMin: 0, yMax: 5, logX: true, onPointClick: t => { location.href = `../library/?q=${encodeURIComponent(t)}${u}`; } });
         if (reg) {
           const p = reg.pValue, up = reg.m > 0;
           document.getElementById('chart-pages-summary').innerHTML = p < 0.05 && up
@@ -1638,7 +1635,7 @@
       }
 
       if (ptsAge.length >= 2) {
-        const reg = drawScatter(ageCanvas, ptsAge, { xLabel: 'Book age (years)', yMin: 0, yMax: 5, logX: true });
+        const reg = drawScatter(ageCanvas, ptsAge, { xLabel: 'Book age (years)', yMin: 0, yMax: 5, logX: true, onPointClick: t => { location.href = `../library/?q=${encodeURIComponent(t)}${u}`; } });
         if (reg) {
           const p = reg.pValue, up = reg.m > 0;
           document.getElementById('chart-age-summary').innerHTML = p < 0.05 && up

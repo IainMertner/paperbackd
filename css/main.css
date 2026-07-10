@@ -17,11 +17,15 @@
   --accent-dim:   #E4EAD3;
   --accent-nav:   #7D5510;
   --accent-nav-dim: #F7E8B8;
+  --palette-grey:       #6C6460;
+  --palette-olive:      #6B7B3A;
+  --palette-yellow:     #D4AA55;
   --palette-terracotta: #B85C3A;
-  --palette-amber:      #C4832A;
+  --palette-teal:       #3A9E8C;
   --palette-burgundy:   #7A2E40;
   --palette-slate:      #2E62A0;
   --palette-rose:       #C95C80;
+  --palette-amber:      #C4832A;
   --border:       #BFBAAD;
   --nav-bg:       #FAF7F2;
   --shadow:       0 1px 3px rgba(0,0,0,.07);
