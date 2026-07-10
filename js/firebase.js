@@ -48,10 +48,11 @@ export const ROOT = new URL('..', import.meta.url).href;
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
-export async function signUp(username, password) {
+export async function signUp(username, password, displayName) {
   if (!/^[a-z0-9_]{3,16}$/.test(username)) {
     throw new Error('Username must be 3–16 characters: lowercase letters, numbers, underscores.');
   }
+  if (!displayName?.trim()) throw new Error('Please enter a display name.');
   const taken = await getDoc(doc(db, 'usernames', username));
   if (taken.exists()) throw new Error('That username is already taken.');
 
@@ -61,7 +62,7 @@ export async function signUp(username, password) {
   const uid  = cred.user.uid;
 
   await Promise.all([
-    setDoc(doc(db, 'users', uid),          { username, createdAt: serverTimestamp(), following: [] }),
+    setDoc(doc(db, 'users', uid),          { username, displayName: displayName.trim(), createdAt: serverTimestamp(), following: [] }),
     setDoc(doc(db, 'usernames', username), { uid, authEmail })
   ]);
 
@@ -228,6 +229,10 @@ export function updateDisplayName(uid, name) {
   return updateDoc(doc(db, 'users', uid), { displayName: name || deleteField() });
 }
 
+export function updateBio(uid, bio) {
+  return updateDoc(doc(db, 'users', uid), { bio: bio || deleteField() });
+}
+
 // ── Author country overrides ─────────────────────────────────────────────────
 const OVERRIDES_DOC = () => doc(db, 'config', 'authorCountryOverrides');
 
@@ -290,6 +295,21 @@ export async function getBooks(uid) {
 export async function getFinishedBooks(uid) {
   const snap = await getDocs(query(collection(db, 'users', uid, 'books'), where('status', '==', 'finished')));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function getReadingBooks(uid) {
+  const snap = await getDocs(query(collection(db, 'users', uid, 'books'), where('status', '==', 'reading')));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function getRecentlyFinishedBooks(uid) {
+  const snap = await getDocs(query(
+    collection(db, 'users', uid, 'books'),
+    where('status', '==', 'finished')
+  ));
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.finishedAt?.seconds ?? 0) - (a.finishedAt?.seconds ?? 0));
 }
 
 export async function addFinishedBook(uid, { title, author, totalPages, gbid, coverUrl, rating, review, releaseYear, country, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
@@ -374,7 +394,7 @@ export function updateBookProgress(uid, bookId, currentPage) {
   return updateDoc(doc(db, 'users', uid, 'books', bookId), { currentPage });
 }
 
-export function finishBook(uid, bookId, { title, author, gbid, rating, review, language, format, coverUrl, startedAt, startedAtPrecision, finishedAt, finishedAtPrecision } = {}, username) {
+export async function finishBook(uid, bookId, { title, author, gbid, rating, review, language, format, coverUrl, startedAt, startedAtPrecision, finishedAt, finishedAtPrecision } = {}, username) {
   const toTS = d => d instanceof Date ? Timestamp.fromDate(d) : (d?.toDate ? Timestamp.fromDate(d.toDate()) : null);
   const newRead = {
     startedAt:           toTS(startedAt) || null,
@@ -389,7 +409,14 @@ export function finishBook(uid, bookId, { title, author, gbid, rating, review, l
   const bookUpdate = { status: 'finished', finishedAt: serverTimestamp(), finishedAtPrecision: 'day', reads: arrayUnion(newRead) };
   if (rating != null) bookUpdate.rating = rating;
   if (review)         bookUpdate.review = review;
-  return Promise.all([
+
+  const actSnap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
+  const startedDocs = actSnap.docs.filter(d => {
+    const data = d.data();
+    return data.type === 'started' && ((gbid && data.gbid === gbid) || data.bookTitle === title);
+  });
+
+  await Promise.all([
     updateDoc(doc(db, 'users', uid, 'books', bookId), bookUpdate),
     addDoc(collection(db, 'activity'), {
       uid,
@@ -403,7 +430,8 @@ export function finishBook(uid, bookId, { title, author, gbid, rating, review, l
       rating:     rating ?? null,
       hasReview:  !!(review && review.trim()),
       timestamp:  serverTimestamp()
-    })
+    }),
+    ...startedDocs.map(d => updateDoc(d.ref, { currentPage: 0 })),
   ]);
 }
 
@@ -851,6 +879,22 @@ export async function getFeed(currentUid, followingUids, cursor = null, pageSize
   };
 }
 
+export async function repairStartedActivityForFinishedBooks(uid) {
+  const [booksSnap, activitySnap] = await Promise.all([
+    getDocs(query(collection(db, 'users', uid, 'books'), where('status', '==', 'finished'))),
+    getDocs(query(collection(db, 'activity'), where('uid', '==', uid)))
+  ]);
+  const finishedGbids  = new Set(booksSnap.docs.map(d => d.data().gbid).filter(Boolean));
+  const finishedTitles = new Set(booksSnap.docs.map(d => d.data().title).filter(Boolean));
+  const toFix = activitySnap.docs.filter(d => {
+    const data = d.data();
+    if (data.type !== 'started') return false;
+    return (data.gbid && finishedGbids.has(data.gbid)) || finishedTitles.has(data.bookTitle);
+  });
+  await Promise.all(toFix.map(d => updateDoc(d.ref, { currentPage: 0 })));
+  return toFix.length;
+}
+
 export async function repairActivityDocs(uid) {
   const [booksSnap, activitySnap] = await Promise.all([
     getDocs(collection(db, 'users', uid, 'books')),
@@ -874,5 +918,11 @@ export async function repairActivityDocs(uid) {
   }
   await Promise.all(writes);
   return writes.length;
+}
+
+export async function setThemeColorForAllUsers(color) {
+  const snap = await getDocs(collection(db, 'users'));
+  await Promise.all(snap.docs.map(d => updateDoc(d.ref, { avatarBorderColor: color })));
+  return snap.docs.length;
 }
 

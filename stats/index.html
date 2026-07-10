@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -10,9 +10,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Stats - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
-  <script>
-    (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
-  </script>
   <style>
     .stats-tab-bar {
       display: flex;
@@ -146,7 +143,7 @@
       font-size: inherit;
     }
     .view-toggle-btn.active {
-      background: var(--accent);
+      background: var(--palette-slate);
       color: #fff;
     }
     .chart-wrap {
@@ -174,15 +171,14 @@
 
   <header class="site-header">
     <div class="header-inner">
-      <a class="logo" href="/feed/">paperbackd</a>
+      <a class="logo" href="/feed/">paperbackd<span class="title-dot">.</span></a>
       <nav class="desktop-nav">
-        <a href="../feed/"     data-nav="feed">Feed</a>
-        <a href="../search/"   data-nav="search">Search</a>
-        <a href="../library/"  data-nav="library">Library</a>
-        <a href="../profile/"  data-nav="profile">Profile</a>
-        <a href="../stats/"    data-nav="stats">Stats</a>
+        <a href="../feed/"     data-nav="feed">feed</a>
+        <a href="../search/"   data-nav="search">search</a>
+        <a href="../library/"  data-nav="library">library</a>
+        <a href="../profile/"  data-nav="profile">profile</a>
+        <a href="../stats/"    data-nav="stats">stats</a>
       </nav>
-      <button class="theme-toggle" aria-label="Toggle theme"></button>
     </div>
   </header>
 
@@ -195,23 +191,23 @@
       <button class="stats-tab-btn"        id="tab-targets">Targets</button>
     </div>
 
-    <!-- General Stats panel -->
+    <!-- General stats panel -->
     <div id="panel-general">
       <div class="card chart-card" id="chart-countries-card" style="padding-top:.5rem;padding-bottom:.5rem">
         <div class="chart-title-row">
           <div class="chart-title">Countries</div>
           <div class="view-toggle" id="countries-view-toggle" style="display:none">
-            <button class="view-toggle-btn active" id="countries-bubble-btn" title="Bubble chart">
+            <button class="view-toggle-btn active" id="countries-map-btn" title="Map">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="8" cy="8" r="5.5"/>
+                <path d="M2.5 8h11M8 2.5c-2 2-2 7 0 11M8 2.5c2 2 2 7 0 11"/>
+              </svg>
+            </button>
+            <button class="view-toggle-btn" id="countries-bubble-btn" title="Bubble chart">
               <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
                 <circle cx="5.5" cy="10" r="3.5"/>
                 <circle cx="12" cy="6.5" r="2.5"/>
                 <circle cx="10" cy="13" r="1.5"/>
-              </svg>
-            </button>
-            <button class="view-toggle-btn" id="countries-map-btn" title="Map">
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="8" cy="8" r="5.5"/>
-                <path d="M2.5 8h11M8 2.5c-2 2-2 7 0 11M8 2.5c2 2 2 7 0 11"/>
               </svg>
             </button>
           </div>
@@ -251,28 +247,28 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
       </svg>
-      Feed
+      feed
     </a>
     <a class="mobile-nav-item" href="../search/" data-nav="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="11" cy="11" r="8"/>
         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
-      Search
+      search
     </a>
     <a class="mobile-nav-item" href="../library/" data-nav="library">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
         <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
       </svg>
-      Library
+      library
     </a>
     <a class="mobile-nav-item" href="../profile/" data-nav="profile">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
         <circle cx="12" cy="7" r="4"/>
       </svg>
-      Profile
+      profile
     </a>
     <a class="mobile-nav-item" href="../stats/" data-nav="stats">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -280,7 +276,7 @@
         <rect x="10" y="3" width="4" height="17" rx="0.5"/>
         <rect x="17" y="9" width="4" height="11" rx="0.5"/>
       </svg>
-      Stats
+      stats
     </a>
   </nav>
 
@@ -298,7 +294,11 @@
     const TARGET_TYPES  = { books: 'Books read', countries: 'Countries' };
     const PERIODS       = ['monthly', 'yearly', 'overall'];
     const PERIOD_LABELS = { monthly: 'Monthly', yearly: 'Yearly', overall: 'Overall' };
-    const PERIOD_COLORS = { monthly: '#3b82f6', yearly: '#f59e0b', overall: '#8b5cf6' };
+    const PERIOD_COLORS = {
+      monthly: getComputedStyle(document.documentElement).getPropertyValue('--palette-terracotta').trim(),
+      yearly:  '#E0AC00',
+      overall: getComputedStyle(document.documentElement).getPropertyValue('--palette-burgundy').trim(),
+    };
 
     let editMode = false;
 
@@ -319,7 +319,7 @@
 
     const PIE_COLOR_OTHER = '#6b7280';
 
-    const PIE_COLORS = ['#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#6366f1','#14b8a6','#f43f5e','#eab308','#a855f7'];
+    const PIE_COLORS = ['#C4607A','#3A68B0','#B85C3A','#7A2E40','#C4832A','#6B7B3A','#3A7A72','#8A6040','#E0AC00','#B8963A','#3A6B4A','#7A8A5A','#8A7A6A','#6A6A8A'];
 
     const COUNTRY_ISO = {
       'united states': 'us', 'usa': 'us', 'us': 'us',
@@ -436,17 +436,14 @@
       const ctx = canvasEl.getContext('2d');
       ctx.scale(dpr, dpr);
 
-      // measure star label width so left padding is exactly what's needed
-      ctx.font = `11px -apple-system, "Segoe UI Symbol", sans-serif`;
-      const starLabelW = Math.ceil(ctx.measureText('★★★★★').width);
-      const pad = { top: 18, right: 18, bottom: 46, left: starLabelW + 10 };
+      const pad = { top: 18, right: 18, bottom: 46, left: 18 };
       const W = W_CSS, H = H_CSS;
       const plotW = W - pad.left - pad.right;
       const plotH = H - pad.top  - pad.bottom;
 
       const muted  = cssVar('--text-muted');
       const border = cssVar('--border');
-      const accent = cssVar('--accent');
+      const accent = cssVar('--palette-rose');
       const bgCard = cssVar('--bg-card') || cssVar('--bg');
       const bgAlt  = cssVar('--bg-alt');
 
@@ -471,8 +468,7 @@
         ctx.fillRect(pad.left, pad.top, plotW, plotH);
       }
 
-      // Dashed horizontal grid lines + star Y labels
-      ctx.font = `11px -apple-system, "Segoe UI Symbol", sans-serif`;
+      // Dashed horizontal grid lines
       for (let r = yMin; r <= yMax; r++) {
         const y = toY(r);
         if (r > yMin) {
@@ -486,12 +482,6 @@
           ctx.stroke();
           ctx.setLineDash([]);
           ctx.globalAlpha = 1;
-        }
-        if (r > 0) {
-          ctx.fillStyle = '#f59e0b';
-          ctx.textAlign = 'right';
-          ctx.textBaseline = 'middle';
-          ctx.fillText('★'.repeat(r), pad.left - 5, y);
         }
       }
 
@@ -722,8 +712,8 @@
     } else {
 
     document.getElementById('page-heading').innerHTML = isOwn
-      ? 'Stats'
-      : `<a href="../profile/?u=${encodeURIComponent(targetProfile.username)}" style="color:inherit;text-decoration:none">${targetProfile.username}</a>'s stats`;
+      ? 'stats<span class="title-dot">.</span>'
+      : `<a href="../profile/?u=${encodeURIComponent(targetProfile.username)}" style="color:var(--accent);text-decoration:none">${targetProfile.username}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>stats<span class="title-dot">.</span>`;
 
     const books = await getFinishedBooks(targetProfile.uid);
 
@@ -1021,7 +1011,7 @@
       const ctx = canvasEl.getContext('2d');
       ctx.scale(dpr, dpr);
 
-      const accent = cssVar('--accent');
+      const accent = cssVar('--palette-slate');
 
       function render(sel = -1) {
         ctx.clearRect(0, 0, W, H);
@@ -1036,7 +1026,7 @@
             ctx.fillStyle = '#fff';
             ctx.fill();
             ctx.restore();
-            ctx.filter = 'brightness(1.08)';
+            ctx.filter = 'saturate(0.55) sepia(0.15)';
             ctx.drawImage(flagImg, x - r, y - r, r * 2, r * 2);
             ctx.filter = 'none';
             // 3D bubble shading
@@ -1245,7 +1235,7 @@
 
       const ctx = canvas.getContext('2d');
       ctx.scale(dpr, dpr);
-      const accent  = cssVar('--accent');
+      const accent  = cssVar('--palette-slate');
       const border  = cssVar('--border');
       const bgCard  = cssVar('--bg-card');
       const max      = Math.max(...Object.values(counts), 1);
@@ -1441,7 +1431,7 @@
           bubbleBtn.addEventListener('click', () => { showBubble(); localStorage.setItem('countries-view', 'bubble'); });
           mapBtn.addEventListener('click',    () => { showMap();   localStorage.setItem('countries-view', 'map'); });
 
-          if (localStorage.getItem('countries-view') === 'map') await showMap();
+          if (localStorage.getItem('countries-view') === 'bubble') showBubble(); else await showMap();
         }
       } else {
         countriesCanvas.style.display = 'none';
@@ -1501,9 +1491,6 @@
     }
 
     drawCharts();
-
-    new MutationObserver(() => drawCharts())
-      .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
     window.addEventListener('resize', () => drawCharts());
 

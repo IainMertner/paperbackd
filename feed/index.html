@@ -10,28 +10,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Feed - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
-  <script>
-    (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
-  </script>
 </head>
 <body>
 
   <header class="site-header">
     <div class="header-inner">
-      <a class="logo" href="/feed/">paperbackd</a>
+      <a class="logo" href="/feed/">paperbackd<span class="title-dot">.</span></a>
       <nav class="desktop-nav">
-        <a href="./"           data-nav="feed">Feed</a>
-        <a href="../search/"   data-nav="search">Search</a>
-        <a href="../library/"  data-nav="library">Library</a>
-        <a href="../profile/"  data-nav="profile">Profile</a>
-        <a href="../stats/"    data-nav="stats">Stats</a>
+        <a href="./"           data-nav="feed">feed</a>
+        <a href="../search/"   data-nav="search">search</a>
+        <a href="../library/"  data-nav="library">library</a>
+        <a href="../profile/"  data-nav="profile">profile</a>
+        <a href="../stats/"    data-nav="stats">stats</a>
       </nav>
-      <button class="theme-toggle" aria-label="Toggle theme"></button>
     </div>
   </header>
 
   <main class="page-content">
-    <h1 class="page-title">Feed</h1>
+    <h1 class="page-title">feed<span class="title-dot">.</span></h1>
 
   </main>
 
@@ -40,28 +36,28 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
       </svg>
-      Feed
+      feed
     </a>
     <a class="mobile-nav-item" href="../search/" data-nav="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="11" cy="11" r="8"/>
         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
-      Search
+      search
     </a>
     <a class="mobile-nav-item" href="../library/" data-nav="library">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
         <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
       </svg>
-      Library
+      library
     </a>
     <a class="mobile-nav-item" href="../profile/" data-nav="profile">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
         <circle cx="12" cy="7" r="4"/>
       </svg>
-      Profile
+      profile
     </a>
     <a class="mobile-nav-item" href="../stats/" data-nav="stats">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -69,7 +65,7 @@
         <rect x="10" y="3" width="4" height="17" rx="0.5"/>
         <rect x="17" y="9" width="4" height="11" rx="0.5"/>
       </svg>
-      Stats
+      stats
     </a>
   </nav>
 
@@ -202,13 +198,13 @@
         : '';
       const pct = event.totalPages ? Math.round((event.currentPage / event.totalPages) * 100) : 0;
       const progressRow = (event.type === 'started' && event.totalPages && event.currentPage > 0)
-        ? `<div style="margin-top:.3rem;display:flex;align-items:center;gap:.5rem"><div style="font-size:.7rem;color:var(--text-muted);white-space:nowrap">Page ${event.currentPage} of ${event.totalPages} · ${pct}%</div><div style="height:3px;background:var(--bg-alt);border-radius:2px;overflow:hidden;width:60px;flex-shrink:0"><div style="height:100%;background:var(--accent);width:${pct}%"></div></div></div>`
+        ? `<div style="margin-top:.3rem;display:flex;align-items:center;gap:.5rem"><div style="font-size:.7rem;color:var(--text-muted);white-space:nowrap">Page ${event.currentPage} of ${event.totalPages} · ${pct}%</div><div style="height:3px;background:var(--bg-alt);border-radius:2px;overflow:hidden;width:60px;flex-shrink:0"><div style="height:100%;background:#F2BA00;width:${pct}%"></div></div></div>`
         : '';
       const coverThumb = isFollowed
         ? (() => {
             const tAvatar = event.targetAvatarUrl;
             const tInitial = (event.targetUsername?.[0] || '?').toUpperCase();
-            const tBorder = event.targetBorderColor ? `border:2px solid ${event.targetBorderColor};` : 'border:2px solid var(--bg-card);';
+            const tBorder = `border:2.5px solid ${event.targetBorderColor || 'var(--accent)'};`;
             const inner = tAvatar
               ? `<img src="${esc(tAvatar)}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
               : `<span style="font-size:.6rem;font-weight:700">${esc(tInitial)}</span>`;

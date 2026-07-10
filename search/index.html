@@ -10,30 +10,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Search - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
-  <script>
-    (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
-  </script>
 </head>
 <body>
 
   <header class="site-header">
     <div class="header-inner">
-      <a class="logo" href="/feed/">paperbackd</a>
+      <a class="logo" href="/feed/">paperbackd<span class="title-dot">.</span></a>
       <nav class="desktop-nav">
-        <a href="../feed/" data-nav="feed">Feed</a>
-        <a href="../search/"   data-nav="search">Search</a>
-        <a href="../library/"  data-nav="library">Library</a>
-        <a href="../profile/"  data-nav="profile">Profile</a>
-        <a href="../stats/"    data-nav="stats">Stats</a>
+        <a href="../feed/" data-nav="feed">feed</a>
+        <a href="../search/"   data-nav="search">search</a>
+        <a href="../library/"  data-nav="library">library</a>
+        <a href="../profile/"  data-nav="profile">profile</a>
+        <a href="../stats/"    data-nav="stats">stats</a>
       </nav>
-      <button class="theme-toggle" aria-label="Toggle theme"></button>
     </div>
   </header>
 
   <main class="page-content">
-    <h1 class="page-title">Search</h1>
+    <h1 class="page-title">search<span class="title-dot">.</span></h1>
     <div style="display:flex;gap:.5rem;margin-bottom:.65rem">
-      <button id="tab-books"   class="tab-btn" style="font-size:.82rem;padding:.28rem .75rem;border-radius:20px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-family:inherit">Books</button>
+      <button id="tab-books"   class="tab-btn" style="font-size:.82rem;padding:.28rem .75rem;border-radius:20px;border:1px solid var(--accent);background:var(--accent-dim);color:var(--accent);cursor:pointer;font-family:inherit">Books</button>
       <button id="tab-authors" class="tab-btn" style="font-size:.82rem;padding:.28rem .75rem;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-family:inherit">Authors</button>
       <button id="tab-users"   class="tab-btn" style="font-size:.82rem;padding:.28rem .75rem;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-family:inherit">Users</button>
     </div>
@@ -50,28 +46,28 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
       </svg>
-      Feed
+      feed
     </a>
     <a class="mobile-nav-item" href="../search/" data-nav="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="11" cy="11" r="8"/>
         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
-      Search
+      search
     </a>
     <a class="mobile-nav-item" href="../library/" data-nav="library">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
         <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
       </svg>
-      Library
+      library
     </a>
     <a class="mobile-nav-item" href="../profile/" data-nav="profile">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
         <circle cx="12" cy="7" r="4"/>
       </svg>
-      Profile
+      profile
     </a>
     <a class="mobile-nav-item" href="../stats/" data-nav="stats">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -79,7 +75,7 @@
         <rect x="10" y="3" width="4" height="17" rx="0.5"/>
         <rect x="17" y="9" width="4" height="11" rx="0.5"/>
       </svg>
-      Stats
+      stats
     </a>
   </nav>
 
@@ -115,8 +111,8 @@
       activeTab = tab;
       tabDefs.forEach(t => {
         const active = t.id === tab;
-        t.btn.style.background  = active ? 'var(--accent)' : 'transparent';
-        t.btn.style.color       = active ? '#fff' : 'var(--text-muted)';
+        t.btn.style.background  = active ? 'var(--accent-dim)' : 'transparent';
+        t.btn.style.color       = active ? 'var(--accent)' : 'var(--text-muted)';
         t.btn.style.borderColor = active ? 'var(--accent)' : 'var(--border)';
         if (active) input.placeholder = t.placeholder;
       });

@@ -10,23 +10,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Admin - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
-  <script>
-    (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
-  </script>
 </head>
 <body>
 
   <header class="site-header">
     <div class="header-inner">
-      <a class="logo" href="/feed/">paperbackd</a>
+      <a class="logo" href="/feed/">paperbackd<span class="title-dot">.</span></a>
       <nav class="desktop-nav">
-        <a href="../feed/"     data-nav="feed">Feed</a>
-        <a href="../search/"   data-nav="search">Search</a>
-        <a href="../library/"  data-nav="library">Library</a>
-        <a href="../profile/"  data-nav="profile">Profile</a>
+        <a href="../feed/"     data-nav="feed">feed</a>
+        <a href="../search/"   data-nav="search">search</a>
+        <a href="../library/"  data-nav="library">library</a>
+        <a href="../profile/"  data-nav="profile">profile</a>
         <a href="../settings/" data-nav="settings">Settings</a>
       </nav>
-      <button class="theme-toggle" aria-label="Toggle theme"></button>
     </div>
   </header>
 
@@ -97,6 +93,20 @@
           <div id="repair-activity-status" style="display:none;font-size:.85rem"></div>
         </div>
 
+        <div class="settings-row" id="repair-finished-activity-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Clear progress on finished books</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Sets currentPage to 0 on "started" activity events for books that are now finished, so the feed doesn't show stale progress bars.</p>
+          <button class="btn-update" id="repair-finished-activity-btn" type="button">Run repair</button>
+          <div id="repair-finished-activity-status" style="display:none;font-size:.85rem"></div>
+        </div>
+
+        <div class="settings-row" id="set-olive-theme-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Set olive theme for all users</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">One-off migration — sets <code>avatarBorderColor</code> to <code>#6B7B3A</code> on every user document.</p>
+          <button class="btn-update" id="set-olive-theme-btn" type="button">Run migration</button>
+          <div id="set-olive-theme-status" style="display:none;font-size:.85rem"></div>
+        </div>
+
         <div class="settings-row" id="change-password-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.5rem;padding:.875rem 1rem">
           <span class="settings-row-label">Change password</span>
           <input type="password" id="admin-new-password" class="join-club-input" placeholder="New password" autocomplete="new-password" style="width:100%;box-sizing:border-box">
@@ -115,28 +125,28 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
       </svg>
-      Feed
+      feed
     </a>
     <a class="mobile-nav-item" href="../search/" data-nav="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="11" cy="11" r="8"/>
         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
-      Search
+      search
     </a>
     <a class="mobile-nav-item" href="../library/" data-nav="library">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
         <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
       </svg>
-      Library
+      library
     </a>
     <a class="mobile-nav-item" href="../profile/" data-nav="profile">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
         <circle cx="12" cy="7" r="4"/>
       </svg>
-      Profile
+      profile
     </a>
     <a class="mobile-nav-item" href="../settings/" data-nav="settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -151,7 +161,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { ROOT, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride } from '../js/firebase.js';
+    import { ROOT, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, setThemeColorForAllUsers } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
@@ -247,9 +257,32 @@
     const exportSection          = document.getElementById('export-section');
     const clearCountrySection    = document.getElementById('clear-country-section');
     const repairSection          = document.getElementById('repair-section');
-    const repairActivitySection  = document.getElementById('repair-activity-section');
-    const fixYearsSection        = document.getElementById('fix-years-section');
+    const repairActivitySection         = document.getElementById('repair-activity-section');
+    const repairFinishedActivitySection = document.getElementById('repair-finished-activity-section');
+    const fixYearsSection               = document.getElementById('fix-years-section');
     const changePasswordSection  = document.getElementById('change-password-section');
+
+    document.getElementById('set-olive-theme-section').style.display = '';
+    document.getElementById('set-olive-theme-btn').addEventListener('click', async () => {
+      const btn    = document.getElementById('set-olive-theme-btn');
+      const status = document.getElementById('set-olive-theme-status');
+      if (!confirm('Set avatarBorderColor to #6B7B3A for ALL users?')) return;
+      btn.disabled = true;
+      status.style.display = '';
+      status.style.color = 'var(--text-muted)';
+      status.textContent = 'Running…';
+      try {
+        const count = await setThemeColorForAllUsers('#6B7B3A');
+        status.textContent = `Done — updated ${count} user${count === 1 ? '' : 's'}.`;
+        status.style.color = 'var(--accent)';
+      } catch (err) {
+        console.error(err);
+        status.textContent = 'Failed. Check the console.';
+        status.style.color = 'var(--danger, #d44)';
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     lookupBtn.addEventListener('click', async () => {
       const username = document.getElementById('target-username').value.trim().toLowerCase();
@@ -262,8 +295,9 @@
       exportSection.style.display          = 'none';
       clearCountrySection.style.display    = 'none';
       repairSection.style.display          = 'none';
-      repairActivitySection.style.display  = 'none';
-      fixYearsSection.style.display        = 'none';
+      repairActivitySection.style.display         = 'none';
+      repairFinishedActivitySection.style.display = 'none';
+      fixYearsSection.style.display               = 'none';
       changePasswordSection.style.display  = 'none';
       targetUid = null;
 
@@ -282,8 +316,9 @@
         exportSection.style.display          = '';
         clearCountrySection.style.display    = '';
         repairSection.style.display          = '';
-        repairActivitySection.style.display  = '';
-        fixYearsSection.style.display        = '';
+        repairActivitySection.style.display         = '';
+        repairFinishedActivitySection.style.display = '';
+        fixYearsSection.style.display               = '';
         changePasswordSection.style.display  = '';
         document.getElementById('export-status').style.display           = 'none';
         document.getElementById('clear-country-status').style.display    = 'none';
@@ -616,6 +651,28 @@
       try {
         const count = await repairActivityDocs(targetUid);
         status.textContent = `Updated ${count} activity doc${count === 1 ? '' : 's'}.`;
+        status.style.color = 'var(--accent)';
+      } catch (err) {
+        console.error(err);
+        status.textContent = 'Failed. Check the console.';
+        status.style.color = 'var(--danger, #d44)';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // ── Clear progress on finished books ──────────────────────────────────────
+    document.getElementById('repair-finished-activity-btn').addEventListener('click', async () => {
+      if (!targetUid) return;
+      const btn    = document.getElementById('repair-finished-activity-btn');
+      const status = document.getElementById('repair-finished-activity-status');
+      btn.disabled = true;
+      status.style.display = '';
+      status.style.color = 'var(--text-muted)';
+      status.textContent = 'Repairing…';
+      try {
+        const count = await repairStartedActivityForFinishedBooks(targetUid);
+        status.textContent = `Cleared currentPage on ${count} activity doc${count === 1 ? '' : 's'}.`;
         status.style.color = 'var(--accent)';
       } catch (err) {
         console.error(err);

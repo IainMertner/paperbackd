@@ -8,25 +8,21 @@
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Edit Profile - paperbackd</title>
+  <title>Edit profile - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
-  <script>
-    (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
-  </script>
 </head>
 <body>
 
   <header class="site-header">
     <div class="header-inner">
-      <a class="logo" href="/feed/">paperbackd</a>
+      <a class="logo" href="/feed/">paperbackd<span class="title-dot">.</span></a>
       <nav class="desktop-nav">
-        <a href="../feed/" data-nav="feed">Feed</a>
-        <a href="../search/"   data-nav="search">Search</a>
-        <a href="../library/"  data-nav="library">Library</a>
-        <a href="../profile/"  data-nav="profile">Profile</a>
-        <a href="../stats/"    data-nav="stats">Stats</a>
+        <a href="../feed/" data-nav="feed">feed</a>
+        <a href="../search/"   data-nav="search">search</a>
+        <a href="../library/"  data-nav="library">library</a>
+        <a href="../profile/"  data-nav="profile">profile</a>
+        <a href="../stats/"    data-nav="stats">stats</a>
       </nav>
-      <button class="theme-toggle" aria-label="Toggle theme"></button>
     </div>
   </header>
 
@@ -43,21 +39,17 @@
           <button class="profile-avatar-change" id="change-photo-btn" type="button">Change photo</button>
         </div>
       </div>
-      <div class="edit-field-label" style="margin-top:.875rem;margin-bottom:.35rem">Border colour</div>
-      <div class="border-color-picker" id="border-color-picker">
-        <button class="border-color-swatch" data-color="" style="background:var(--border)" title="Default"></button>
-        <button class="border-color-swatch" data-color="#c9a050" style="background:#c9a050" title="Gold"></button>
-        <button class="border-color-swatch" data-color="#5b8fcc" style="background:#5b8fcc" title="Blue"></button>
-        <button class="border-color-swatch" data-color="#d45f7a" style="background:#d45f7a" title="Rose"></button>
-        <button class="border-color-swatch" data-color="#3dab8b" style="background:#3dab8b" title="Teal"></button>
-        <button class="border-color-swatch" data-color="#9b6dd6" style="background:#9b6dd6" title="Purple"></button>
-      </div>
-      <input type="file" id="avatar-file" accept="image/*" style="display:none">
+<input type="file" id="avatar-file" accept="image/*" style="display:none">
     </div>
 
     <div class="card" style="margin-bottom:.625rem">
-      <div class="edit-field-label" style="margin-bottom:.35rem">Display name <span style="font-weight:400;color:var(--text-muted);font-size:.78rem">- optional, to help other users know who you are</span></div>
-      <input type="text" id="display-name-input" class="join-club-input" placeholder="Your name" maxlength="50" autocomplete="off" style="width:100%;box-sizing:border-box">
+      <div class="edit-field-label" style="margin-bottom:.35rem">Display name</div>
+      <input type="text" id="display-name-input" class="join-club-input" placeholder="Your name" maxlength="16" autocomplete="off" required style="width:100%;box-sizing:border-box">
+    </div>
+
+    <div class="card" style="margin-bottom:.625rem">
+      <div class="edit-field-label" style="margin-bottom:.6rem">Profile colour</div>
+      <div id="theme-swatches" style="display:flex;flex-wrap:wrap;gap:.5rem"></div>
     </div>
 
     <div class="card" style="margin-bottom:.625rem">
@@ -84,28 +76,28 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
       </svg>
-      Feed
+      feed
     </a>
     <a class="mobile-nav-item" href="../search/" data-nav="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="11" cy="11" r="8"/>
         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
-      Search
+      search
     </a>
     <a class="mobile-nav-item" href="../library/" data-nav="library">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
         <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
       </svg>
-      Library
+      library
     </a>
     <a class="mobile-nav-item" href="../profile/" data-nav="profile">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
         <circle cx="12" cy="7" r="4"/>
       </svg>
-      Profile
+      profile
     </a>
     <a class="mobile-nav-item" href="../stats/" data-nav="stats">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -113,7 +105,7 @@
         <rect x="10" y="3" width="4" height="17" rx="0.5"/>
         <rect x="17" y="9" width="4" height="11" rx="0.5"/>
       </svg>
-      Stats
+      stats
     </a>
   </nav>
 
@@ -121,7 +113,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, updateAvatarUrl, updateShelf, updateAvatarBorderColor, updateDisplayName } from '../js/firebase.js';
+    import { getBooks, updateAvatarUrl, updateShelf, updateDisplayName, updateAvatarBorderColor } from '../js/firebase.js';
 
     const { user, profile } = await requireAuth();
     const libraryBooks = (await getBooks(user.uid)).filter(b => b.coverUrl);
@@ -129,32 +121,45 @@
     const displayNameInput = document.getElementById('display-name-input');
     displayNameInput.value = profile.displayName || '';
 
+    // ── Theme colour ──────────────────────────────────────────────────────────
+    const THEMES = [
+      { label: 'Olive',      color: '#6B7B3A' },
+      { label: 'Yellow',     color: '#D4AA55' },
+      { label: 'Terracotta', color: '#B85C3A' },
+      { label: 'Teal',       color: '#3A8278' },
+      { label: 'Burgundy',   color: '#7A2E40' },
+      { label: 'Slate',      color: '#4D6B8A' },
+      { label: 'Rose',       color: '#C4607A' },
+    ];
+    let selectedTheme = profile.avatarBorderColor || THEMES[0].color;
+    const swatchContainer = document.getElementById('theme-swatches');
+
+    function renderSwatches() {
+      swatchContainer.innerHTML = '';
+      THEMES.forEach(({ label, color }) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.title = label;
+        btn.style.cssText = `width:2rem;height:2rem;border-radius:50%;background:${color};cursor:pointer;border:3px solid transparent;transition:border-color .15s;flex-shrink:0`;
+        if (color === selectedTheme) btn.style.borderColor = 'var(--text)';
+        btn.addEventListener('click', () => { selectedTheme = color; renderSwatches(); });
+        swatchContainer.appendChild(btn);
+      });
+    }
+    renderSwatches();
+
     // ── Avatar ────────────────────────────────────────────────────────────────
     const avatarPreview  = document.getElementById('avatar-preview');
     const avatarWrap     = document.getElementById('avatar-wrap');
     const changePhotoBtn = document.getElementById('change-photo-btn');
     const fileInput      = document.getElementById('avatar-file');
     let pendingAvatarUrl = null;
-    let selectedBorderColor = profile.avatarBorderColor || '';
-
-    // ── Border colour swatches ────────────────────────────────────────────────
-    const swatches = document.querySelectorAll('.border-color-swatch');
-    function updateSwatchSelection() {
-      swatches.forEach(s => s.classList.toggle('selected', s.dataset.color === selectedBorderColor));
-    }
-    swatches.forEach(s => s.addEventListener('click', () => {
-      selectedBorderColor = s.dataset.color;
-      updateSwatchSelection();
-      document.getElementById('avatar-preview').style.borderColor = selectedBorderColor || '';
-    }));
-    updateSwatchSelection();
 
     function showAvatar(url) {
       if (url) { avatarPreview.innerHTML  = `<img src="${url}" alt="">`; }
       else     { avatarPreview.textContent = profile.username[0].toUpperCase(); }
     }
     showAvatar(profile.avatarUrl);
-    if (selectedBorderColor) document.getElementById('avatar-preview').style.borderColor = selectedBorderColor;
 
     avatarWrap.addEventListener('click',     () => fileInput.click());
     changePhotoBtn.addEventListener('click', () => fileInput.click());
@@ -230,7 +235,7 @@
     }
     renderShelfEdit();
 
-    // Search - filter from own library (books already have covers)
+    // search - filter from own library (books already have covers)
     shelfSearch.addEventListener('input', () => {
       const q = shelfSearch.value.trim().toLowerCase();
       if (!q) { shelfSuggestions.style.display = 'none'; return; }
@@ -275,21 +280,22 @@
     const cancelBtn = document.getElementById('cancel-btn');
 
     saveBtn.addEventListener('click', async () => {
+      const newDisplayName = displayNameInput.value.trim();
+      if (!newDisplayName) { alert('Please enter a display name.'); return; }
       saveBtn.disabled = true;
       try {
-        const newDisplayName = displayNameInput.value.trim();
         const saves = [];
         if (pendingAvatarUrl) saves.push(updateAvatarUrl(user.uid, pendingAvatarUrl));
         saves.push(updateShelf(user.uid, shelfItems));
-        saves.push(updateAvatarBorderColor(user.uid, selectedBorderColor));
         saves.push(updateDisplayName(user.uid, newDisplayName));
+        saves.push(updateAvatarBorderColor(user.uid, selectedTheme));
         await Promise.all(saves);
 
         const cached = JSON.parse(localStorage.getItem('rl_profile') || '{}');
         if (pendingAvatarUrl) cached.avatarUrl = pendingAvatarUrl;
         cached.shelf = shelfItems;
-        cached.avatarBorderColor = selectedBorderColor;
         cached.displayName = newDisplayName || null;
+        cached.avatarBorderColor = selectedTheme;
         localStorage.setItem('rl_profile', JSON.stringify(cached));
 
         location.replace('../profile/');

@@ -10,98 +10,103 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Profile - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
-  <script>
-    (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
-  </script>
 </head>
 <body>
 
+  <svg style="display:none" aria-hidden="true">
+    <defs>
+      <filter id="ink-edge" x="-25%" y="-25%" width="150%" height="150%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" seed="5" result="noise"/>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+      <filter id="brush-line" x="-1%" y="-600%" width="102%" height="1300%">
+        <feMorphology operator="dilate" radius="0 1" result="thick"/>
+        <feTurbulence type="fractalNoise" baseFrequency="0.018 0.45" numOctaves="4" seed="8" result="noise"/>
+        <feDisplacementMap in="thick" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
+
   <header class="site-header">
     <div class="header-inner">
-      <a class="logo" href="/feed/">paperbackd</a>
+      <a class="logo" href="/feed/">paperbackd<span class="title-dot">.</span></a>
       <nav class="desktop-nav">
-        <a href="../feed/" data-nav="feed">Feed</a>
-        <a href="../search/"   data-nav="search">Search</a>
-        <a href="../library/"  data-nav="library">Library</a>
-        <a href="../profile/"  data-nav="profile">Profile</a>
-        <a href="../stats/"    data-nav="stats">Stats</a>
+        <a href="../feed/" data-nav="feed">feed</a>
+        <a href="../search/"   data-nav="search">search</a>
+        <a href="../library/"  data-nav="library">library</a>
+        <a href="../profile/"  data-nav="profile">profile</a>
+        <a href="../stats/"    data-nav="stats">stats</a>
       </nav>
-      <button class="theme-toggle" aria-label="Toggle theme"></button>
     </div>
   </header>
 
   <main class="page-content">
 
-    <div class="profile-card card">
-      <div class="profile-avatar-wrap">
-        <div class="profile-avatar-lg" id="profile-avatar"></div>
+    <div class="profile-meta-row">
+      <div class="avatar-ink-ring">
+        <div class="profile-avatar-sm" id="profile-avatar"></div>
       </div>
-      <div class="profile-name-wrap">
-        <div class="profile-name-row">
-          <div class="profile-name" id="profile-name"></div>
-        </div>
-        <div id="own-actions" style="display:none;margin-top:.35rem;position:relative">
-          <button id="profile-menu-btn" class="profile-action-btn profile-action-secondary" style="cursor:pointer;display:inline-flex;align-items:center;gap:.35rem">
-            Settings
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-          <div id="profile-menu" style="display:none;position:absolute;top:calc(100% + .35rem);left:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:50;min-width:140px;overflow:hidden">
-            <a href="../edit-profile/" style="display:block;padding:.5rem .85rem;font-size:.875rem;color:var(--text);text-decoration:none">Edit profile</a>
-            <a href="../settings/"     style="display:block;padding:.5rem .85rem;font-size:.875rem;color:var(--text);text-decoration:none">Settings</a>
-            <button id="dropdown-signout-btn" style="display:block;width:100%;padding:.5rem .85rem;font-size:.875rem;color:var(--error,#e05252);text-decoration:none;background:none;border:none;text-align:left;cursor:pointer;font-family:inherit;border-top:1px solid var(--border)">Sign out</button>
+      <div style="display:flex;flex-direction:column;gap:0;flex:1;min-width:0">
+        <div class="profile-display-name" id="profile-display-name"></div>
+        <div style="display:flex;align-items:center;gap:.2rem;flex-wrap:wrap">
+          <div class="profile-username" id="profile-username"></div>
+          <div id="own-actions" style="display:none;position:relative">
+            <button id="profile-menu-btn" class="profile-action-btn profile-action-secondary profile-action-icon" aria-label="Settings" title="Settings">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+            <div id="profile-menu" style="display:none;position:absolute;top:calc(100% + .35rem);left:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:50;min-width:140px;overflow:hidden">
+              <a href="../edit-profile/" style="display:block;padding:.5rem .85rem;font-size:.875rem;color:var(--text);text-decoration:none">Edit profile</a>
+              <a href="../settings/"     style="display:block;padding:.5rem .85rem;font-size:.875rem;color:var(--text);text-decoration:none">Settings</a>
+              <button id="dropdown-signout-btn" style="display:block;width:100%;padding:.5rem .85rem;font-size:.875rem;color:var(--error,#e05252);text-decoration:none;background:none;border:none;text-align:left;cursor:pointer;font-family:inherit;border-top:1px solid var(--border)">Sign out</button>
+            </div>
+          </div>
+          <div id="profile-actions" hidden>
+            <button id="follow-btn" class="profile-action-btn profile-action-secondary profile-action-icon" aria-label="Follow" title="Follow">
+              <svg id="follow-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+            </button>
           </div>
         </div>
-        <div class="profile-actions" id="profile-actions" hidden style="margin-top:.35rem">
-          <button id="follow-btn" class="profile-action-btn profile-action-follow">Follow</button>
-        </div>
       </div>
-      <a id="stats-link" href="#" title="Stats" aria-label="Stats" style="display:none;align-self:stretch;align-items:center;justify-content:center;padding:0 .25rem;color:var(--text-muted);opacity:.6;text-decoration:none;flex-shrink:0">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="36" height="36"><rect x="4.5" y="14" width="3" height="6" rx="1"/><rect x="10.5" y="4" width="3" height="16" rx="1"/><rect x="16.5" y="10" width="3" height="10" rx="1"/></svg>
+    </div>
+
+    <hr class="profile-rule">
+
+    <div class="profile-books-section" id="books-section" style="display:none">
+      <div id="shelf-card" class="profile-book-card" style="display:none;flex:1;min-width:0;border-radius:var(--radius);padding:.625rem">
+        <div class="profile-books-label">shelf</div>
+        <div class="shelf-covers" id="shelf-covers"></div>
+      </div>
+      <div id="activity-card" class="profile-book-card" style="display:none;flex:1;min-width:0;border-radius:var(--radius);padding:.625rem">
+        <div class="profile-books-label" id="activity-label">activity</div>
+        <div class="shelf-covers" id="activity-covers"></div>
+      </div>
+    </div>
+
+    <div class="profile-zine-links">
+      <a class="profile-zine-link" id="network-link" href="../friends/">
+        network
+        <span style="display:flex;align-items:center;gap:.5rem">
+          <span style="font-size:.8rem;color:var(--text-muted)"><span id="stat-followers">—</span> followers · <span id="stat-following">—</span> following</span>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </span>
       </a>
-    </div>
-
-    <div id="shelf-card" style="display:none;margin-top:.75rem;margin-bottom:.625rem">
-      <div class="shelf-label" id="shelf-label">Shelf</div>
-      <div class="shelf-covers" id="shelf-covers"></div>
-    </div>
-
-    <div class="profile-links" id="own-links" style="display:none">
-      <a class="profile-link-row card" href="../friends/">
-        <span class="profile-link-label">Network</span>
-        <span class="profile-link-meta"><span id="followers-count">—</span> Followers · <span id="following-count">—</span> Following</span>
-        <svg class="profile-link-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="9 18 15 12 9 6"/>
-        </svg>
+      <a class="profile-zine-link" id="library-link" href="../library/">
+        library
+        <span style="display:flex;align-items:center;gap:.5rem">
+          <span id="stat-books" style="font-size:.8rem;color:var(--text-muted)"></span>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </span>
       </a>
-    </div>
-
-    <div class="profile-links" id="other-counts" style="display:none">
-      <a class="profile-link-row card" id="other-counts-link" href="#">
-        <span class="profile-link-label">Network</span>
-        <span class="profile-link-meta"><span id="other-followers-count">—</span> Followers · <span id="other-following-count">—</span> Following</span>
-        <svg class="profile-link-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="9 18 15 12 9 6"/>
-        </svg>
+      <a class="profile-zine-link" id="lists-link" href="../lists/">
+        <span>lists</span>
+        <span style="display:flex;align-items:center;gap:.5rem">
+          <span id="lists-count" style="font-size:.8rem;color:var(--text-muted)"></span>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </span>
       </a>
-    </div>
-
-    <div class="profile-links">
-      <a class="profile-link-row card" id="library-link" href="../library/">
-        <span class="profile-link-label">Library</span>
-        <span class="profile-link-meta" id="book-count"></span>
-        <svg class="profile-link-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="9 18 15 12 9 6"/>
-        </svg>
-      </a>
-    </div>
-
-    <div class="profile-links">
-      <a class="profile-link-row card" id="lists-link" href="../lists/">
-        <span class="profile-link-label">Lists</span>
-        <span id="lists-count" style="margin-left:auto;margin-right:.5rem;font-size:.8rem;color:var(--text-muted)"></span>
-        <svg class="profile-link-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="9 18 15 12 9 6"/>
-        </svg>
+      <a class="profile-zine-link" id="stats-link" href="../stats/">
+        stats
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
       </a>
     </div>
 
@@ -112,28 +117,28 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
       </svg>
-      Feed
+      feed
     </a>
     <a class="mobile-nav-item" href="../search/" data-nav="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="11" cy="11" r="8"/>
         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
-      Search
+      search
     </a>
     <a class="mobile-nav-item" href="../library/" data-nav="library">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
         <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
       </svg>
-      Library
+      library
     </a>
     <a class="mobile-nav-item" href="../profile/" data-nav="profile">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
         <circle cx="12" cy="7" r="4"/>
       </svg>
-      Profile
+      profile
     </a>
     <a class="mobile-nav-item" href="../stats/" data-nav="stats">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -141,7 +146,7 @@
         <rect x="10" y="3" width="4" height="17" rx="0.5"/>
         <rect x="17" y="9" width="4" height="11" rx="0.5"/>
       </svg>
-      Stats
+      stats
     </a>
   </nav>
 
@@ -149,39 +154,106 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getProfileByUsername, getFollowers, getProfile, getBookCount, getListCount, followUser, unfollowUser, logOut, ROOT } from '../js/firebase.js';
+    import { getProfileByUsername, getFollowers, getProfile, getBookCount, getListCount, getReadingBooks, getRecentlyFinishedBooks, followUser, unfollowUser, logOut, ROOT } from '../js/firebase.js';
 
     const { user, profile: myProfile } = await requireAuth();
     const params      = new URLSearchParams(location.search);
     const targetParam = params.get('u')?.toLowerCase();
     const isOwn       = !targetParam || targetParam === myProfile.username;
 
-    function renderShelf(shelf, username) {
-      if (!shelf?.length) return;
-      document.getElementById('shelf-label').textContent = `${username}'s Shelf`;
-      const coversEl = document.getElementById('shelf-covers');
-      shelf.forEach(item => {
-        if (!item.coverUrl) return;
+    const COVER_ROTATIONS = [-1.8, 1.4, -2.1, 0.9, 1.7, -1.2, 2.3, -0.8];
+
+    function renderCovers(items, containerId, cardId, max = 4) {
+      const coversEl = document.getElementById(containerId);
+      const filled = items.filter(i => i.coverUrl).slice(0, max);
+      filled.forEach((item, idx) => {
         const a = document.createElement('a');
         a.href = `../book/?gbid=${encodeURIComponent(item.gbid)}`;
         a.style.cssText = 'text-decoration:none;display:block';
+        a.style.transform = `rotate(${COVER_ROTATIONS[idx % COVER_ROTATIONS.length]}deg)`;
         const img = document.createElement('img');
         img.src = item.coverUrl; img.alt = item.title || ''; img.className = 'shelf-cover';
         a.appendChild(img);
         coversEl.appendChild(a);
       });
-      document.getElementById('shelf-card').style.display = '';
+      for (let i = filled.length; i < max; i++) {
+        const slot = document.createElement('div');
+        slot.className = 'shelf-cover-empty';
+        slot.style.transform = `rotate(${COVER_ROTATIONS[i % COVER_ROTATIONS.length]}deg)`;
+        coversEl.appendChild(slot);
+      }
+      document.getElementById(cardId).style.display = '';
+    }
+
+    function renderShelf(shelf) {
+      renderCovers(shelf || [], 'shelf-covers', 'shelf-card');
+    }
+
+    function renderActivity(readingBooks, finishedBooks) {
+      const items = [
+        ...readingBooks.filter(i => i.coverUrl).map(b => ({ ...b, isReading: true })),
+        ...finishedBooks.filter(i => i.coverUrl)
+      ].slice(0, 4);
+      const coversEl = document.getElementById('activity-covers');
+      items.forEach((item, idx) => {
+        const a = document.createElement('a');
+        a.href = `../book/?gbid=${encodeURIComponent(item.gbid)}`;
+        a.style.cssText = 'text-decoration:none';
+        a.style.transform = `rotate(${COVER_ROTATIONS[idx % COVER_ROTATIONS.length]}deg)`;
+        const img = document.createElement('img');
+        img.src = item.coverUrl; img.alt = item.title || ''; img.className = 'shelf-cover';
+        a.appendChild(img);
+        if (item.isReading && item.totalPages > 0) {
+          const pct = Math.min(100, Math.round((item.currentPage / item.totalPages) * 100));
+          const track = document.createElement('div');
+          track.className = 'cover-progress-track';
+          const bar = document.createElement('div');
+          bar.className = 'cover-progress';
+          bar.style.width = pct + '%';
+          track.appendChild(bar);
+          a.appendChild(track);
+        } else if (!item.isReading && item.rating != null) {
+          const badge = document.createElement('div');
+          badge.className = 'cover-badge';
+          badge.textContent = '★ ' + item.rating;
+          a.appendChild(badge);
+        }
+        coversEl.appendChild(a);
+      });
+      for (let i = items.length; i < 4; i++) {
+        const slot = document.createElement('div');
+        slot.className = 'shelf-cover-empty';
+        slot.style.transform = `rotate(${COVER_ROTATIONS[i % COVER_ROTATIONS.length]}deg)`;
+        coversEl.appendChild(slot);
+      }
+      document.getElementById('activity-card').style.display = '';
+      document.getElementById('books-section').style.display = '';
+    }
+
+    function fitDisplayName(el) {
+      el.style.fontSize = '';
+      let size = parseFloat(getComputedStyle(el).fontSize);
+      while (el.scrollWidth > el.offsetWidth && size > 14) {
+        size -= 2;
+        el.style.fontSize = size + 'px';
+      }
     }
 
     try {
       if (isOwn) {
+        if (myProfile.avatarBorderColor) document.documentElement.style.setProperty('--ring-color', myProfile.avatarBorderColor);
+        document.getElementById('profile-display-name').innerHTML = (myProfile.displayName || myProfile.username) + '<span class="title-dot">.</span>';
+        fitDisplayName(document.getElementById('profile-display-name'));
+        document.getElementById('profile-username').textContent = '@' + myProfile.username;
         const avatarEl = document.getElementById('profile-avatar');
         if (myProfile.avatarUrl) { avatarEl.innerHTML  = `<img src="${myProfile.avatarUrl}" alt="">`; }
         else                     { avatarEl.textContent = myProfile.username[0].toUpperCase(); }
-        if (myProfile.avatarBorderColor) avatarEl.style.borderColor = myProfile.avatarBorderColor;
-
-        renderShelf(myProfile.shelf, myProfile.username);
-        document.getElementById('own-actions').style.display  = '';
+        renderShelf(myProfile.shelf);
+        document.getElementById('activity-label').innerHTML = `<a href="../activity/?u=${encodeURIComponent(myProfile.username)}" style="color:inherit;text-decoration:none">activity</a>`;
+        Promise.all([getReadingBooks(user.uid), getRecentlyFinishedBooks(user.uid)])
+          .then(([reading, finished]) => renderActivity(reading, finished))
+          .catch(() => { document.getElementById('books-section').style.display = ''; });
+        document.getElementById('own-actions').style.display = '';
         const profileMenuBtn = document.getElementById('profile-menu-btn');
         const profileMenu    = document.getElementById('profile-menu');
         profileMenuBtn.addEventListener('click', e => {
@@ -193,20 +265,13 @@
           await logOut();
           location.replace(ROOT + 'login/');
         });
-        const dn = myProfile.displayName;
-        document.getElementById('profile-name').innerHTML = dn
-          ? `${myProfile.username} <span style="color:var(--text-muted);font-size:.8em;font-weight:400">(${dn})</span>`
-          : myProfile.username;
-        const statsLinkOwn = document.getElementById('stats-link');
-        statsLinkOwn.href = `../stats/?u=${encodeURIComponent(myProfile.username)}`;
-        statsLinkOwn.style.display = 'inline-flex';
-        document.getElementById('following-count').textContent = (myProfile.following || myProfile.friends || []).length;
-        document.getElementById('own-links').style.display     = '';
+        document.getElementById('stat-following').textContent = (myProfile.following || myProfile.friends || []).length;
+        document.getElementById('stats-link').href = `../stats/?u=${encodeURIComponent(myProfile.username)}`;
         getFollowers(user.uid).then(f => {
-          document.getElementById('followers-count').textContent = f.length;
+          document.getElementById('stat-followers').textContent = f.length;
         });
         getBookCount(user.uid).then(n => {
-          document.getElementById('book-count').textContent = `${n} Book${n === 1 ? '' : 's'}`;
+          document.getElementById('stat-books').textContent = `${n} book${n === 1 ? '' : 's'}`;
         });
         getListCount(user.uid).then(n => {
           document.getElementById('lists-count').textContent = n;
@@ -219,35 +284,31 @@
         ]);
 
         if (!target) {
-          document.getElementById('profile-name').textContent = 'User not found.';
+          document.getElementById('profile-display-name').textContent = 'User not found.';
         } else {
+          if (target.avatarBorderColor) document.documentElement.style.setProperty('--ring-color', target.avatarBorderColor);
           const avatarEl = document.getElementById('profile-avatar');
-          if (target.avatarUrl) {
-            avatarEl.innerHTML = `<img src="${target.avatarUrl}" alt="">`;
-          } else {
-            avatarEl.textContent = target.username[0].toUpperCase();
-          }
-          if (target.avatarBorderColor) avatarEl.style.borderColor = target.avatarBorderColor;
-          renderShelf(target.shelf, target.username);
-          const tdn = target.displayName;
-          document.getElementById('profile-name').innerHTML = tdn
-            ? `${target.username} <span style="color:var(--text-muted);font-size:.8em;font-weight:400">(${tdn})</span>`
-            : target.username;
-          const statsLinkOther = document.getElementById('stats-link');
-          statsLinkOther.href = `../stats/?u=${encodeURIComponent(target.username)}`;
-          statsLinkOther.style.display = 'inline-flex';
-
-          document.getElementById('other-following-count').textContent = (target.following || []).length;
-          document.getElementById('other-counts-link').href = `../friends/?u=${encodeURIComponent(target.username)}`;
-          document.getElementById('other-counts').style.display = '';
+          if (target.avatarUrl) { avatarEl.innerHTML = `<img src="${target.avatarUrl}" alt="">`; }
+          else                  { avatarEl.textContent = target.username[0].toUpperCase(); }
+          document.getElementById('profile-display-name').innerHTML = (target.displayName || target.username) + '<span class="title-dot">.</span>';
+          fitDisplayName(document.getElementById('profile-display-name'));
+          document.getElementById('profile-username').textContent = '@' + target.username;
+          renderShelf(target.shelf);
+          document.getElementById('activity-label').innerHTML = `<a href="../activity/?u=${encodeURIComponent(target.username)}" style="color:inherit;text-decoration:none">activity</a>`;
+          Promise.all([getReadingBooks(target.uid), getRecentlyFinishedBooks(target.uid)])
+            .then(([reading, finished]) => renderActivity(reading, finished))
+            .catch(() => { document.getElementById('books-section').style.display = ''; });
+          document.getElementById('stat-following').textContent = (target.following || []).length;
+          document.getElementById('stats-link').href   = `../stats/?u=${encodeURIComponent(target.username)}`;
           document.getElementById('library-link').href = `../library/?u=${encodeURIComponent(target.username)}`;
+          document.getElementById('lists-link').href   = `../lists/?u=${encodeURIComponent(target.username)}`;
+          document.getElementById('network-link').href = `../friends/?u=${encodeURIComponent(target.username)}`;
           getFollowers(target.uid).then(f => {
-            document.getElementById('other-followers-count').textContent = f.length;
+            document.getElementById('stat-followers').textContent = f.length;
           });
           getBookCount(target.uid).then(n => {
-            document.getElementById('book-count').textContent = `${n} Book${n === 1 ? '' : 's'}`;
+            document.getElementById('stat-books').textContent = `${n} book${n === 1 ? '' : 's'}`;
           });
-          document.getElementById('lists-link').href = `../lists/?u=${encodeURIComponent(target.username)}`;
           getListCount(target.uid).then(n => {
             document.getElementById('lists-count').textContent = n;
           });
@@ -257,12 +318,14 @@
 
           const profileActions = document.getElementById('profile-actions');
           const followBtn      = document.getElementById('follow-btn');
-
           profileActions.hidden = false;
 
+          const ICON_FOLLOW    = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>`;
+          const ICON_FOLLOWING = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>`;
           function updateFollowBtn() {
-            followBtn.textContent = isFollowing ? 'Following' : 'Follow';
-            followBtn.classList.toggle('following', isFollowing);
+            followBtn.innerHTML = isFollowing ? ICON_FOLLOWING : ICON_FOLLOW;
+            followBtn.setAttribute('aria-label', isFollowing ? 'Following' : 'Follow');
+            followBtn.setAttribute('title', isFollowing ? 'Following' : 'Follow');
           }
           updateFollowBtn();
 

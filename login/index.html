@@ -10,14 +10,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign in - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
-  <script>
-    (function(){ const t=localStorage.getItem('theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();
-  </script>
 </head>
 <body class="auth-page">
 
   <main class="auth-main" id="auth-main" hidden>
-    <h1 class="auth-logo">paperbackd</h1>
+    <h1 class="auth-logo">paperbackd<span class="title-dot">.</span></h1>
 
     <div class="auth-tabs" role="tablist">
       <button class="auth-tab active" data-tab="signin"  role="tab" aria-selected="true">Sign in</button>
@@ -32,6 +29,14 @@
             autocomplete="username" autocapitalize="none" spellcheck="false" required>
           <p class="auth-hint" id="username-hint" hidden>
             3–16 characters. Lowercase letters, numbers, underscores only.
+          </p>
+        </div>
+        <div class="auth-field" id="displayname-field" hidden>
+          <label class="auth-label" for="displayname">Display name</label>
+          <input class="auth-input" id="displayname" type="text"
+            autocomplete="name" maxlength="50" spellcheck="false">
+          <p class="auth-hint" style="display:block;margin-top:.3rem">
+            This is how you'll appear to other users.
           </p>
         </div>
         <div class="auth-field">
@@ -69,8 +74,9 @@
     const tabs       = document.querySelectorAll('.auth-tab');
     const submitBtn  = document.getElementById('auth-submit');
     const passInput  = document.getElementById('password');
-    const usernameHint = document.getElementById('username-hint');
-    const passwordHint = document.getElementById('password-hint');
+    const usernameHint    = document.getElementById('username-hint');
+    const passwordHint    = document.getElementById('password-hint');
+    const displaynameField = document.getElementById('displayname-field');
 
     tabs.forEach(tab => {
       tab.addEventListener('click', () => {
@@ -79,10 +85,11 @@
           t.classList.toggle('active', t === tab);
           t.setAttribute('aria-selected', t === tab);
         });
-        submitBtn.textContent        = mode === 'signin' ? 'Sign in' : 'Create account';
-        passInput.autocomplete       = mode === 'signin' ? 'current-password' : 'new-password';
-        usernameHint.hidden          = mode === 'signin';
-        passwordHint.hidden          = mode === 'signin';
+        submitBtn.textContent         = mode === 'signin' ? 'Sign in' : 'Create account';
+        passInput.autocomplete        = mode === 'signin' ? 'current-password' : 'new-password';
+        usernameHint.hidden           = mode === 'signin';
+        passwordHint.hidden           = mode === 'signin';
+        displaynameField.hidden       = mode === 'signin';
         document.getElementById('auth-error').hidden = true;
       });
     });
@@ -92,9 +99,16 @@
       e.preventDefault();
       offAuth(); // prevent the auth listener from redirecting before Firestore writes finish
 
-      const username  = document.getElementById('username').value.trim().toLowerCase();
-      const password  = document.getElementById('password').value;
-      const errorEl   = document.getElementById('auth-error');
+      const username    = document.getElementById('username').value.trim().toLowerCase();
+      const password    = document.getElementById('password').value;
+      const displayName = document.getElementById('displayname').value.trim();
+      const errorEl     = document.getElementById('auth-error');
+
+      if (mode === 'register' && !displayName) {
+        errorEl.textContent = 'Please enter a display name.';
+        errorEl.hidden = false;
+        return;
+      }
 
       errorEl.hidden      = true;
       submitBtn.disabled  = true;
@@ -104,7 +118,7 @@
         if (mode === 'signin') {
           await signIn(username, password);
         } else {
-          await signUp(username, password);
+          await signUp(username, password, displayName);
         }
         window.location.replace(ROOT);
       } catch (err) {
