@@ -1,4 +1,4 @@
-const CACHE = 'paperbackd-v7';
+const CACHE = 'paperbackd-v8';
 
 // Firebase API hosts — never intercept these
 const PASS_THROUGH = [
@@ -78,7 +78,7 @@ self.addEventListener('fetch', event => {
   }
 
   // Root URL — serve feed content but with the p favicon so bookmarks show p not f
-  if (url.pathname === '/' || url.pathname === '/index.html') {
+  if (url.origin === self.location.origin && (url.pathname === '/' || url.pathname === '/index.html')) {
     event.respondWith(
       fetch('/feed/').then(res => res.text()).then(html => {
         const patched = html

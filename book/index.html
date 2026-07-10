@@ -207,7 +207,8 @@
         getBookByGbid(user.uid, gbid)
       ]);
 
-      const hcData = hcRes.ok ? await hcRes.json() : {};
+      let hcData = {};
+      try { if (hcRes.ok) hcData = await hcRes.json(); } catch {}
       const hcBook = hcData.data?.books?.[0] || {};
 
       const title       = hcBook.title  || myBook?.title  || 'Unknown title';
