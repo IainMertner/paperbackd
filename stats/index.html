@@ -227,14 +227,20 @@
         <div id="chart-countries-legend" style="display:none;grid-template-columns:1fr 1fr;gap:.3rem .75rem;margin-top:.75rem"></div>
         <div class="chart-empty" id="chart-countries-empty" style="display:none">No country data yet.</div>
       </div>
+      <div class="card chart-card" id="chart-ratings-card">
+        <div class="chart-title">Rating distribution</div>
+        <div class="chart-wrap"><canvas id="chart-ratings"></canvas></div>
+        <div class="chart-summary" id="chart-ratings-summary"></div>
+        <div class="chart-empty" id="chart-ratings-empty" style="display:none">No ratings yet.</div>
+      </div>
       <div class="card chart-card" id="chart-pages-card">
-        <div class="chart-title">Rating vs Pages</div>
+        <div class="chart-title">Rating vs book length</div>
         <div class="chart-wrap"><canvas id="chart-pages" class="scatter"></canvas></div>
         <div class="chart-summary" id="chart-pages-summary"></div>
         <div class="chart-empty" id="chart-pages-empty" style="display:none">Not enough data yet.</div>
       </div>
       <div class="card chart-card" id="chart-age-card">
-        <div class="chart-title">Rating vs Book Age</div>
+        <div class="chart-title">Rating vs book age</div>
         <div class="chart-wrap"><canvas id="chart-age" class="scatter"></canvas></div>
         <div class="chart-summary" id="chart-age-summary"></div>
         <div class="chart-empty" id="chart-age-empty" style="display:none">Not enough data yet.</div>
@@ -431,7 +437,7 @@
     }
 
     function drawScatter(canvasEl, points, { xLabel, yMin = 0, yMax = 5, logX = false }) {
-      const dpr = window.devicePixelRatio || 1;
+      const dpr   = window.devicePixelRatio || 1;
       const W_CSS = canvasEl.parentElement.clientWidth;
       const H_CSS = 256;
       canvasEl.width  = W_CSS * dpr;
@@ -442,135 +448,167 @@
       const ctx = canvasEl.getContext('2d');
       ctx.scale(dpr, dpr);
 
-      const pad = { top: 18, right: 18, bottom: 46, left: 18 };
+      const pad       = { top: 18, right: 18, bottom: 46, left: 32 };
       const W = W_CSS, H = H_CSS;
-      const plotW = W - pad.left - pad.right;
-      const plotH = H - pad.top  - pad.bottom;
+      const plotW     = W - pad.left - pad.right;
+      const plotH     = H - pad.top  - pad.bottom;
 
-      const muted  = cssVar('--text-muted');
-      const border = cssVar('--border');
-      const accent = cssVar('--palette-rose');
-      const bgCard = cssVar('--bg-card') || cssVar('--bg');
-      const bgAlt  = cssVar('--bg-alt');
+      const muted     = cssVar('--text-muted');
+      const border    = cssVar('--border');
+      const accent    = cssVar('--palette-rose');
+      const bgCard    = cssVar('--bg-card') || cssVar('--bg');
+      const bgAlt     = cssVar('--bg-alt');
+      const textColor = cssVar('--text');
 
-      ctx.clearRect(0, 0, W, H);
-
-      // Support log scale on x-axis: transform coordinates before layout
-      const toRaw   = x => logX ? Math.log(x) : x;
+      const toRaw    = x => logX ? Math.log(x) : x;
       const origXMin = Math.min(...points.map(p => p.x));
       const origXMax = Math.max(...points.map(p => p.x));
-      const xMin = toRaw(origXMin);
-      const xMax = toRaw(origXMax);
-      const xRange = xMax - xMin || 1;
+      const xMin     = toRaw(origXMin);
+      const xMax     = toRaw(origXMax);
+      const xRange   = xMax - xMin || 1;
+      const toX      = x => pad.left + (toRaw(x) - xMin) / xRange * plotW;
+      const toY      = y => pad.top  + (1 - (y - yMin) / (yMax - yMin)) * plotH;
 
-      const toX = x => pad.left + (toRaw(x) - xMin) / xRange * plotW;
-      const toY = y => pad.top  + (1 - (y - yMin) / (yMax - yMin)) * plotH;
-
-      // Plot area background
-      ctx.fillStyle = bgAlt;
-      if (ctx.roundRect) {
-        ctx.beginPath(); ctx.roundRect(pad.left, pad.top, plotW, plotH, 6); ctx.fill();
-      } else {
-        ctx.fillRect(pad.left, pad.top, plotW, plotH);
-      }
-
-      // Dashed horizontal grid lines
-      for (let r = yMin; r <= yMax; r++) {
-        const y = toY(r);
-        if (r > yMin) {
-          ctx.strokeStyle = border;
-          ctx.lineWidth = 1;
-          ctx.setLineDash([3, 6]);
-          ctx.globalAlpha = 0.55;
-          ctx.beginPath();
-          ctx.moveTo(pad.left, y);
-          ctx.lineTo(pad.left + plotW, y);
-          ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.globalAlpha = 1;
-        }
-      }
-
-      // Points — tiny and faint; trend line is the signal, these are just context
-      for (const p of points) {
+      // Pre-compute jittered positions once so hover targets are stable
+      const rendered = points.map(p => {
         const yJitter = (Math.random() - 0.5) * 0.28;
-        // log mode: jitter in pixel space (data jitter would be uneven across the scale)
-        // linear mode: jitter in data space so it scales with the axis range
         const px = logX
           ? toX(p.x) + (Math.random() - 0.5) * 8
           : toX(p.x + (Math.random() - 0.5) * xRange * 0.012);
-        ctx.beginPath();
-        ctx.arc(px, toY(p.y + yJitter), 2.5, 0, Math.PI * 2);
-        ctx.fillStyle = muted;
-        ctx.globalAlpha = 0.35;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      }
+        return { ...p, px, py: toY(p.y + yJitter) };
+      });
 
-      // Trend line — regression computed in transformed (log) space
       const ptsReg = points.map(p => ({ x: toRaw(p.x), y: p.y }));
-      const reg = linearRegression(ptsReg);
-      if (reg) {
-        const y0 = Math.max(yMin, Math.min(yMax, reg.m * xMin + reg.b));
-        const y1 = Math.max(yMin, Math.min(yMax, reg.m * xMax + reg.b));
+      const reg    = linearRegression(ptsReg);
+
+      const xTicks = logX ? niceLogTicks(origXMin, origXMax) : niceTicks(origXMin, origXMax, 5);
+
+      function render(hoveredIdx = -1) {
+        ctx.clearRect(0, 0, W, H);
+
+        // Plot area background
+        ctx.fillStyle = bgAlt;
+        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(pad.left, pad.top, plotW, plotH, 6); ctx.fill(); }
+        else { ctx.fillRect(pad.left, pad.top, plotW, plotH); }
+
+        // Dashed grid lines
+        for (let r = yMin + 1; r <= yMax; r++) {
+          ctx.strokeStyle = border; ctx.lineWidth = 1;
+          ctx.setLineDash([3, 6]); ctx.globalAlpha = 0.55;
+          ctx.beginPath(); ctx.moveTo(pad.left, toY(r)); ctx.lineTo(pad.left + plotW, toY(r)); ctx.stroke();
+          ctx.setLineDash([]); ctx.globalAlpha = 1;
+        }
+
+        // Y axis labels
+        ctx.fillStyle = muted; ctx.font = `11px -apple-system, sans-serif`;
+        ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        for (let r = 1; r <= 5; r++) ctx.fillText(`${r}★`, pad.left - 5, toY(r));
+
+        // Points clipped to plot area
         ctx.save();
         ctx.beginPath(); ctx.rect(pad.left, pad.top, plotW, plotH); ctx.clip();
-        const areaGrad = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
-        areaGrad.addColorStop(0, accent + '40');
-        areaGrad.addColorStop(1, accent + '06');
-        ctx.beginPath();
-        ctx.moveTo(toX(origXMin), toY(y0));
-        ctx.lineTo(toX(origXMax), toY(y1));
-        ctx.lineTo(toX(origXMax), toY(yMin));
-        ctx.lineTo(toX(origXMin), toY(yMin));
-        ctx.closePath();
-        ctx.fillStyle = areaGrad;
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(toX(origXMin), toY(y0));
-        ctx.lineTo(toX(origXMax), toY(y1));
-        ctx.strokeStyle = accent;
-        ctx.lineWidth = 3;
-        ctx.globalAlpha = 1;
-        ctx.stroke();
+        for (let i = 0; i < rendered.length; i++) {
+          const { px, py } = rendered[i];
+          const hov = i === hoveredIdx;
+          ctx.beginPath();
+          ctx.arc(px, py, hov ? 4 : 2.5, 0, Math.PI * 2);
+          ctx.fillStyle   = hov ? accent : muted;
+          ctx.globalAlpha = hov ? 1 : 0.35;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
         ctx.restore();
-      }
 
-      // Bottom axis line
-      ctx.strokeStyle = border;
-      ctx.lineWidth = 1;
-      ctx.globalAlpha = 0.7;
-      ctx.beginPath();
-      ctx.moveTo(pad.left, pad.top + plotH);
-      ctx.lineTo(pad.left + plotW, pad.top + plotH);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
+        // Trend line
+        if (reg) {
+          const y0 = Math.max(yMin, Math.min(yMax, reg.m * xMin + reg.b));
+          const y1 = Math.max(yMin, Math.min(yMax, reg.m * xMax + reg.b));
+          ctx.save();
+          ctx.beginPath(); ctx.rect(pad.left, pad.top, plotW, plotH); ctx.clip();
+          const areaGrad = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
+          areaGrad.addColorStop(0, accent + '40'); areaGrad.addColorStop(1, accent + '06');
+          ctx.beginPath();
+          ctx.moveTo(toX(origXMin), toY(y0)); ctx.lineTo(toX(origXMax), toY(y1));
+          ctx.lineTo(toX(origXMax), toY(yMin)); ctx.lineTo(toX(origXMin), toY(yMin));
+          ctx.closePath(); ctx.fillStyle = areaGrad; ctx.fill();
+          ctx.beginPath();
+          ctx.moveTo(toX(origXMin), toY(y0)); ctx.lineTo(toX(origXMax), toY(y1));
+          ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.stroke();
+          ctx.restore();
+        }
 
-      // X tick marks + labels
-      const xTicks = logX ? niceLogTicks(origXMin, origXMax) : niceTicks(origXMin, origXMax, 5);
-      ctx.fillStyle = muted;
-      ctx.font = `11px -apple-system, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      for (const t of xTicks) {
-        const tx = toX(t);
-        ctx.strokeStyle = border;
-        ctx.lineWidth = 1;
-        ctx.globalAlpha = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(tx, pad.top + plotH);
-        ctx.lineTo(tx, pad.top + plotH + 4);
-        ctx.stroke();
+        // Bottom axis line
+        ctx.strokeStyle = border; ctx.lineWidth = 1; ctx.globalAlpha = 0.7;
+        ctx.beginPath(); ctx.moveTo(pad.left, pad.top + plotH); ctx.lineTo(pad.left + plotW, pad.top + plotH); ctx.stroke();
         ctx.globalAlpha = 1;
-        ctx.fillText(t, tx, pad.top + plotH + 7);
+
+        // X ticks + labels
+        ctx.fillStyle = muted; ctx.font = `11px -apple-system, sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        for (const t of xTicks) {
+          const tx = toX(t);
+          ctx.strokeStyle = border; ctx.lineWidth = 1; ctx.globalAlpha = 0.5;
+          ctx.beginPath(); ctx.moveTo(tx, pad.top + plotH); ctx.lineTo(tx, pad.top + plotH + 4); ctx.stroke();
+          ctx.globalAlpha = 1;
+          ctx.fillText(t, tx, pad.top + plotH + 7);
+        }
+        ctx.fillStyle = muted; ctx.font = `11px -apple-system, sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillText(xLabel, W / 2, H - 2);
+
+        // Tooltip
+        if (hoveredIdx >= 0) {
+          const { px, py, label } = rendered[hoveredIdx];
+          if (label) {
+            const maxLen = 32;
+            const txt  = label.length > maxLen ? label.slice(0, maxLen - 1) + '…' : label;
+            ctx.font   = `12px -apple-system, sans-serif`;
+            const tw   = ctx.measureText(txt).width;
+            const tp   = 6, bh = 24, bw = tw + tp * 2;
+            let bx = px + 10, by = py - bh - 6;
+            if (bx + bw > W - 4)  bx = px - bw - 10;
+            if (by < pad.top)     by = py + 8;
+            ctx.shadowColor = 'rgba(0,0,0,0.1)'; ctx.shadowBlur = 6;
+            ctx.fillStyle = bgCard;
+            if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 4); ctx.fill(); }
+            else { ctx.fillRect(bx, by, bw, bh); }
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = border; ctx.lineWidth = 1;
+            if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 4); ctx.stroke(); }
+            else { ctx.strokeRect(bx, by, bw, bh); }
+            ctx.fillStyle = textColor; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillText(txt, bx + tp, by + bh / 2);
+          }
+        }
       }
 
-      // X axis label
-      ctx.fillStyle = muted;
-      ctx.font = `11px -apple-system, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(xLabel, W / 2, H - 2);
+      render();
+
+      function nearestPoint(clientX, clientY) {
+        const rect = canvasEl.getBoundingClientRect();
+        const mx = (clientX - rect.left) * (W / rect.width);
+        const my = (clientY - rect.top)  * (H / rect.height);
+        let best = -1, bestDist = 625;
+        for (let i = 0; i < rendered.length; i++) {
+          const dx = rendered[i].px - mx, dy = rendered[i].py - my;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < bestDist) { bestDist = d2; best = i; }
+        }
+        return best;
+      }
+
+      canvasEl.onmousemove = e => {
+        const best = nearestPoint(e.clientX, e.clientY);
+        canvasEl.style.cursor = best >= 0 ? 'pointer' : '';
+        render(best);
+      };
+      canvasEl.onmouseleave = () => { canvasEl.style.cursor = ''; render(); };
+      canvasEl.onclick = e => {
+        const best = nearestPoint(e.clientX, e.clientY);
+        if (best >= 0 && rendered[best].gbid) {
+          location.href = `../book/?gbid=${encodeURIComponent(rendered[best].gbid)}`;
+        }
+      };
 
       return reg || null;
     }
@@ -1388,17 +1426,140 @@
       });
     }
 
+    function drawRatingBar(canvasEl, counts, { onBarClick } = {}) {
+      // counts[0] = 0.5★, counts[1] = 1★, ..., counts[9] = 5★
+      const N    = 10;
+      const dpr  = window.devicePixelRatio || 1;
+      const W_CSS = canvasEl.parentElement.clientWidth;
+      const H_CSS = 160;
+      canvasEl.width  = W_CSS * dpr;
+      canvasEl.height = H_CSS * dpr;
+      canvasEl.style.width  = W_CSS + 'px';
+      canvasEl.style.height = H_CSS + 'px';
+
+      const ctx = canvasEl.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      const accent = cssVar('--palette-rose');
+      const muted  = cssVar('--text-muted');
+      const bgAlt  = cssVar('--bg-alt');
+
+      const pad      = { top: 24, right: 12, bottom: 32, left: 12 };
+      const plotW    = W_CSS - pad.left - pad.right;
+      const plotH    = H_CSS - pad.top  - pad.bottom;
+      const maxCount = Math.max(...counts, 1);
+      const slotW    = plotW / N;
+
+      let selected = -1;
+
+      function render(hovered = -1) {
+        ctx.clearRect(0, 0, W_CSS, H_CSS);
+        for (let i = 0; i < N; i++) {
+          const count = counts[i];
+          const barH  = (count / maxCount) * plotH;
+          const x     = pad.left + i * slotW;
+          const y     = pad.top + plotH - barH;
+          const isSelected = i === selected;
+          const isHovered  = i === hovered;
+
+          // Bar
+          if (count > 0) {
+            ctx.globalAlpha = (isSelected || isHovered) ? 1 : 0.75;
+            ctx.fillStyle = accent;
+            if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, slotW, barH, [3, 3, 0, 0]); ctx.fill(); }
+            else { ctx.fillRect(x, y, slotW, barH); }
+            ctx.globalAlpha = 1;
+            // Outline on selected bar
+            if (isSelected) {
+              ctx.strokeStyle = accent;
+              ctx.lineWidth = 2;
+              if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x + 1, y + 1, slotW - 2, barH - 1, [3, 3, 0, 0]); ctx.stroke(); }
+              else { ctx.strokeRect(x + 1, y + 1, slotW - 2, barH - 1); }
+            }
+          }
+
+          // Count — on hovered or selected bar
+          if ((isHovered || isSelected) && count > 0) {
+            ctx.fillStyle = muted;
+            ctx.font = `bold 11px -apple-system, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(count, x + slotW / 2, y - 3);
+          }
+
+          // Label only on whole-number bars
+          if (i % 2 === 1) {
+            ctx.fillStyle = muted;
+            ctx.font = `11px -apple-system, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText(`${(i + 1) / 2}★`, x + slotW / 2, pad.top + plotH + 6);
+          }
+        }
+      }
+
+      render();
+
+      function barAt(clientX) {
+        const rect = canvasEl.getBoundingClientRect();
+        const mx   = clientX - rect.left;
+        const idx  = Math.floor((mx - pad.left) / slotW);
+        return (idx >= 0 && idx < N) ? idx : -1;
+      }
+
+      canvasEl.addEventListener('mousemove', e => {
+        const idx = barAt(e.clientX);
+        canvasEl.style.cursor = (onBarClick && idx >= 0 && counts[idx] > 0) ? 'pointer' : '';
+        render(idx);
+      });
+      canvasEl.addEventListener('mouseleave', () => { canvasEl.style.cursor = ''; render(); });
+      if (onBarClick) {
+        canvasEl.addEventListener('click', e => {
+          const idx = barAt(e.clientX);
+          if (idx >= 0 && counts[idx] > 0) {
+            if (idx === selected) {
+              onBarClick((idx + 1) / 2);
+            } else {
+              selected = idx;
+              render();
+            }
+          } else {
+            selected = -1;
+            render();
+          }
+        });
+      }
+    }
+
     async function drawCharts() {
+      // Rating distribution
+      const ratingCounts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; // 0.5 → 5.0 in 0.5 steps
+      const rated = books.filter(b => b.rating != null && b.rating >= 0.5 && b.rating <= 5);
+      for (const b of rated) {
+        const idx = Math.round(b.rating * 2) - 1; // 0.5→0, 1→1, 1.5→2, ..., 5→9
+        if (idx >= 0 && idx < 10) ratingCounts[idx]++;
+      }
+      const ratingsCanvas = document.getElementById('chart-ratings');
+      if (rated.length > 0) {
+        const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
+        drawRatingBar(ratingsCanvas, ratingCounts, { onBarClick: r => { location.href = `../library/?rating=${r}${u}`; } });
+        const avg = (rated.reduce((s, b) => s + b.rating, 0) / rated.length).toFixed(1);
+        document.getElementById('chart-ratings-summary').textContent = `${rated.length} rated · avg ${avg} ★`;
+      } else {
+        ratingsCanvas.style.display = 'none';
+        document.getElementById('chart-ratings-empty').style.display = '';
+      }
+
       const finished = books.filter(b => b.rating != null);
 
       const ptsPages = finished
         .filter(b => b.totalPages > 0)
-        .map(b => ({ x: b.totalPages, y: b.rating }));
+        .map(b => ({ x: b.totalPages, y: b.rating, label: b.title, gbid: b.gbid }));
 
       const thisYear = new Date().getFullYear();
       const ptsAge = finished
         .filter(b => b.releaseYear > 0)
-        .map(b => ({ x: Math.max(1, thisYear - b.releaseYear), y: b.rating }));
+        .map(b => ({ x: Math.max(1, thisYear - b.releaseYear), y: b.rating, label: b.title, gbid: b.gbid }));
 
       const countriesCanvas = document.getElementById('chart-countries');
       const countriesLegend = document.getElementById('chart-countries-legend');

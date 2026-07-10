@@ -197,10 +197,17 @@
     }
 
     function renderActivity(readingBooks, finishedBooks) {
-const items = [
+      const items = [
         ...readingBooks.filter(i => i.coverUrl).map(b => ({ ...b, isReading: true })),
         ...finishedBooks.filter(i => i.coverUrl)
       ].slice(0, 4);
+      const nReading  = items.filter(i => i.isReading).length;
+      const nFinished = items.filter(i => !i.isReading).length;
+      const parts = [];
+      if (nReading)  parts.push(`${nReading} currently reading`);
+      if (nFinished) parts.push(`${nFinished} recently finished`);
+      const summaryEl = document.getElementById('activity-summary');
+      if (summaryEl) summaryEl.innerHTML = parts.map((p, i) => i === 0 ? p : `<span style="border-left:2px solid var(--border);margin-left:.5rem;padding-left:.5rem">${p}</span>`).join('');
       const coversEl = document.getElementById('activity-covers');
       items.forEach((item, idx) => {
         const a = document.createElement('a');
@@ -210,6 +217,12 @@ const items = [
         const img = document.createElement('img');
         img.src = item.coverUrl; img.alt = item.title || ''; img.className = 'shelf-cover';
         a.appendChild(img);
+        if (!item.isReading) {
+          const sym = document.createElement('div');
+          sym.style.cssText = 'position:absolute;top:5px;right:5px;font-size:.7rem;font-weight:700;color:#fff;text-shadow:0 0 4px rgba(0,0,0,.9),0 1px 2px rgba(0,0,0,.7);pointer-events:none;line-height:1';
+          sym.textContent = '✓';
+          a.appendChild(sym);
+        }
         if (item.isReading && item.totalPages > 0) {
           const pct = Math.min(100, Math.round((item.currentPage / item.totalPages) * 100));
           const track = document.createElement('div');
@@ -221,7 +234,7 @@ const items = [
           a.appendChild(track);
         } else if (!item.isReading && item.rating != null) {
           const badge = document.createElement('div');
-          badge.className = 'cover-badge';
+          badge.style.cssText = 'position:absolute;bottom:5px;right:4px;font-size:.65rem;font-weight:700;color:#fff;text-shadow:0 0 4px rgba(0,0,0,.9),0 1px 2px rgba(0,0,0,.7);pointer-events:none;line-height:1.5';
           badge.textContent = '★ ' + item.rating;
           a.appendChild(badge);
         }
@@ -256,7 +269,7 @@ const items = [
         if (myProfile.avatarUrl) { avatarEl.innerHTML  = `<img src="${myProfile.avatarUrl}" alt="">`; }
         else                     { avatarEl.textContent = myProfile.username[0].toUpperCase(); }
         renderShelf(myProfile.shelf);
-        document.getElementById('activity-label').innerHTML = `<a href="../activity/?u=${encodeURIComponent(myProfile.username)}" style="color:inherit;text-decoration:none">activity</a>`;
+        document.getElementById('activity-label').innerHTML = `<a href="../activity/?u=${encodeURIComponent(myProfile.username)}" style="color:inherit;text-decoration:none">activity</a><span id="activity-summary" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border)"></span>`;
         Promise.all([getReadingBooks(user.uid), getRecentlyFinishedBooks(user.uid)])
           .then(([reading, finished]) => renderActivity(reading, finished))
           .catch(() => { document.getElementById('books-section').style.display = ''; });
@@ -301,7 +314,7 @@ const items = [
           fitDisplayName(document.getElementById('profile-display-name'));
           document.getElementById('profile-username').textContent = '@' + target.username;
           renderShelf(target.shelf);
-          document.getElementById('activity-label').innerHTML = `<a href="../activity/?u=${encodeURIComponent(target.username)}" style="color:inherit;text-decoration:none">activity</a>`;
+          document.getElementById('activity-label').innerHTML = `<a href="../activity/?u=${encodeURIComponent(target.username)}" style="color:inherit;text-decoration:none">activity</a><span id="activity-summary" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border)"></span>`;
           Promise.all([getReadingBooks(target.uid), getRecentlyFinishedBooks(target.uid)])
             .then(([reading, finished]) => renderActivity(reading, finished))
             .catch(() => { document.getElementById('books-section').style.display = ''; });

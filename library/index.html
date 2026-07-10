@@ -143,6 +143,7 @@
       el.dataset.language = (book.language || '').toLowerCase();
       el.dataset.format   = (book.format   || '').toLowerCase();
       el.dataset.country  = (book.country  || '').toLowerCase();
+      el.dataset.rating   = book.rating != null ? String(book.rating) : '';
       el.dataset.lists    = book._listIds || '';
       el.dataset.gbid     = book.gbid || '';
       const author = book.author ? `<span style="color:var(--text-muted);font-weight:400"> · ${esc(book.author)}</span>` : '';
@@ -385,6 +386,7 @@
       cell.dataset.language = (book.language || '').toLowerCase();
       cell.dataset.format   = (book.format   || '').toLowerCase();
       cell.dataset.country  = (book.country  || '').toLowerCase();
+      cell.dataset.rating   = book.rating != null ? String(book.rating) : '';
       cell.dataset.lists    = book._listIds || '';
       cell.dataset.gbid     = book.gbid || '';
       if (book.coverUrl) {
@@ -2284,7 +2286,7 @@
         const listBtn     = document.getElementById('view-list-btn');
         filterWrap.style.display = '';
 
-        const activeFilters = { format: new Set(), language: new Set(), country: new Set(), lists: new Set() };
+        const activeFilters = { format: new Set(), language: new Set(), country: new Set(), rating: new Set(), lists: new Set() };
 
         const filterDropdownBtn = document.getElementById('filter-dropdown-btn');
         const filterDropdown    = document.getElementById('filter-dropdown');
@@ -2297,6 +2299,7 @@
               if (show && activeFilters.format.size)   show = activeFilters.format.has(el.dataset.format || '');
               if (show && activeFilters.language.size) show = activeFilters.language.has(el.dataset.language || '');
               if (show && activeFilters.country.size)  show = activeFilters.country.has(el.dataset.country || '');
+              if (show && activeFilters.rating.size)  show = activeFilters.rating.has(el.dataset.rating || '');
               if (show && activeFilters.lists.size) {
                 const bookLists = (el.dataset.lists || '').split(',').filter(Boolean);
                 show = bookLists.some(l => activeFilters.lists.has(l));
@@ -2334,9 +2337,9 @@
         document.addEventListener('click', closeFilterDropdown);
         filterDropdown.addEventListener('click', e => e.stopPropagation());
 
-        function addSection(heading, key, entries) {
+        function addSection(heading, key, entries, { sort = true } = {}) {
           if (!entries.length) return;
-          entries = [...entries].sort((a, b) => (b.count ?? 0) - (a.count ?? 0));
+          if (sort) entries = [...entries].sort((a, b) => (b.count ?? 0) - (a.count ?? 0));
           const section = document.createElement('div');
           const hdr = document.createElement('div');
           hdr.style.cssText = 'font-size:.7rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;padding:.4rem .75rem .2rem';
@@ -2349,6 +2352,7 @@
             row.addEventListener('mouseleave', () => row.style.background = '');
             const cb = document.createElement('input');
             cb.type = 'checkbox';
+            cb.dataset.val = val;
             cb.style.accentColor = 'var(--accent)';
             cb.addEventListener('change', () => {
               if (cb.checked) activeFilters[key].add(val);
@@ -2380,6 +2384,10 @@
         if (noCountryCount > 0) countryEntries.push({ val: '', label: 'No country', count: noCountryCount });
         addSection('Country',  'country',  countryEntries);
 
+        const ratingVals = [...new Set(allBooks.map(b => b.rating).filter(r => r != null))].sort((a, b) => b - a);
+        function ratingLabel(r) { return '★'.repeat(Math.floor(r)) + (r % 1 >= 0.5 ? '½' : ''); }
+        addSection('Rating', 'rating', ratingVals.map(r => ({ val: String(r), label: ratingLabel(r), count: allBooks.filter(b => b.rating === r).length })), { sort: false });
+
         if (isOwn && allLists.length) {
           const libraryGbids = new Set(allBooks.map(b => b.gbid).filter(Boolean));
           const relevantLists = allLists.filter(l => (l.books || []).some(b => b.gbid && libraryGbids.has(b.gbid)));
@@ -2393,6 +2401,14 @@
           activeFilters.country.add(preCountry);
           const cb = [...filterDropdown.querySelectorAll('input[type=checkbox]')]
             .find(el => el.closest('label')?.textContent.trim().toLowerCase().startsWith(preCountry));
+          if (cb) cb.checked = true;
+          applyFilter();
+        }
+
+        const preRating = params.get('rating');
+        if (preRating) {
+          activeFilters.rating.add(preRating);
+          const cb = filterDropdown.querySelector(`input[type=checkbox][data-val="${preRating}"]`);
           if (cb) cb.checked = true;
           applyFilter();
         }

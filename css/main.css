@@ -29,6 +29,10 @@
   --header-h:     58px;
   --radius:       10px;
   --radius-sm:    6px;
+  --status-reading:       #F2BA00;
+  --status-reading-text:  #8a6800;
+  --status-finished:      #5a8e6e;
+  --status-finished-text: #2d6043;
   color-scheme: light;
 }
 
@@ -307,8 +311,16 @@ a { color: inherit; }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .status-done { background: #14532d; color: #4ade80; }
+  :root:not([data-theme="light"]) {
+    --status-reading-text:  #F2BA00;
+    --status-finished-text: #7eb895;
+  }
 }
 [data-theme="dark"] .status-done { background: #14532d; color: #4ade80; }
+[data-theme="dark"] {
+  --status-reading-text:  #F2BA00;
+  --status-finished-text: #7eb895;
+}
 
 /* ── Profile / Stats ───────────────────────────────────────── */
 .profile-header {
@@ -883,7 +895,7 @@ a { color: inherit; }
 .shelf-covers a { display: block; width: calc((100% - 3 * .625rem) / 4); flex-shrink: 0; position: relative; overflow: hidden; border-radius: var(--radius-sm); transition: scale .15s ease, transform .15s ease; }
 .shelf-covers a:hover { transform: rotate(0deg) !important; scale: 1.08; }
 .cover-progress-track { position: absolute; bottom: 0; left: 0; width: 100%; height: 4px; background: rgba(0,0,0,.35); }
-.cover-progress { height: 100%; background: #F2BA00; }
+.cover-progress { height: 100%; background: var(--ring-color, var(--accent)); }
 .cover-badge { position: absolute; bottom: 5px; left: 4px; font-size: .6rem; font-weight: 700; color: #fff; background: rgba(0,0,0,.55); border-radius: 3px; padding: 1px 4px; line-height: 1.5; pointer-events: none; }
 .shelf-covers--2 a { width: calc((100% - 1 * .625rem) / 2); }
 .shelf-cover { width: 100%; aspect-ratio: 2/3; border-radius: var(--radius-sm); object-fit: cover; display: block; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
