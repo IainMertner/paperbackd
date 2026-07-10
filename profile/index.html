@@ -44,6 +44,7 @@
 
     <div class="profile-meta-row">
       <div class="avatar-ink-ring">
+        <svg class="avatar-ring-svg" viewBox="0 0 88 88" aria-hidden="true"><circle cx="44" cy="44" r="44" filter="url(#ink-edge)" style="fill:var(--ring-color,var(--accent))"/></svg>
         <div class="profile-avatar-sm" id="profile-avatar"></div>
       </div>
       <div style="display:flex;flex-direction:column;gap:0;flex:1;min-width:0">
@@ -83,7 +84,7 @@
     </div>
 
     <div class="profile-zine-links">
-      <a class="profile-zine-link" id="network-link" href="../friends/">
+      <a class="profile-zine-link" id="network-link" href="../network/">
         network
         <span style="display:flex;align-items:center;gap:.5rem">
           <span style="font-size:.8rem;color:var(--text-muted)"><span id="stat-followers">—</span> followers · <span id="stat-following">—</span> following</span>
@@ -190,7 +191,7 @@
     }
 
     function renderActivity(readingBooks, finishedBooks) {
-      const items = [
+const items = [
         ...readingBooks.filter(i => i.coverUrl).map(b => ({ ...b, isReading: true })),
         ...finishedBooks.filter(i => i.coverUrl)
       ].slice(0, 4);
@@ -302,7 +303,7 @@
           document.getElementById('stats-link').href   = `../stats/?u=${encodeURIComponent(target.username)}`;
           document.getElementById('library-link').href = `../library/?u=${encodeURIComponent(target.username)}`;
           document.getElementById('lists-link').href   = `../lists/?u=${encodeURIComponent(target.username)}`;
-          document.getElementById('network-link').href = `../friends/?u=${encodeURIComponent(target.username)}`;
+          document.getElementById('network-link').href = `../network/?u=${encodeURIComponent(target.username)}`;
           getFollowers(target.uid).then(f => {
             document.getElementById('stat-followers').textContent = f.length;
           });

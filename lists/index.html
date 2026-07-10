@@ -94,6 +94,7 @@
         if (isOwn) {
           ownerUid      = user.uid;
           ownerUsername = myProfile.username;
+          document.getElementById('page-title').innerHTML = `<a href="../profile/" style="color:var(--accent);text-decoration:none">${esc(ownerUsername)}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>lists<span class="title-dot">.</span>`;
         } else {
           const target = await getProfileByUsername(targetU);
           if (!target) {

@@ -272,6 +272,7 @@
     const params   = new URLSearchParams(location.search);
     const viewUser = params.get('u')?.toLowerCase();
     const isOwn    = !viewUser;
+    if (isOwn) document.getElementById('page-title').innerHTML = `<a href="../profile/" style="color:var(--accent);text-decoration:none">${esc(profile.username)}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>library<span class="title-dot">.</span>`;
 
     const readingList  = document.getElementById('reading-list');
     const finishedList = document.getElementById('finished-list');

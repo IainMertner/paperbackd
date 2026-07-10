@@ -29,9 +29,9 @@
   <main class="page-content">
     <h1 class="page-title">search<span class="title-dot">.</span></h1>
     <div style="display:flex;gap:.5rem;margin-bottom:.65rem">
-      <button id="tab-books"   class="tab-btn" style="font-size:.82rem;padding:.28rem .75rem;border-radius:20px;border:1px solid var(--accent);background:var(--accent-dim);color:var(--accent);cursor:pointer;font-family:inherit">Books</button>
-      <button id="tab-authors" class="tab-btn" style="font-size:.82rem;padding:.28rem .75rem;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-family:inherit">Authors</button>
-      <button id="tab-users"   class="tab-btn" style="font-size:.82rem;padding:.28rem .75rem;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-family:inherit">Users</button>
+      <button id="tab-books"   class="search-tab-btn active">Books</button>
+      <button id="tab-authors" class="search-tab-btn">Authors</button>
+      <button id="tab-users"   class="search-tab-btn">Users</button>
     </div>
     <div class="book-search-wrap" id="search-wrap" style="margin-bottom:.9rem">
       <input type="search" id="search-input" class="join-club-input"
@@ -101,6 +101,54 @@
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
+    const RECENTS_KEY = 'rl_recents';
+    const RECENTS_MAX = 8;
+
+    function getRecents() {
+      try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]'); } catch { return []; }
+    }
+    function saveRecent(item) {
+      const list = getRecents().filter(r => r.href !== item.href);
+      list.unshift(item);
+      localStorage.setItem(RECENTS_KEY, JSON.stringify(list.slice(0, RECENTS_MAX)));
+    }
+    function renderRecents() {
+      results.innerHTML = '';
+      const list = getRecents();
+      if (!list.length) return;
+      const hdr = document.createElement('div');
+      hdr.style.cssText = 'font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:.35rem';
+      hdr.textContent = 'Recently viewed';
+      results.appendChild(hdr);
+      list.forEach(item => {
+        const a = document.createElement('a');
+        a.href = item.href;
+        a.className = 'search-result-row';
+        a.style.textDecoration = 'none';
+        let coverHtml;
+        if (item.type === 'user') {
+          const bs = item.borderColor ? `border-color:${esc(item.borderColor)}` : '';
+          const inner = item.coverUrl
+            ? `<img src="${esc(item.coverUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+            : esc(item.initial);
+          coverHtml = `<div class="friend-avatar" style="flex-shrink:0;${bs}">${inner}</div>`;
+        } else if (item.isRound) {
+          coverHtml = item.coverUrl
+            ? `<img class="search-result-cover" src="${esc(item.coverUrl)}" alt="" style="border-radius:50%;object-fit:cover">`
+            : `<div class="search-result-cover search-result-cover-placeholder" style="border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem">${esc(item.initial)}</div>`;
+        } else {
+          coverHtml = item.coverUrl
+            ? `<img class="search-result-cover" src="${esc(item.coverUrl)}" alt="">`
+            : `<div class="search-result-cover search-result-cover-placeholder"></div>`;
+        }
+        a.innerHTML = `${coverHtml}<div class="search-result-info">
+          <div class="search-result-title" style="font-size:.9rem">${esc(item.label)}</div>
+          ${item.sublabel ? `<div class="search-result-meta">${esc(item.sublabel)}</div>` : ''}
+        </div>`;
+        results.appendChild(a);
+      });
+    }
+
     const tabDefs = [
       { id: 'books',   btn: tabBooks,   placeholder: 'Search for a book…' },
       { id: 'authors', btn: tabAuthors, placeholder: 'Search for an author…' },
@@ -111,14 +159,11 @@
       activeTab = tab;
       tabDefs.forEach(t => {
         const active = t.id === tab;
-        t.btn.style.background  = active ? 'var(--accent-dim)' : 'transparent';
-        t.btn.style.color       = active ? 'var(--accent)' : 'var(--text-muted)';
-        t.btn.style.borderColor = active ? 'var(--accent)' : 'var(--border)';
+        t.btn.classList.toggle('active', active);
         if (active) input.placeholder = t.placeholder;
       });
-      results.innerHTML = '';
       const q = input.value.trim();
-      if (q) runSearch(q);
+      if (q) runSearch(q); else renderRecents();
     }
 
     tabBooks.addEventListener('click',   () => setTab('books'));
@@ -128,7 +173,7 @@
     input.addEventListener('input', () => {
       clearTimeout(timer);
       const q = input.value.trim();
-      if (!q) { results.innerHTML = ''; return; }
+      if (!q) { renderRecents(); return; }
       timer = setTimeout(() => runSearch(q), 280);
     });
 
@@ -204,6 +249,10 @@
           ? `<img class="search-result-cover" src="${esc(image)}" alt="" style="border-radius:50%;object-fit:cover">`
           : `<div class="search-result-cover search-result-cover-placeholder" style="border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem">${esc((name[0] || '?').toUpperCase())}</div>`;
         a.innerHTML += `<div class="search-result-info"><div class="search-result-title">${esc(name)}</div></div>`;
+        a.addEventListener('click', () => saveRecent({
+          type: 'author', label: name, sublabel: '', coverUrl: image,
+          href: a.href, initial: (name[0] || '?').toUpperCase(), isRound: true, borderColor: '',
+        }));
         results.appendChild(a);
       });
     }
@@ -241,6 +290,12 @@
           <div class="search-result-title">${esc(title)}</div>
           <div class="search-result-meta">${author ? esc(author) : ''}${author && year ? ' · ' : ''}${year ? esc(String(year)) : ''}</div>
         </div>`;
+        a.addEventListener('click', () => saveRecent({
+          type: 'book', label: title,
+          sublabel: [author, year ? String(year) : ''].filter(Boolean).join(' · '),
+          coverUrl: cover, href: a.href, initial: (title[0] || '?').toUpperCase(),
+          isRound: false, borderColor: '',
+        }));
         results.appendChild(a);
       });
     }
@@ -265,10 +320,15 @@
           <div class="search-result-info">
             <div class="search-result-title" style="font-size:.9rem">${esc(u.username)}</div>
           </div>`;
+        a.addEventListener('click', () => saveRecent({
+          type: 'user', label: u.username, sublabel: '', coverUrl: u.avatarUrl || '',
+          href: a.href, initial, isRound: true, borderColor: u.avatarBorderColor || '',
+        }));
         results.appendChild(a);
       });
     }
 
+    renderRecents();
     input.focus();
   </script>
   <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>

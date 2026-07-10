@@ -101,8 +101,8 @@
         </div>
 
         <div class="settings-row" id="set-olive-theme-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
-          <span class="settings-row-label">Set olive theme for all users</span>
-          <p style="font-size:.82rem;color:var(--text-muted);margin:0">One-off migration — sets <code>avatarBorderColor</code> to <code>#6B7B3A</code> on every user document.</p>
+          <span class="settings-row-label">Set grey theme for all users</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">One-off migration — sets <code>avatarBorderColor</code> to <code>#6C6460</code> on every user document.</p>
           <button class="btn-update" id="set-olive-theme-btn" type="button">Run migration</button>
           <div id="set-olive-theme-status" style="display:none;font-size:.85rem"></div>
         </div>
@@ -266,13 +266,13 @@
     document.getElementById('set-olive-theme-btn').addEventListener('click', async () => {
       const btn    = document.getElementById('set-olive-theme-btn');
       const status = document.getElementById('set-olive-theme-status');
-      if (!confirm('Set avatarBorderColor to #6B7B3A for ALL users?')) return;
+      if (!confirm('Set avatarBorderColor to #6C6460 for ALL users?')) return;
       btn.disabled = true;
       status.style.display = '';
       status.style.color = 'var(--text-muted)';
       status.textContent = 'Running…';
       try {
-        const count = await setThemeColorForAllUsers('#6B7B3A');
+        const count = await setThemeColorForAllUsers('#6C6460');
         status.textContent = `Done — updated ${count} user${count === 1 ? '' : 's'}.`;
         status.style.color = 'var(--accent)';
       } catch (err) {

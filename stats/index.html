@@ -712,7 +712,7 @@
     } else {
 
     document.getElementById('page-heading').innerHTML = isOwn
-      ? 'stats<span class="title-dot">.</span>'
+      ? `<a href="../profile/" style="color:var(--accent);text-decoration:none">${targetProfile.username}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>stats<span class="title-dot">.</span>`
       : `<a href="../profile/?u=${encodeURIComponent(targetProfile.username)}" style="color:var(--accent);text-decoration:none">${targetProfile.username}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>stats<span class="title-dot">.</span>`;
 
     const books = await getFinishedBooks(targetProfile.uid);
@@ -1189,7 +1189,7 @@
     // Shared aspect ratio for both the bubble chart and map — derived from Winkel Tripel projection bounds
     const _phi1    = Math.acos(2 / Math.PI);
     const _xMax    = Math.PI / 2 + 1;
-    const _xLeft   = (-160 * Math.PI / 360) * (1 + Math.cos(_phi1));
+    const _xLeft   = (-130 * Math.PI / 360) * (1 + Math.cos(_phi1));
     const _yRange  = Math.PI / 2 + 60 * Math.PI / 180; // yMax − yBottom (90°N to 60°S)
     const MAP_ASPECT = _yRange / (_xMax - _xLeft);
 
@@ -1220,7 +1220,7 @@
       const yMax    = Math.PI / 2;               // north pole y
       const yBottom = -60 * Math.PI / 180;       // clip southern ocean at 60°S
       // At φ=0, x = λ/2 × (1 + cos(φ₁)) — use this to derive the left edge cutoff longitude
-      const xLeft   = (-160 * Math.PI / 360) * (1 + Math.cos(phi1)); // clip east Pacific at 160°W
+      const xLeft   = (-130 * Math.PI / 360) * (1 + Math.cos(phi1)); // clip east Pacific at 130°W
 
       mapEl.innerHTML = '';
       const canvas = document.createElement('canvas');

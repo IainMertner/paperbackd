@@ -165,6 +165,24 @@
       document.body.appendChild(overlay);
     }
 
+    function aggregateFollows(events) {
+      const out = [];
+      const byKey = {};
+      for (const e of events) {
+        if (e.type !== 'followed') { out.push(e); continue; }
+        const day = dayLabel(e.timestamp) || '';
+        const key = `${e.uid}_${day}`;
+        if (byKey[key]) {
+          byKey[key].targets.push({ username: e.targetUsername, isMe: e.targetUid === user.uid });
+        } else {
+          const agg = { ...e, targets: [{ username: e.targetUsername, isMe: e.targetUid === user.uid }] };
+          byKey[key] = agg;
+          out.push(agg);
+        }
+      }
+      return out;
+    }
+
     function renderEvent(event) {
       const card   = document.createElement('div');
       card.className = 'card';
@@ -182,8 +200,14 @@
       const bookLink = event.gbid
         ? `<a href="../book/?gbid=${esc(event.gbid)}" style="font-style:italic;color:inherit;text-decoration:none">${esc(event.bookTitle)}</a>`
         : `<em>${esc(event.bookTitle)}</em>`;
+      const followLinks = (event.targets || [{ username: event.targetUsername, isMe: followedMe }]).map(
+        t => t.isMe ? 'you' : `<a href="../profile/?u=${esc(t.username)}" style="font-weight:600;color:inherit;text-decoration:none">${esc(t.username)}</a>`
+      );
+      const followPhrase = followLinks.length === 1 ? followLinks[0]
+        : followLinks.length === 2 ? `${followLinks[0]} and ${followLinks[1]}`
+        : `${followLinks.slice(0, -1).join(', ')}, and ${followLinks[followLinks.length - 1]}`;
       const action = isFollowed
-        ? `started following ${followedMe ? 'you' : `<a href="../profile/?u=${esc(event.targetUsername)}" style="font-weight:600;color:inherit;text-decoration:none">${esc(event.targetUsername)}</a>`}`
+        ? `started following ${followPhrase}`
         : event.type === 'started'
           ? `started reading ${bookLink}`
           : `finished ${bookLink}`;
@@ -202,6 +226,7 @@
         : '';
       const coverThumb = isFollowed
         ? (() => {
+            if (event.targets && event.targets.length > 1) return '';
             const tAvatar = event.targetAvatarUrl;
             const tInitial = (event.targetUsername?.[0] || '?').toUpperCase();
             const tBorder = `border:2.5px solid ${event.targetBorderColor || 'var(--accent)'};`;
@@ -500,8 +525,9 @@
           }));
         }
 
-        if (visible.length === 0 && !lastDoc) {
-          feedContent.removeChild(sentinel);
+        if (feedContent.contains(sentinel)) feedContent.removeChild(sentinel);
+
+        if (visible.length === 0 && !newCursor && !lastDoc) {
           const p = document.createElement('p');
           p.style.cssText = 'color:var(--text-muted);font-size:.9rem;margin-top:.25rem';
           p.textContent = activeUids.size === 0
@@ -509,8 +535,7 @@
             : (followingUids.length === 0 ? 'Follow some readers to see their activity here.' : 'No activity yet.');
           feedContent.appendChild(p);
         } else {
-          feedContent.removeChild(sentinel);
-          visible.forEach(e => {
+          aggregateFollows(visible).forEach(e => {
             const label = dayLabel(e.timestamp);
             if (label !== lastDay) {
               lastDay = label;
@@ -525,6 +550,10 @@
           if (newCursor) feedContent.appendChild(sentinel);
         }
         loading = false;
+        // If the sentinel is still on-screen after a sparse/filtered page, keep loading
+        if (newCursor) requestAnimationFrame(() => {
+          if (feedContent.contains(sentinel) && sentinel.getBoundingClientRect().top < window.innerHeight + 200) loadPage();
+        });
       }
 
       function resetFeed() {
