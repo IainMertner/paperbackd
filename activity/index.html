@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/favicon-a.svg">
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Activity - paperbackd</title>
+  <title>activity - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
 </head>
 <body>
@@ -255,7 +256,7 @@
         return;
       }
 
-      document.title = `${target.username}'s Activity - paperbackd`;
+      document.title = `activity - paperbackd`;
       if (targetU !== myProfile.username?.toLowerCase()) {
         document.getElementById('page-title').innerHTML = `<a href="../profile/?u=${encodeURIComponent(target.username)}" style="color:var(--accent);text-decoration:none">${esc(target.username)}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>activity<span class="title-dot">.</span>`;
       }

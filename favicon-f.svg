@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <style>@import url('https://fonts.googleapis.com/css2?family=Arvo:wght@700&amp;display=swap');</style>
+  </defs>
+  <circle cx="50" cy="50" r="47" fill="#33302B"/>
+  <circle cx="50" cy="50" r="40" fill="#FAF7F2"/>
+  <text
+    x="50" y="68"
+    font-family="Arvo, Georgia, serif"
+    font-weight="700"
+    font-size="46"
+    fill="#33302B"
+    text-anchor="middle"
+  >f</text>
+</svg>

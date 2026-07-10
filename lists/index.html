@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/favicon-l.svg">
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lists - paperbackd</title>
+  <title>lists - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
 </head>
 <body>
@@ -104,7 +105,7 @@
           ownerUid      = target.uid;
           ownerUsername = target.username;
 
-          document.title = `${ownerUsername}'s Lists - paperbackd`;
+          document.title = `lists - paperbackd`;
           document.getElementById('page-title').innerHTML = `<a href="../profile/?u=${encodeURIComponent(ownerUsername)}" style="color:var(--accent);text-decoration:none">${esc(ownerUsername)}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>lists<span class="title-dot">.</span>`;
         }
 
