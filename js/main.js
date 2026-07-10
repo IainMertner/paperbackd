@@ -183,6 +183,10 @@ document.addEventListener('DOMContentLoaded', () => {
   setActiveNav();
 });
 
+window.addEventListener('pageshow', e => {
+  if (e.persisted) setActiveNav();
+});
+
 // Safety net: if the module script crashes or hangs, don't leave the page invisible
 window.addEventListener('unhandledrejection', () => {
   document.body.classList.remove('auth-loading');

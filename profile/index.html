@@ -80,7 +80,7 @@
 
     <div class="profile-books-section" id="books-section" style="display:none">
       <div id="shelf-card" class="profile-book-card" style="display:none;flex:1;min-width:0;border-radius:var(--radius);padding:.625rem">
-        <div class="profile-books-label">shelf</div>
+        <div class="profile-books-label" id="shelf-label">shelf</div>
         <div class="shelf-covers" id="shelf-covers"></div>
       </div>
       <div id="activity-card" class="profile-book-card" style="display:none;flex:1;min-width:0;border-radius:var(--radius);padding:.625rem">
@@ -161,7 +161,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getProfileByUsername, getFollowers, getProfile, getBookCount, getListCount, getReadingBooks, getRecentlyFinishedBooks, followUser, unfollowUser, logOut, ROOT } from '../js/firebase.js';
+    import { getProfileByUsername, getFollowers, getProfile, getBookCount, getListCount, getReadingBooks, getRecentlyFinishedBooks, followUser, unfollowUser, logOut, ROOT, updateShelf, getBooks, updateAvatarUrl, updateAvatarBorderColor } from '../js/firebase.js';
 
     const { user, profile: myProfile } = await requireAuth();
     const params      = new URLSearchParams(location.search);
@@ -192,8 +192,300 @@
       document.getElementById(cardId).style.display = '';
     }
 
-    function renderShelf(shelf) {
+    function renderShelf(shelf, onEmptyClick) {
+      document.getElementById('shelf-covers').innerHTML = '';
       renderCovers(shelf || [], 'shelf-covers', 'shelf-card');
+      if (onEmptyClick) {
+        document.getElementById('shelf-covers').querySelectorAll('.shelf-cover-empty').forEach(el => {
+          el.style.cursor = 'pointer';
+          el.addEventListener('click', onEmptyClick);
+        });
+      }
+    }
+
+    const THEMES = [
+      { label: 'Grey',       color: '#6C6460' },
+      { label: 'Olive',      color: '#6B7B3A' },
+      { label: 'Yellow',     color: '#D4AA55' },
+      { label: 'Terracotta', color: '#B85C3A' },
+      { label: 'Teal',       color: '#3A9E8C' },
+      { label: 'Burgundy',   color: '#7A2E40' },
+      { label: 'Slate',      color: '#2E62A0' },
+      { label: 'Rose',       color: '#C95C80' },
+    ];
+
+    function openProfileEdit() {
+      let pendingAvatarUrl = null;
+      let selectedTheme = myProfile.avatarBorderColor || THEMES[0].color;
+
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;box-sizing:border-box';
+      const modal = document.createElement('div');
+      modal.style.cssText = 'background:var(--bg-card);border-radius:var(--radius);padding:1.25rem;max-width:300px;width:100%;position:relative;box-shadow:0 8px 32px rgba(0,0,0,.3)';
+
+      const close = () => overlay.remove();
+      overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '×';
+      closeBtn.style.cssText = 'position:absolute;top:.6rem;right:.75rem;background:none;border:none;font-size:1.4rem;line-height:1;cursor:pointer;color:var(--text-muted);padding:0';
+      closeBtn.addEventListener('click', close);
+
+      const heading = document.createElement('div');
+      heading.style.cssText = 'font-weight:700;font-size:.95rem;margin-bottom:1rem';
+      heading.textContent = 'Profile';
+
+      // Avatar
+      const avatarWrap = document.createElement('div');
+      avatarWrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:.4rem;margin-bottom:1rem;cursor:pointer';
+      const avatarPreview = document.createElement('div');
+      avatarPreview.className = 'profile-avatar-lg';
+      avatarPreview.style.cssText = 'transition:filter .18s';
+      avatarWrap.addEventListener('mouseenter', () => { avatarPreview.style.filter = 'brightness(0.72)'; });
+      avatarWrap.addEventListener('mouseleave', () => { avatarPreview.style.filter = ''; });
+
+      function showPreview(url) {
+        if (url) avatarPreview.innerHTML = `<img src="${url}" alt="">`;
+        else avatarPreview.textContent = myProfile.username[0].toUpperCase();
+      }
+      showPreview(myProfile.avatarUrl);
+
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file'; fileInput.accept = 'image/*'; fileInput.style.display = 'none';
+      avatarWrap.addEventListener('click', () => fileInput.click());
+
+      const changeLabel = document.createElement('div');
+      changeLabel.style.cssText = 'font-size:.75rem;color:var(--text-muted)';
+      changeLabel.textContent = 'Change photo';
+
+      fileInput.addEventListener('change', async () => {
+        const file = fileInput.files[0];
+        if (!file) return;
+        try {
+          pendingAvatarUrl = await new Promise((resolve, reject) => {
+            const img = new Image();
+            const url = URL.createObjectURL(file);
+            img.onload = () => {
+              URL.revokeObjectURL(url);
+              const SIZE = 256, scale = Math.min(SIZE / img.width, SIZE / img.height, 1);
+              const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+              const canvas = document.createElement('canvas');
+              canvas.width = w; canvas.height = h;
+              canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+              resolve(canvas.toDataURL('image/jpeg', 0.82));
+            };
+            img.onerror = reject;
+            img.src = url;
+          });
+          showPreview(pendingAvatarUrl);
+        } catch { alert('Could not load that image.'); }
+        finally { fileInput.value = ''; }
+      });
+
+      avatarWrap.append(avatarPreview, changeLabel, fileInput);
+
+      // Theme
+      const themeLabel = document.createElement('div');
+      themeLabel.style.cssText = 'font-size:.8rem;color:var(--text-muted);margin-bottom:.5rem';
+      themeLabel.textContent = 'Theme colour';
+
+      const swatches = document.createElement('div');
+      swatches.style.cssText = 'display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem';
+
+      function renderSwatches() {
+        swatches.innerHTML = '';
+        THEMES.forEach(({ color }) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.style.cssText = `width:1.75rem;height:1.75rem;border-radius:50%;background:${color};cursor:pointer;border:3px solid ${color === selectedTheme ? 'var(--text)' : 'transparent'};transition:border-color .15s;flex-shrink:0`;
+          btn.addEventListener('click', () => {
+            selectedTheme = color;
+            document.documentElement.style.setProperty('--ring-color', color);
+            renderSwatches();
+          });
+          swatches.appendChild(btn);
+        });
+      }
+      renderSwatches();
+
+      // Save
+      const saveBtn = document.createElement('button');
+      saveBtn.textContent = 'Save'; saveBtn.className = 'btn-update';
+      saveBtn.style.cssText = 'width:100%';
+      saveBtn.addEventListener('click', async () => {
+        saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+        try {
+          const saves = [];
+          if (pendingAvatarUrl) {
+            saves.push(updateAvatarUrl(user.uid, pendingAvatarUrl));
+            myProfile.avatarUrl = pendingAvatarUrl;
+            const el = document.getElementById('profile-avatar');
+            el.innerHTML = `<img src="${pendingAvatarUrl}" alt="">`;
+          }
+          if (selectedTheme !== myProfile.avatarBorderColor) {
+            saves.push(updateAvatarBorderColor(user.uid, selectedTheme));
+            myProfile.avatarBorderColor = selectedTheme;
+          }
+          await Promise.all(saves);
+          const cached = JSON.parse(localStorage.getItem('rl_profile') || '{}');
+          if (pendingAvatarUrl) cached.avatarUrl = pendingAvatarUrl;
+          cached.avatarBorderColor = selectedTheme;
+          localStorage.setItem('rl_profile', JSON.stringify(cached));
+          close();
+        } catch { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+      });
+
+      modal.append(closeBtn, heading, avatarWrap, themeLabel, swatches, saveBtn);
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+    }
+
+    let _allBooks = null;
+
+    function openShelfEdit() {
+      let items = (myProfile.shelf || []).map(i => ({ ...i }));
+
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;box-sizing:border-box';
+      const modal = document.createElement('div');
+      modal.style.cssText = 'background:var(--bg-card);border-radius:var(--radius);padding:1.25rem;max-width:360px;width:100%;position:relative;box-shadow:0 8px 32px rgba(0,0,0,.3)';
+
+      const close = () => overlay.remove();
+      overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '×';
+      closeBtn.style.cssText = 'position:absolute;top:.6rem;right:.75rem;background:none;border:none;font-size:1.4rem;line-height:1;cursor:pointer;color:var(--text-muted);padding:0';
+      closeBtn.addEventListener('click', close);
+
+      const heading = document.createElement('div');
+      heading.style.cssText = 'font-weight:700;font-size:.95rem;margin-bottom:.75rem';
+      heading.textContent = 'Edit shelf';
+
+      const list = document.createElement('div');
+      list.className = 'shelf-edit-list';
+
+      const searchWrap = document.createElement('div');
+      searchWrap.style.cssText = 'position:relative;margin-bottom:.75rem';
+
+      const searchInput = document.createElement('input');
+      searchInput.type = 'text';
+      searchInput.placeholder = 'Add a book from your library…';
+      searchInput.className = 'join-club-input';
+      searchInput.style.cssText = 'width:100%;box-sizing:border-box';
+
+      const suggestions = document.createElement('div');
+      suggestions.className = 'book-suggestions';
+      suggestions.style.display = 'none';
+      searchWrap.append(searchInput, suggestions);
+
+      let dragIdx = null;
+
+      function renderList() {
+        list.innerHTML = '';
+        items.forEach((item, i) => {
+          const div = document.createElement('div');
+          div.className = 'shelf-edit-item';
+          div.draggable = true;
+          div.style.cursor = 'grab';
+          const img = document.createElement('img');
+          img.className = 'shelf-edit-cover'; img.src = item.coverUrl || ''; img.alt = '';
+          const btn = document.createElement('button');
+          btn.type = 'button'; btn.className = 'shelf-edit-remove'; btn.textContent = '×';
+          btn.addEventListener('click', () => { items.splice(i, 1); renderList(); syncSearch(); });
+          const title = document.createElement('div');
+          title.className = 'shelf-edit-title'; title.textContent = item.title || '';
+          div.append(img, btn, title);
+
+          div.addEventListener('dragstart', e => {
+            dragIdx = i; e.dataTransfer.effectAllowed = 'move';
+            requestAnimationFrame(() => { div.style.opacity = '0.35'; });
+          });
+          div.addEventListener('dragend', () => {
+            div.style.opacity = '';
+            list.querySelectorAll('.shelf-edit-item').forEach(el => el.style.outline = '');
+            dragIdx = null;
+          });
+          div.addEventListener('dragover', e => {
+            e.preventDefault();
+            list.querySelectorAll('.shelf-edit-item').forEach(el => el.style.outline = '');
+            if (dragIdx !== null && i !== dragIdx) div.style.outline = '2px solid var(--accent)';
+          });
+          div.addEventListener('drop', e => {
+            e.preventDefault();
+            if (dragIdx === null || dragIdx === i) return;
+            const moved = items.splice(dragIdx, 1)[0];
+            items.splice(i, 0, moved);
+            renderList();
+          });
+
+          list.appendChild(div);
+        });
+        syncSearch();
+      }
+
+      function syncSearch() {
+        searchWrap.style.display = items.length >= 4 ? 'none' : '';
+      }
+
+      searchInput.addEventListener('input', async () => {
+        const q = searchInput.value.trim().toLowerCase();
+        if (!q) { suggestions.style.display = 'none'; return; }
+        if (!_allBooks) _allBooks = await getBooks(user.uid);
+        const alreadyIn = new Set(items.map(i => i.gbid).filter(Boolean));
+        const matches = _allBooks.filter(b => b.coverUrl && b.gbid && !alreadyIn.has(b.gbid) &&
+          (b.title?.toLowerCase().includes(q) || b.author?.toLowerCase().includes(q))
+        ).slice(0, 6);
+        suggestions.innerHTML = '';
+        if (!matches.length) { suggestions.style.display = 'none'; return; }
+        matches.forEach(book => {
+          const row = document.createElement('div');
+          row.className = 'book-suggestion-item';
+          row.style.cssText = 'display:flex;align-items:center;gap:.5rem';
+          if (book.coverUrl) {
+            const img = document.createElement('img');
+            img.src = book.coverUrl; img.alt = ''; img.style.cssText = 'width:24px;height:36px;object-fit:cover;border-radius:2px;flex-shrink:0';
+            row.appendChild(img);
+          }
+          const label = document.createElement('span');
+          label.textContent = book.title || '';
+          row.appendChild(label);
+          row.addEventListener('click', () => {
+            items.push({ gbid: book.gbid, title: book.title, coverUrl: book.coverUrl });
+            searchInput.value = ''; suggestions.style.display = 'none';
+            renderList();
+          });
+          suggestions.appendChild(row);
+        });
+        suggestions.style.display = '';
+      });
+
+      document.addEventListener('click', e => {
+        if (!suggestions.contains(e.target) && e.target !== searchInput) suggestions.style.display = 'none';
+      });
+
+      const saveBtn = document.createElement('button');
+      saveBtn.textContent = 'Save'; saveBtn.className = 'btn-update';
+      saveBtn.style.cssText = 'margin-top:.25rem;width:100%';
+      saveBtn.addEventListener('click', async () => {
+        saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+        try {
+          await updateShelf(user.uid, items);
+          myProfile.shelf = items;
+          const cached = JSON.parse(localStorage.getItem('rl_profile') || '{}');
+          cached.shelf = items;
+          localStorage.setItem('rl_profile', JSON.stringify(cached));
+          renderShelf(items, openShelfEdit);
+          close();
+        } catch {
+          saveBtn.disabled = false; saveBtn.textContent = 'Save';
+        }
+      });
+
+      modal.append(closeBtn, heading, list, searchWrap, saveBtn);
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+      renderList();
     }
 
     function renderActivity(readingBooks, finishedBooks) {
@@ -268,7 +560,12 @@
         const avatarEl = document.getElementById('profile-avatar');
         if (myProfile.avatarUrl) { avatarEl.innerHTML  = `<img src="${myProfile.avatarUrl}" alt="">`; }
         else                     { avatarEl.textContent = myProfile.username[0].toUpperCase(); }
-        renderShelf(myProfile.shelf);
+        const inkRing = document.querySelector('.avatar-ink-ring');
+        inkRing.style.cursor = 'pointer';
+        inkRing.addEventListener('click', openProfileEdit);
+        renderShelf(myProfile.shelf, openShelfEdit);
+        document.getElementById('shelf-label').innerHTML = `shelf<span id="shelf-edit-btn" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border);cursor:pointer">edit</span>`;
+        document.getElementById('shelf-edit-btn').addEventListener('click', openShelfEdit);
         document.getElementById('activity-label').innerHTML = `<a href="../activity/?u=${encodeURIComponent(myProfile.username)}" style="color:inherit;text-decoration:none">activity</a><span id="activity-summary" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border)"></span>`;
         Promise.all([getReadingBooks(user.uid), getRecentlyFinishedBooks(user.uid)])
           .then(([reading, finished]) => renderActivity(reading, finished))

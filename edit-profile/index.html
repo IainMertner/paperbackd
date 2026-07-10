@@ -235,11 +235,15 @@
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
+    let shelfDragIdx = null;
+
     function renderShelfEdit() {
       shelfList.innerHTML = '';
       shelfItems.forEach((item, i) => {
         const div = document.createElement('div');
         div.className = 'shelf-edit-item';
+        div.draggable = true;
+        div.style.cursor = 'grab';
         const img = document.createElement('img');
         img.src = item.coverUrl || ''; img.alt = item.title || '';
         img.className = 'shelf-edit-cover';
@@ -250,6 +254,29 @@
         const title = document.createElement('div');
         title.className = 'shelf-edit-title'; title.textContent = item.title || '';
         div.append(img, btn, title);
+
+        div.addEventListener('dragstart', e => {
+          shelfDragIdx = i; e.dataTransfer.effectAllowed = 'move';
+          requestAnimationFrame(() => { div.style.opacity = '0.35'; });
+        });
+        div.addEventListener('dragend', () => {
+          div.style.opacity = '';
+          shelfList.querySelectorAll('.shelf-edit-item').forEach(el => el.style.outline = '');
+          shelfDragIdx = null;
+        });
+        div.addEventListener('dragover', e => {
+          e.preventDefault();
+          shelfList.querySelectorAll('.shelf-edit-item').forEach(el => el.style.outline = '');
+          if (shelfDragIdx !== null && i !== shelfDragIdx) div.style.outline = '2px solid var(--accent)';
+        });
+        div.addEventListener('drop', e => {
+          e.preventDefault();
+          if (shelfDragIdx === null || shelfDragIdx === i) return;
+          const moved = shelfItems.splice(shelfDragIdx, 1)[0];
+          shelfItems.splice(i, 0, moved);
+          renderShelfEdit();
+        });
+
         shelfList.appendChild(div);
       });
       shelfAddSection.style.display = shelfItems.length >= 4 ? 'none' : '';

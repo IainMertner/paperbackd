@@ -1610,7 +1610,7 @@
       if (isOwn) {
         subjHtml = 'You'; verb = 'tend'; possHtml = 'your';
       } else {
-        const name = esc(targetProfile.displayName || targetProfile.username);
+        const name = esc(targetProfile.username);
         subjHtml = name; verb = 'tends'; possHtml = `${name}'s`;
       }
 
@@ -1635,6 +1635,7 @@
       }
 
       if (ptsAge.length >= 2) {
+        const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
         const reg = drawScatter(ageCanvas, ptsAge, { xLabel: 'Book age (years)', yMin: 0, yMax: 5, logX: true, onPointClick: t => { location.href = `../library/?q=${encodeURIComponent(t)}${u}`; } });
         if (reg) {
           const p = reg.pValue, up = reg.m > 0;

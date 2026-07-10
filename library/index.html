@@ -1204,7 +1204,7 @@
       const dnfTab      = makeStatusTab('Did not finish', '#c84f4f');
       const tabDivider  = document.createElement('div');
       tabDivider.style.cssText = 'width:1px;background:var(--border);flex-shrink:0';
-      statusRow.append(finishedTab, tabDivider, dnfTab);
+      statusRow.append(dnfTab, tabDivider, finishedTab);
       card.appendChild(statusRow);
 
       finishedTab.addEventListener('click', () => {

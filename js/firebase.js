@@ -7,7 +7,7 @@ import {
   onAuthStateChanged
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
-  getFirestore,
+  initializeFirestore,
   doc,
   setDoc,
   getDoc,
@@ -41,7 +41,7 @@ const firebaseConfig = {
 
 const app  = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db   = getFirestore(app);
+export const db   = initializeFirestore(app, { experimentalForceLongPolling: true });
 
 // Base URL of the app, works on any host (GitHub Pages, localhost, etc.)
 export const ROOT = new URL('..', import.meta.url).href;
