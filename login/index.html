@@ -30,7 +30,7 @@
     <div class="card auth-card">
       <form id="auth-form" novalidate>
         <div class="auth-field">
-          <label class="auth-label" for="username">Username</label>
+          <label class="auth-label" id="username-label" for="username">Username or email</label>
           <input class="auth-input" id="username" type="text"
             autocomplete="username" autocapitalize="none" spellcheck="false" required>
           <p class="auth-hint" id="username-hint" hidden>
@@ -43,6 +43,14 @@
             autocomplete="name" maxlength="50" spellcheck="false">
           <p class="auth-hint" style="display:block;margin-top:.3rem">
             The name displayed at the top of your profile.
+          </p>
+        </div>
+        <div class="auth-field" id="email-field" hidden>
+          <label class="auth-label" for="email">Email</label>
+          <input class="auth-input" id="email" type="email"
+            autocomplete="email" autocapitalize="none" spellcheck="false">
+          <p class="auth-hint" style="display:block;margin-top:.3rem">
+            Used to verify your account. Never shown publicly.
           </p>
         </div>
         <div class="auth-field">
@@ -60,7 +68,7 @@
   </main>
 
   <script type="module">
-    import { signIn, signUp, onAuth, ROOT } from '../js/firebase.js';
+    import { signIn, signUp, resendVerificationEmail, onAuth, logOut, ROOT } from '../js/firebase.js';
 
     // Show form once we know the user isn't signed in; redirect if they are.
     // Store unsubscribe so we can stop the listener before submitting the form —
@@ -77,12 +85,26 @@
 
     // ── Tab switching ─────────────────────────────────────────────────────────
     let mode = 'signin';
-    const tabs       = document.querySelectorAll('.auth-tab');
-    const submitBtn  = document.getElementById('auth-submit');
-    const passInput  = document.getElementById('password');
-    const usernameHint    = document.getElementById('username-hint');
-    const passwordHint    = document.getElementById('password-hint');
+    const tabs             = document.querySelectorAll('.auth-tab');
+    const submitBtn        = document.getElementById('auth-submit');
+    const passInput        = document.getElementById('password');
+    const usernameHint     = document.getElementById('username-hint');
+    const passwordHint     = document.getElementById('password-hint');
     const displaynameField = document.getElementById('displayname-field');
+    const emailField       = document.getElementById('email-field');
+
+    // Show banner if redirected here because email isn't verified
+    const _params = new URLSearchParams(location.search);
+    if (_params.get('unverified') === '1') {
+      const banner = document.getElementById('auth-error');
+      banner.textContent = 'Please verify your email address before signing in.';
+      banner.hidden = false;
+    }
+    if (_params.get('verify_email') === '1') {
+      const banner = document.getElementById('auth-error');
+      banner.textContent = 'Check your inbox and click the verification link. Once verified, sign in with your username or email.';
+      banner.hidden = false;
+    }
 
     tabs.forEach(tab => {
       tab.addEventListener('click', () => {
@@ -96,6 +118,8 @@
         usernameHint.hidden           = mode === 'signin';
         passwordHint.hidden           = mode === 'signin';
         displaynameField.hidden       = mode === 'signin';
+        emailField.hidden             = mode === 'signin';
+        document.getElementById('username-label').textContent = mode === 'signin' ? 'Username or email' : 'Username';
         document.getElementById('auth-error').hidden = true;
       });
     });
@@ -108,6 +132,7 @@
       const username    = document.getElementById('username').value.trim().toLowerCase();
       const password    = document.getElementById('password').value;
       const displayName = document.getElementById('displayname').value.trim();
+      const email       = document.getElementById('email').value.trim();
       const errorEl     = document.getElementById('auth-error');
 
       if (mode === 'register' && !displayName) {
@@ -123,25 +148,55 @@
       try {
         if (mode === 'signin') {
           await signIn(username, password);
+          window.location.replace(ROOT);
         } else {
-          await signUp(username, password, displayName);
+          await signUp(username, password, displayName, email);
+          await logOut();
+          showVerifyScreen(email);
         }
-        window.location.replace(ROOT);
       } catch (err) {
-        errorEl.textContent   = friendlyError(err);
-        errorEl.hidden        = false;
+        if (err.code === 'auth/email-not-verified') {
+          errorEl.innerHTML = 'Please verify your email before signing in. <button type="button" id="resend-btn" style="background:none;border:none;padding:0;color:var(--accent);cursor:pointer;font:inherit;text-decoration:underline">Resend verification email</button>';
+          errorEl.hidden = false;
+          document.getElementById('resend-btn').addEventListener('click', async () => {
+            const resendBtn = document.getElementById('resend-btn');
+            resendBtn.disabled = true;
+            resendBtn.textContent = 'Sending…';
+            try {
+              await resendVerificationEmail(username, password);
+              errorEl.textContent = 'Verification email sent. Check your inbox.';
+            } catch (e) {
+              errorEl.textContent = friendlyError(e);
+            }
+          });
+        } else {
+          errorEl.textContent = friendlyError(err);
+          errorEl.hidden      = false;
+        }
         submitBtn.disabled    = false;
         submitBtn.textContent = mode === 'signin' ? 'Sign in' : 'Create account';
       }
     });
+
+    function showVerifyScreen(email) {
+      const safe = email.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      document.querySelector('.auth-card').innerHTML = `
+        <p style="margin:0 0 1rem;line-height:1.5">We've sent a verification link to <strong>${safe}</strong>. Click the link in that email, then come back here to sign in.</p>
+        <p style="margin:0 0 1.5rem;font-size:.85rem;color:var(--text-muted);line-height:1.5">Don't see it? Check your spam folder.</p>
+        <button type="button" class="auth-submit" id="back-to-signin">Back to sign in</button>
+      `;
+      document.getElementById('back-to-signin').addEventListener('click', () => location.replace(location.pathname));
+    }
 
     function friendlyError(err) {
       const code = err.code || '';
       if (code.includes('user-not-found') || code.includes('wrong-password') || code.includes('invalid-credential')) {
         return 'Invalid username or password.';
       }
-      if (code.includes('weak-password'))     return 'Password must be at least 6 characters.';
-      if (code.includes('too-many-requests')) return 'Too many attempts. Please try again later.';
+      if (code.includes('email-already-in-use')) return 'An account with that email already exists.';
+      if (code.includes('invalid-email'))        return 'Please enter a valid email address.';
+      if (code.includes('weak-password'))        return 'Password must be at least 6 characters.';
+      if (code.includes('too-many-requests'))    return 'Too many attempts. Please try again later.';
       return err.message || 'Something went wrong. Please try again.';
     }
   </script>

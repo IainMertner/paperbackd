@@ -4,7 +4,11 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut as fbSignOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  sendEmailVerification,
+  verifyBeforeUpdateEmail,
+  reauthenticateWithCredential,
+  EmailAuthProvider
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   initializeFirestore,
@@ -48,16 +52,18 @@ export const ROOT = new URL('..', import.meta.url).href;
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
-export async function signUp(username, password, displayName) {
+export async function signUp(username, password, displayName, email) {
   if (!/^[a-z0-9_]{3,16}$/.test(username)) {
     throw new Error('Username must be 3–16 characters: lowercase letters, numbers, underscores.');
   }
   if (!displayName?.trim()) throw new Error('Please enter a display name.');
+  if (!email?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    throw new Error('Please enter a valid email address.');
+  }
   const taken = await getDoc(doc(db, 'usernames', username));
   if (taken.exists()) throw new Error('That username is already taken.');
 
-  // Use a random email so the auth identity is never coupled to the username.
-  const authEmail = `${crypto.randomUUID()}@readinglog.local`;
+  const authEmail = email.trim().toLowerCase();
   const cred = await createUserWithEmailAndPassword(auth, authEmail, password);
   const uid  = cred.user.uid;
 
@@ -66,15 +72,42 @@ export async function signUp(username, password, displayName) {
     setDoc(doc(db, 'usernames', username), { uid, authEmail })
   ]);
 
+  await sendEmailVerification(cred.user, { url: ROOT + 'login/' });
   return cred.user;
 }
 
-export async function signIn(username, password) {
-  const snap = await getDoc(doc(db, 'usernames', username.toLowerCase()));
-  if (!snap.exists()) throw new Error('No account found with that username.');
-  // New accounts store authEmail; old accounts fall back to the legacy format.
-  const authEmail = snap.data().authEmail || `${username}@readinglog.local`;
-  return signInWithEmailAndPassword(auth, authEmail, password);
+export async function signIn(usernameOrEmail, password) {
+  let authEmail;
+  if (usernameOrEmail.includes('@')) {
+    authEmail = usernameOrEmail.trim().toLowerCase();
+  } else {
+    const snap = await getDoc(doc(db, 'usernames', usernameOrEmail.toLowerCase()));
+    if (!snap.exists()) throw new Error('No account found with that username.');
+    authEmail = snap.data().authEmail || `${usernameOrEmail}@readinglog.local`;
+  }
+  const cred = await signInWithEmailAndPassword(auth, authEmail, password);
+  if (!cred.user.emailVerified && !authEmail.endsWith('@readinglog.local')) {
+    await fbSignOut(auth);
+    const err = new Error('Please verify your email before signing in.');
+    err.code = 'auth/email-not-verified';
+    throw err;
+  }
+  return cred;
+}
+
+export async function resendVerificationEmail(usernameOrEmail, password) {
+  let authEmail;
+  if (usernameOrEmail.includes('@')) {
+    authEmail = usernameOrEmail.trim().toLowerCase();
+  } else {
+    const snap = await getDoc(doc(db, 'usernames', usernameOrEmail.toLowerCase()));
+    if (!snap.exists()) throw new Error('No account found with that username.');
+    authEmail = snap.data().authEmail;
+  }
+  if (!authEmail || authEmail.endsWith('@readinglog.local')) throw new Error('This account does not require email verification.');
+  const cred = await signInWithEmailAndPassword(auth, authEmail, password);
+  await sendEmailVerification(cred.user, { url: ROOT + 'login/' });
+  await fbSignOut(auth);
 }
 
 export async function changeUsername(uid, oldUsername, newUsername) {
@@ -98,6 +131,19 @@ export async function changeUsername(uid, oldUsername, newUsername) {
 export function logOut() {
   localStorage.removeItem('rl_profile');
   return fbSignOut(auth);
+}
+
+export async function addEmailToAccount(user, username, newEmail, password) {
+  if (!newEmail?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail.trim())) {
+    throw new Error('Please enter a valid email address.');
+  }
+  const email = newEmail.trim().toLowerCase();
+  const credential = EmailAuthProvider.credential(user.email, password);
+  await reauthenticateWithCredential(user, credential);
+  await verifyBeforeUpdateEmail(user, email, { url: ROOT + 'login/' });
+  await updateDoc(doc(db, 'usernames', username), { authEmail: email });
+  localStorage.removeItem('rl_profile');
+  await fbSignOut(auth);
 }
 
 
@@ -588,6 +634,21 @@ async function deleteActivityForBook(uid, bookTitle, bookAuthor, type) {
       })
       .map(d => deleteDoc(d.ref))
   );
+}
+
+export async function deleteAccountData(uid, username) {
+  const [booksSnap, listsSnap, activitySnap] = await Promise.all([
+    getDocs(collection(db, 'users', uid, 'books')),
+    getDocs(collection(db, 'users', uid, 'lists')),
+    getDocs(query(collection(db, 'activity'), where('uid', '==', uid))),
+  ]);
+  await Promise.all([
+    ...booksSnap.docs.map(d => deleteDoc(d.ref)),
+    ...listsSnap.docs.map(d => deleteDoc(d.ref)),
+    ...activitySnap.docs.map(d => deleteDoc(d.ref)),
+    deleteDoc(doc(db, 'users', uid)),
+    deleteDoc(doc(db, 'usernames', username)),
+  ]);
 }
 
 export async function clearLibrary(uid) {

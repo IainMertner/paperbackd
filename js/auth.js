@@ -24,6 +24,10 @@ export function requireAuth() {
         window.location.replace(ROOT + 'login/');
         return;
       }
+      if (!user.emailVerified && !user.email?.endsWith('@readinglog.local')) {
+        window.location.replace(ROOT + 'login/?unverified=1');
+        return;
+      }
       try {
         // Serve from localStorage cache for instant resolution on repeat visits
         const cached = localStorage.getItem('rl_profile');

@@ -53,6 +53,23 @@
           </div>
           <div id="username-error" style="font-size:.82rem;color:var(--danger,#d44);display:none"></div>
         </div>
+        <div class="settings-row" id="email-row" style="display:none">
+          <span class="settings-row-label">Email</span>
+          <span class="settings-row-value" id="settings-email" style="font-size:.85rem;color:var(--text-muted)"></span>
+        </div>
+        <div class="settings-row" id="add-email-row" style="display:none">
+          <span class="settings-row-label">Email</span>
+          <button class="btn-update" id="add-email-btn" type="button" style="font-size:.75rem;padding:.2rem .5rem">Add</button>
+        </div>
+        <div class="settings-row" id="add-email-form-row" style="display:none;flex-direction:column;align-items:flex-start;gap:.5rem;padding:.75rem 1rem">
+          <input type="email" id="add-email-input" class="join-club-input" placeholder="Email address" autocomplete="email" style="width:100%;box-sizing:border-box">
+          <input type="password" id="add-email-password" class="join-club-input" placeholder="Current password" autocomplete="current-password" style="width:100%;box-sizing:border-box">
+          <div style="display:flex;gap:.5rem">
+            <button class="join-club-btn" id="save-add-email-btn" type="button">Save</button>
+            <button class="btn-update" id="cancel-add-email-btn" type="button">Cancel</button>
+          </div>
+          <div id="add-email-error" style="font-size:.82rem;color:var(--danger,#d44);display:none"></div>
+        </div>
         <div class="settings-row">
           <span class="settings-row-label">Password</span>
           <button class="btn-update" id="change-password-btn" type="button" style="font-size:.75rem;padding:.2rem .5rem">Change</button>
@@ -141,7 +158,7 @@
         </div>
         <div class="settings-row">
           <span class="settings-row-label">Delete account</span>
-          <button class="btn-danger">Delete</button>
+          <button class="btn-danger" id="delete-account-btn">Delete</button>
         </div>
       </div>
     </div>
@@ -190,8 +207,8 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary } from '../js/firebase.js';
-    import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary, addEmailToAccount, deleteAccountData } from '../js/firebase.js';
+    import { updatePassword, reauthenticateWithCredential, EmailAuthProvider, deleteUser } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
     let currentUser = null;
 
@@ -199,6 +216,14 @@
       const { user, profile } = await requireAuth();
       currentUser = user;
       if (profile) document.getElementById('settings-username').textContent = profile.username;
+      if (user.email && !user.email.endsWith('@readinglog.local')) {
+        document.getElementById('email-row').style.display = '';
+        document.getElementById('settings-email').textContent = user.emailVerified
+          ? user.email
+          : `${user.email} (unverified)`;
+      } else {
+        document.getElementById('add-email-row').style.display = '';
+      }
     } finally {
       document.body.classList.remove('auth-loading');
     }
@@ -247,6 +272,51 @@
         usernameError.style.display = '';
       } finally {
         saveUsernameBtn.disabled = false;
+      }
+    });
+
+    // ── Add email (legacy accounts) ───────────────────────────────────────────
+    const addEmailBtn     = document.getElementById('add-email-btn');
+    const addEmailFormRow = document.getElementById('add-email-form-row');
+    const addEmailRow     = document.getElementById('add-email-row');
+    const saveAddEmailBtn = document.getElementById('save-add-email-btn');
+    const cancelAddEmailBtn = document.getElementById('cancel-add-email-btn');
+    const addEmailError   = document.getElementById('add-email-error');
+
+    addEmailBtn.addEventListener('click', () => {
+      addEmailFormRow.style.display = '';
+      document.getElementById('add-email-input').value = '';
+      document.getElementById('add-email-password').value = '';
+      addEmailError.style.display = 'none';
+      document.getElementById('add-email-input').focus();
+    });
+
+    cancelAddEmailBtn.addEventListener('click', () => {
+      addEmailFormRow.style.display = 'none';
+    });
+
+    saveAddEmailBtn.addEventListener('click', async () => {
+      if (!currentUser) return;
+      const newEmail  = document.getElementById('add-email-input').value.trim();
+      const password  = document.getElementById('add-email-password').value;
+      addEmailError.style.display = 'none';
+      if (!newEmail || !password) {
+        addEmailError.textContent = 'Please fill in both fields.';
+        addEmailError.style.display = '';
+        return;
+      }
+      saveAddEmailBtn.disabled = true;
+      try {
+        const username = document.getElementById('settings-username').textContent;
+        await addEmailToAccount(currentUser, username, newEmail, password);
+        // verifyBeforeUpdateEmail signs the user out — redirect to login
+        window.location.replace(ROOT + 'login/?verify_email=1');
+      } catch (e) {
+        addEmailError.textContent = e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential'
+          ? 'Current password is incorrect.'
+          : (e.message || 'Something went wrong.');
+        addEmailError.style.display = '';
+        saveAddEmailBtn.disabled = false;
       }
     });
 
@@ -871,6 +941,32 @@
       }
     });
 
+
+    // ── Delete account ────────────────────────────────────────────────────────
+    document.getElementById('delete-account-btn').addEventListener('click', async () => {
+      if (!currentUser) return;
+      const username = document.getElementById('settings-username').textContent;
+      const password = prompt('Enter your password to confirm account deletion:');
+      if (!password) return;
+      if (!confirm('This will permanently delete your account and all your data. This cannot be undone.')) return;
+      const btn = document.getElementById('delete-account-btn');
+      btn.disabled = true;
+      btn.textContent = 'Deleting…';
+      try {
+        const credential = EmailAuthProvider.credential(currentUser.email, password);
+        await reauthenticateWithCredential(currentUser, credential);
+        await deleteAccountData(currentUser.uid, username);
+        await deleteUser(currentUser);
+        localStorage.removeItem('rl_profile');
+        window.location.replace(ROOT + 'login/');
+      } catch (e) {
+        alert(e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential'
+          ? 'Incorrect password.'
+          : (e.message || 'Something went wrong.'));
+        btn.disabled = false;
+        btn.textContent = 'Delete';
+      }
+    });
 
     // ── Clear library ─────────────────────────────────────────────────────────
     document.getElementById('clear-library-btn').addEventListener('click', async () => {
