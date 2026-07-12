@@ -63,12 +63,15 @@
         </div>
         <div class="auth-error" id="auth-error" hidden></div>
         <button class="auth-submit" id="auth-submit" type="submit">Sign in</button>
+        <p id="forgot-password-link" style="margin:.75rem 0 0;text-align:center;font-size:.82rem">
+          <button type="button" id="forgot-btn" style="background:none;border:none;padding:0;color:var(--text-muted);cursor:pointer;font:inherit;text-decoration:underline">Forgot password?</button>
+        </p>
       </form>
     </div>
   </main>
 
   <script type="module">
-    import { signIn, signUp, resendVerificationEmail, onAuth, logOut, ROOT } from '../js/firebase.js';
+    import { signIn, signUp, resendVerificationEmail, resetPassword, onAuth, logOut, ROOT } from '../js/firebase.js';
 
     // Show form once we know the user isn't signed in; redirect if they are.
     // Store unsubscribe so we can stop the listener before submitting the form —
@@ -120,6 +123,7 @@
         displaynameField.hidden       = mode === 'signin';
         emailField.hidden             = mode === 'signin';
         document.getElementById('username-label').textContent = mode === 'signin' ? 'Username or email' : 'Username';
+        document.getElementById('forgot-password-link').hidden = mode !== 'signin';
         document.getElementById('auth-error').hidden = true;
       });
     });
@@ -176,6 +180,45 @@
         submitBtn.disabled    = false;
         submitBtn.textContent = mode === 'signin' ? 'Sign in' : 'Create account';
       }
+    });
+
+    document.getElementById('forgot-btn').addEventListener('click', () => {
+      const usernameVal = document.getElementById('username').value.trim();
+      document.querySelector('.auth-card').innerHTML = `
+        <p style="margin:0 0 1rem;font-size:.85rem;color:var(--text-muted);line-height:1.5">Enter your username or email and we'll send you a reset link.</p>
+        <div class="auth-field">
+          <label class="auth-label" for="reset-input">Username or email</label>
+          <input class="auth-input" id="reset-input" type="text" autocapitalize="none" spellcheck="false" value="${usernameVal.replace(/"/g, '&quot;')}">
+        </div>
+        <div class="auth-error" id="reset-error" hidden></div>
+        <button type="button" class="auth-submit" id="reset-submit">Send reset link</button>
+        <p style="margin:.75rem 0 0;text-align:center;font-size:.82rem">
+          <button type="button" id="reset-back" style="background:none;border:none;padding:0;color:var(--text-muted);cursor:pointer;font:inherit;text-decoration:underline">Back to sign in</button>
+        </p>
+      `;
+      document.getElementById('reset-back').addEventListener('click', () => location.replace(location.pathname));
+      document.getElementById('reset-submit').addEventListener('click', async () => {
+        const val = document.getElementById('reset-input').value.trim();
+        const errEl = document.getElementById('reset-error');
+        const btn = document.getElementById('reset-submit');
+        errEl.hidden = true;
+        if (!val) { errEl.textContent = 'Please enter your username or email.'; errEl.hidden = false; return; }
+        btn.disabled = true;
+        btn.textContent = 'Sending…';
+        try {
+          await resetPassword(val);
+          document.querySelector('.auth-card').innerHTML = `
+            <p style="margin:0 0 1rem;line-height:1.5">A reset link has been sent. Check your inbox.</p>
+            <button type="button" class="auth-submit" id="reset-done">Back to sign in</button>
+          `;
+          document.getElementById('reset-done').addEventListener('click', () => location.replace(location.pathname));
+        } catch (e) {
+          errEl.textContent = e.message || 'Something went wrong.';
+          errEl.hidden = false;
+          btn.disabled = false;
+          btn.textContent = 'Send reset link';
+        }
+      });
     });
 
     function showVerifyScreen(email) {

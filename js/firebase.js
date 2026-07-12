@@ -6,6 +6,8 @@ import {
   signOut as fbSignOut,
   onAuthStateChanged,
   sendEmailVerification,
+  sendPasswordResetEmail,
+  updateProfile,
   verifyBeforeUpdateEmail,
   reauthenticateWithCredential,
   EmailAuthProvider
@@ -69,7 +71,8 @@ export async function signUp(username, password, displayName, email) {
 
   await Promise.all([
     setDoc(doc(db, 'users', uid),          { username, displayName: displayName.trim(), createdAt: serverTimestamp(), following: [] }),
-    setDoc(doc(db, 'usernames', username), { uid, authEmail })
+    setDoc(doc(db, 'usernames', username), { uid, authEmail }),
+    updateProfile(cred.user, { displayName: displayName.trim() }),
   ]);
 
   await sendEmailVerification(cred.user, { url: ROOT + 'login/' });
@@ -93,6 +96,21 @@ export async function signIn(usernameOrEmail, password) {
     throw err;
   }
   return cred;
+}
+
+export async function resetPassword(usernameOrEmail) {
+  let authEmail;
+  if (usernameOrEmail.includes('@')) {
+    authEmail = usernameOrEmail.trim().toLowerCase();
+  } else {
+    const snap = await getDoc(doc(db, 'usernames', usernameOrEmail.toLowerCase()));
+    if (!snap.exists()) throw new Error('No account found with that username.');
+    authEmail = snap.data().authEmail || `${usernameOrEmail}@readinglog.local`;
+  }
+  if (authEmail.endsWith('@readinglog.local')) {
+    throw new Error('This account has no email address. Add one in settings first.');
+  }
+  await sendPasswordResetEmail(auth, authEmail, { url: ROOT + 'login/' });
 }
 
 export async function resendVerificationEmail(usernameOrEmail, password) {
@@ -985,5 +1003,11 @@ export async function setThemeColorForAllUsers(color) {
   const snap = await getDocs(collection(db, 'users'));
   await Promise.all(snap.docs.map(d => updateDoc(d.ref, { avatarBorderColor: color })));
   return snap.docs.length;
+}
+
+export async function toggleReaction(activityId, emoji, uid, add) {
+  await updateDoc(doc(db, 'activity', activityId), {
+    [`reactions.${emoji}`]: add ? arrayUnion(uid) : arrayRemove(uid)
+  });
 }
 

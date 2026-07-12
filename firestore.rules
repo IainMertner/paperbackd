@@ -36,7 +36,11 @@ service cloud.firestore {
     match /activity/{activityId} {
       allow read:   if request.auth != null;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.uid;
-      allow update: if request.auth != null && (request.auth.uid == resource.data.uid || isAdmin());
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.uid ||
+        isAdmin() ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+      );
       // Also allow the target of a followed event to delete it (remove follower).
       allow delete: if request.auth != null && (request.auth.uid == resource.data.uid || request.auth.uid == resource.data.targetUid || isAdmin());
     }
