@@ -30,6 +30,15 @@
         <feTurbulence type="fractalNoise" baseFrequency="0.018 0.45" numOctaves="4" seed="8" result="noise"/>
         <feDisplacementMap in="thick" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G"/>
       </filter>
+      <filter id="bg-halo" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+        <feMorphology operator="dilate" radius="1" in="SourceGraphic" result="dilated"/>
+        <feFlood style="flood-color:var(--bg-card)" result="color"/>
+        <feComposite in="color" in2="dilated" operator="in" result="halo"/>
+        <feMerge>
+          <feMergeNode in="halo"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
     </defs>
   </svg>
 
@@ -212,18 +221,19 @@
       REACTIONS.forEach(({ key }) => { state[key] = [...((event.reactions || {})[key] || [])]; });
 
       const bar = document.createElement('div');
-      bar.style.cssText = 'position:absolute;bottom:.35rem;right:.5rem;display:flex;align-items:center;gap:.3rem';
+      bar.style.cssText = 'position:absolute;bottom:.35rem;right:.5rem;display:flex;align-items:center;gap:0';
 
       const wrap = document.createElement('span');
       wrap.style.cssText = 'position:relative;display:inline-flex;align-items:center;gap:.15rem';
 
+      const totalBadge = document.createElement('span');
+      totalBadge.style.cssText = 'font-size:.65rem;font-weight:600;color:var(--text-muted);opacity:.55;font-variant-numeric:tabular-nums;display:none;line-height:1';
+
       const addBtn = document.createElement('button');
       addBtn.type = 'button';
       addBtn.style.cssText = 'position:relative;display:inline-flex;align-items:center;justify-content:center;width:1.5rem;height:1.5rem;border-radius:50%;border:none;background:transparent;cursor:pointer;color:var(--text-muted);opacity:.55;padding:0;flex-shrink:0';
-      addBtn.innerHTML = '<svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><circle cx="5.5" cy="6.5" r="1" fill="currentColor" stroke="none"/><circle cx="10.5" cy="6.5" r="1" fill="currentColor" stroke="none"/><path d="M5.5 10.5q2.5 2 5 0"/></svg>';
+      addBtn.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><line x1="8" y1="5" x2="8" y2="11"/><line x1="5" y1="8" x2="11" y2="8"/></svg>';
 
-      const totalBadge = document.createElement('span');
-      totalBadge.style.cssText = 'font-size:.65rem;font-weight:600;color:var(--text-muted);opacity:.55;font-variant-numeric:tabular-nums;display:none;line-height:1';
 
       const picker = document.createElement('div');
       picker.style.cssText = 'display:none;position:fixed;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:.3rem .5rem;gap:.3rem;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:1000;white-space:nowrap';
@@ -239,6 +249,40 @@
         const total = Object.values(state).reduce((sum, arr) => sum + arr.length, 0);
         totalBadge.textContent = total || '';
         totalBadge.style.display = total > 0 ? 'inline' : 'none';
+      }
+
+      function renderInline() {
+        [...bar.children].forEach(ch => { if (ch !== wrap) ch.remove(); });
+        const active = REACTIONS.filter(({ key }) => state[key].length > 0);
+        active.forEach(({ key, svg }, i) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.style.cssText = `position:relative;z-index:${i};display:inline-flex;align-items:center;justify-content:center;background:none;border:none;cursor:pointer;padding:0;color:var(--accent);flex-shrink:0;filter:url(#bg-halo);${i > 0 ? 'margin-left:-3px;' : ''}`;
+          btn.innerHTML = svg;
+          btn.addEventListener('click', async e => {
+            e.stopPropagation();
+            const prevKey = REACTIONS.find(r => state[r.key].includes(user.uid))?.key;
+            const toggling = prevKey === key;
+            const promises = [];
+            if (prevKey && !toggling) {
+              state[prevKey] = state[prevKey].filter(u => u !== user.uid);
+              promises.push(toggleReaction(event.id, prevKey, user.uid, false));
+            }
+            if (toggling) {
+              state[key] = state[key].filter(u => u !== user.uid);
+              promises.push(toggleReaction(event.id, key, user.uid, false));
+            } else {
+              state[key] = [...state[key], user.uid];
+              promises.push(toggleReaction(event.id, key, user.uid, true));
+            }
+            renderInline();
+            updateTotal();
+            renderPicker();
+            Promise.all(promises).catch(console.error);
+          });
+          bar.insertBefore(btn, wrap);
+        });
+        wrap.style.marginLeft = active.length > 0 ? '.35rem' : '0';
       }
 
       function renderPicker() {
@@ -278,8 +322,8 @@
               state[key] = [...state[key], user.uid];
               promises.push(toggleReaction(event.id, key, user.uid, true));
             }
+            renderInline();
             renderPicker();
-            updateTotal();
             Promise.all(promises).catch(console.error);
           });
           emojiRow.appendChild(eb);
@@ -338,6 +382,7 @@
       bar.appendChild(wrap);
 
       renderPicker();
+      renderInline();
       updateTotal();
       return bar;
     }
@@ -751,6 +796,18 @@ if (event.type === 'finished') {
               // Write back so this event never needs backfilling again
               updateDoc(doc(db, 'activity', e.id), { coverUrl: book.coverUrl }).catch(() => {});
             }
+          }));
+        }
+
+        // Fetch profiles for any reactor uids not already known
+        const reactorUids = new Set();
+        visible.forEach(e => { if (e.reactions) Object.values(e.reactions).forEach(arr => arr.forEach(uid => reactorUids.add(uid))); });
+        const unknownUids = [...reactorUids].filter(uid => !(uid in usernameMap));
+        if (unknownUids.length) {
+          await Promise.all(unknownUids.map(async uid => {
+            const p = await getProfile(uid);
+            usernameMap[uid] = p?.username || null;
+            avatarMap[uid]   = p?.avatarUrl || null;
           }));
         }
 

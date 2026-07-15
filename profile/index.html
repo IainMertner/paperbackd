@@ -566,7 +566,7 @@
         renderShelf(myProfile.shelf, openShelfEdit);
         document.getElementById('shelf-label').innerHTML = `shelf<span id="shelf-edit-btn" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border);cursor:pointer">edit</span>`;
         document.getElementById('shelf-edit-btn').addEventListener('click', openShelfEdit);
-        document.getElementById('activity-label').innerHTML = `<a href="../feed/?uid=${encodeURIComponent(user.uid)}" style="color:inherit;text-decoration:none">activity</a><span id="activity-summary" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border)"></span>`;
+        document.getElementById('activity-label').innerHTML = `<a href="../activity/?u=${encodeURIComponent(myProfile?.username || '')}" style="color:inherit;text-decoration:none">activity</a><span id="activity-summary" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border)"></span>`;
         Promise.all([getReadingBooks(user.uid), getRecentlyFinishedBooks(user.uid)])
           .then(([reading, finished]) => renderActivity(reading, finished))
           .catch(() => { document.getElementById('books-section').style.display = ''; });
@@ -611,7 +611,7 @@
           fitDisplayName(document.getElementById('profile-display-name'));
           document.getElementById('profile-username').textContent = '@' + target.username;
           renderShelf(target.shelf);
-          document.getElementById('activity-label').innerHTML = `<a href="../feed/?uid=${encodeURIComponent(target.uid)}" style="color:inherit;text-decoration:none">activity</a><span id="activity-summary" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border)"></span>`;
+          document.getElementById('activity-label').innerHTML = `<a href="../activity/?u=${encodeURIComponent(target.username)}" style="color:inherit;text-decoration:none">activity</a><span id="activity-summary" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border)"></span>`;
           Promise.all([getReadingBooks(target.uid), getRecentlyFinishedBooks(target.uid)])
             .then(([reading, finished]) => renderActivity(reading, finished))
             .catch(() => { document.getElementById('books-section').style.display = ''; });
