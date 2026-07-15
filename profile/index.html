@@ -161,7 +161,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getProfileByUsername, getFollowers, getProfile, getBookCount, getListCount, getReadingBooks, getRecentlyFinishedBooks, followUser, unfollowUser, logOut, ROOT, updateShelf, getBooks, updateAvatarUrl, updateAvatarBorderColor } from '../js/firebase.js';
+    import { getProfileByUsername, getFollowers, getProfile, getBookCount, getListCount, getReadingBooks, getRecentlyFinishedBooks, followUser, unfollowUser, logOut, ROOT, updateShelf, getBooks, updateAvatarUrl, updateAvatarBorderColor, updateDisplayName } from '../js/firebase.js';
 
     const { user, profile: myProfile } = await requireAuth();
     const params      = new URLSearchParams(location.search);
@@ -214,6 +214,113 @@
       { label: 'Rose',       color: '#C95C80' },
     ];
 
+    function openCropModal(img) {
+      return new Promise(resolve => {
+        const DISPLAY = 220, OUT = 256;
+        const minScale = Math.max(DISPLAY / img.naturalWidth, DISPLAY / img.naturalHeight);
+        const maxScale = minScale * 10;
+        let scale = minScale;
+        let cx = img.naturalWidth / 2;
+        let cy = img.naturalHeight / 2;
+
+        // Build DOM first so render() can reference all elements safely
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1200;display:flex;align-items:center;justify-content:center;padding:1rem;box-sizing:border-box';
+        overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); resolve(null); } });
+
+        const modal = document.createElement('div');
+        modal.style.cssText = 'background:var(--bg-card);border-radius:var(--radius);padding:1.25rem;width:100%;max-width:300px;box-shadow:0 8px 32px rgba(0,0,0,.3);display:flex;flex-direction:column;align-items:center;gap:.9rem';
+
+        const heading = document.createElement('div');
+        heading.style.cssText = 'font-weight:700;font-size:.95rem;align-self:flex-start';
+        heading.textContent = 'Crop photo';
+
+        const viewport = document.createElement('div');
+        viewport.style.cssText = `position:relative;width:${DISPLAY}px;height:${DISPLAY}px;border-radius:50%;overflow:hidden;cursor:grab;touch-action:none;background:var(--bg-alt);border:1px solid var(--border)`;
+
+        const imgEl = document.createElement('img');
+        imgEl.src = img.src;
+        imgEl.style.cssText = 'position:absolute;max-width:none;pointer-events:none;user-select:none';
+        viewport.appendChild(imgEl);
+
+        const slider = document.createElement('input');
+        slider.type = 'range'; slider.min = 0; slider.max = 100; slider.value = 0;
+        slider.style.cssText = 'flex:1;cursor:pointer;accent-color:var(--accent)';
+
+        function clamp() {
+          const hw = DISPLAY / (2 * scale), hh = DISPLAY / (2 * scale);
+          cx = Math.max(hw, Math.min(img.naturalWidth  - hw, cx));
+          cy = Math.max(hh, Math.min(img.naturalHeight - hh, cy));
+        }
+        function render() {
+          imgEl.style.width  = img.naturalWidth  * scale + 'px';
+          imgEl.style.height = img.naturalHeight * scale + 'px';
+          imgEl.style.left   = DISPLAY / 2 - cx * scale + 'px';
+          imgEl.style.top    = DISPLAY / 2 - cy * scale + 'px';
+          slider.value = ((scale - minScale) / (maxScale - minScale)) * 100;
+        }
+        clamp(); render();
+
+        // Drag
+        let dragging = false, lastX = 0, lastY = 0;
+        viewport.addEventListener('mousedown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; viewport.style.cursor = 'grabbing'; e.preventDefault(); });
+        document.addEventListener('mousemove', e => { if (!dragging) return; cx -= (e.clientX - lastX) / scale; cy -= (e.clientY - lastY) / scale; lastX = e.clientX; lastY = e.clientY; clamp(); render(); });
+        document.addEventListener('mouseup', () => { dragging = false; viewport.style.cursor = 'grab'; });
+
+        // Scroll zoom
+        viewport.addEventListener('wheel', e => { e.preventDefault(); scale = Math.max(minScale, Math.min(scale * (e.deltaY < 0 ? 1.08 : 0.93), maxScale)); clamp(); render(); }, { passive: false });
+
+        // Touch
+        let lastDist = null;
+        viewport.addEventListener('touchstart', e => { if (e.touches.length === 1) { lastX = e.touches[0].clientX; lastY = e.touches[0].clientY; lastDist = null; } else if (e.touches.length === 2) { lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); } e.preventDefault(); }, { passive: false });
+        viewport.addEventListener('touchmove', e => { if (e.touches.length === 1 && lastDist === null) { cx -= (e.touches[0].clientX - lastX) / scale; cy -= (e.touches[0].clientY - lastY) / scale; lastX = e.touches[0].clientX; lastY = e.touches[0].clientY; } else if (e.touches.length === 2) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); if (lastDist) scale = Math.max(minScale, Math.min(scale * d / lastDist, maxScale)); lastDist = d; } clamp(); render(); e.preventDefault(); }, { passive: false });
+        viewport.addEventListener('touchend', e => { if (e.touches.length < 2) lastDist = null; });
+
+        // Slider
+        slider.addEventListener('input', () => {
+          scale = minScale + (slider.value / 100) * (maxScale - minScale);
+          clamp(); render();
+        });
+
+        const sliderWrap = document.createElement('div');
+        sliderWrap.style.cssText = 'display:flex;align-items:center;gap:.5rem;width:100%';
+        const zoomOut = document.createElement('span');
+        zoomOut.style.cssText = 'font-size:.8rem;color:var(--text-muted);flex-shrink:0;line-height:1';
+        zoomOut.textContent = '−';
+        const zoomIn = document.createElement('span');
+        zoomIn.style.cssText = 'font-size:.8rem;color:var(--text-muted);flex-shrink:0;line-height:1';
+        zoomIn.textContent = '+';
+        sliderWrap.append(zoomOut, slider, zoomIn);
+
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;gap:.75rem;width:100%;justify-content:flex-end';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button'; cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.cssText = 'padding:.4rem .9rem;border-radius:var(--radius);border:1px solid var(--border);background:none;color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:.85rem';
+        cancelBtn.addEventListener('click', () => { overlay.remove(); resolve(null); });
+
+        const applyBtn = document.createElement('button');
+        applyBtn.type = 'button'; applyBtn.textContent = 'Apply';
+        applyBtn.style.cssText = 'padding:.4rem .9rem;border-radius:var(--radius);border:none;background:var(--accent);color:#fff;cursor:pointer;font-family:inherit;font-size:.85rem;font-weight:600';
+        applyBtn.addEventListener('click', () => {
+          const srcX = cx - DISPLAY / (2 * scale);
+          const srcY = cy - DISPLAY / (2 * scale);
+          const srcSize = DISPLAY / scale;
+          const canvas = document.createElement('canvas');
+          canvas.width = OUT; canvas.height = OUT;
+          canvas.getContext('2d').drawImage(img, srcX, srcY, srcSize, srcSize, 0, 0, OUT, OUT);
+          overlay.remove();
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
+        });
+
+        btnRow.append(cancelBtn, applyBtn);
+        modal.append(heading, viewport, sliderWrap, btnRow);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+      });
+    }
+
     function openProfileEdit() {
       let pendingAvatarUrl = null;
       let selectedTheme = myProfile.avatarBorderColor || THEMES[0].color;
@@ -261,25 +368,21 @@
       fileInput.addEventListener('change', async () => {
         const file = fileInput.files[0];
         if (!file) return;
+        const blobUrl = URL.createObjectURL(file);
         try {
-          pendingAvatarUrl = await new Promise((resolve, reject) => {
-            const img = new Image();
-            const url = URL.createObjectURL(file);
-            img.onload = () => {
-              URL.revokeObjectURL(url);
-              const SIZE = 256, scale = Math.min(SIZE / img.width, SIZE / img.height, 1);
-              const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
-              const canvas = document.createElement('canvas');
-              canvas.width = w; canvas.height = h;
-              canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-              resolve(canvas.toDataURL('image/jpeg', 0.82));
-            };
-            img.onerror = reject;
-            img.src = url;
+          const img = await new Promise((resolve, reject) => {
+            const i = new Image();
+            i.onload = () => resolve(i);
+            i.onerror = reject;
+            i.src = blobUrl;
           });
-          showPreview(pendingAvatarUrl);
+          const cropped = await openCropModal(img);
+          if (cropped) {
+            pendingAvatarUrl = cropped;
+            showPreview(pendingAvatarUrl);
+          }
         } catch { alert('Could not load that image.'); }
-        finally { fileInput.value = ''; }
+        finally { URL.revokeObjectURL(blobUrl); fileInput.value = ''; }
       });
 
       avatarWrap.append(avatarPreview, changeLabel, fileInput);
@@ -554,8 +657,88 @@
     try {
       if (isOwn) {
         if (myProfile.avatarBorderColor) document.documentElement.style.setProperty('--ring-color', myProfile.avatarBorderColor);
-        document.getElementById('profile-display-name').innerHTML = (myProfile.displayName || myProfile.username) + '<span class="title-dot">.</span>';
-        fitDisplayName(document.getElementById('profile-display-name'));
+        const displayNameEl = document.getElementById('profile-display-name');
+
+        function setDisplayName(name) {
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = name;
+          nameSpan.style.cssText = 'cursor:pointer;border-bottom:1px solid transparent;transition:border-color .15s';
+          nameSpan.addEventListener('mouseenter', () => { nameSpan.style.borderBottomColor = 'var(--text-muted)'; });
+          nameSpan.addEventListener('mouseleave', () => { nameSpan.style.borderBottomColor = 'transparent'; });
+          nameSpan.addEventListener('click', () => {
+            const current = myProfile.displayName || myProfile.username;
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1200;display:flex;align-items:center;justify-content:center;padding:1rem;box-sizing:border-box';
+            const modal = document.createElement('div');
+            modal.style.cssText = 'background:var(--bg-card);border-radius:var(--radius);padding:1.25rem;width:100%;max-width:300px;box-shadow:0 8px 32px rgba(0,0,0,.3);display:flex;flex-direction:column;gap:.75rem;position:relative';
+            overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '×';
+            closeBtn.style.cssText = 'position:absolute;top:.6rem;right:.75rem;background:none;border:none;font-size:1.4rem;line-height:1;cursor:pointer;color:var(--text-muted);padding:0';
+            closeBtn.addEventListener('click', () => overlay.remove());
+
+            const heading = document.createElement('div');
+            heading.style.cssText = 'font-weight:700;font-size:.95rem;padding-right:1.5rem';
+            heading.textContent = 'Display name';
+
+            const input = document.createElement('input');
+            input.value = current;
+            input.style.cssText = 'width:100%;box-sizing:border-box;padding:.45rem .6rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-alt);color:var(--text);font-family:inherit;font-size:.9rem;outline:none';
+            input.addEventListener('focus', () => { input.style.borderColor = 'var(--accent)'; });
+            input.addEventListener('blur',  () => { input.style.borderColor = 'var(--border)'; });
+
+            const btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex;justify-content:flex-end;gap:.5rem';
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button'; cancelBtn.textContent = 'Cancel';
+            cancelBtn.style.cssText = 'padding:.4rem .9rem;border-radius:var(--radius);border:1px solid var(--border);background:none;color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:.85rem';
+            cancelBtn.addEventListener('click', () => overlay.remove());
+
+            const saveBtn = document.createElement('button');
+            saveBtn.type = 'button'; saveBtn.textContent = 'Save';
+            saveBtn.style.cssText = 'padding:.4rem .9rem;border-radius:var(--radius);border:none;background:var(--accent);color:#fff;cursor:pointer;font-family:inherit;font-size:.85rem;font-weight:600';
+
+            async function doSave() {
+              const newName = input.value.trim() || myProfile.username;
+              overlay.remove();
+              setDisplayName(newName);
+              fitDisplayName(displayNameEl);
+              if (newName !== current) {
+                try {
+                  await updateDisplayName(user.uid, newName === myProfile.username ? '' : newName);
+                  myProfile.displayName = newName === myProfile.username ? null : newName;
+                  const cached = JSON.parse(localStorage.getItem('rl_profile') || '{}');
+                  cached.displayName = myProfile.displayName;
+                  localStorage.setItem('rl_profile', JSON.stringify(cached));
+                } catch {
+                  setDisplayName(current);
+                  fitDisplayName(displayNameEl);
+                }
+              }
+            }
+
+            saveBtn.addEventListener('click', doSave);
+            input.addEventListener('keydown', e => { if (e.key === 'Enter') doSave(); });
+
+            btnRow.append(cancelBtn, saveBtn);
+            modal.append(closeBtn, heading, input, btnRow);
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+            setTimeout(() => { input.focus(); input.select(); }, 0);
+          });
+
+          displayNameEl.innerHTML = '';
+          displayNameEl.appendChild(nameSpan);
+          const dot = document.createElement('span');
+          dot.className = 'title-dot';
+          dot.textContent = '.';
+          displayNameEl.appendChild(dot);
+        }
+
+        setDisplayName(myProfile.displayName || myProfile.username);
+        fitDisplayName(displayNameEl);
         document.getElementById('profile-username').textContent = '@' + myProfile.username;
         const avatarEl = document.getElementById('profile-avatar');
         if (myProfile.avatarUrl) { avatarEl.innerHTML  = `<img src="${myProfile.avatarUrl}" alt="">`; }

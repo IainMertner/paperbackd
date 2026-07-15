@@ -16,8 +16,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>lists - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
+  <style>
+    .profile-rule {
+      border: none;
+      border-top: 2px solid var(--accent);
+      margin: .4rem 0 .875rem;
+      filter: url(#brush-line);
+      overflow: visible;
+    }
+  </style>
 </head>
 <body>
+
+  <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <defs>
+      <filter id="brush-line" x="-1%" y="-600%" width="102%" height="1300%">
+        <feMorphology operator="dilate" radius="0 1" result="thick"/>
+        <feTurbulence type="fractalNoise" baseFrequency="0.018 0.45" numOctaves="4" seed="8" result="noise"/>
+        <feDisplacementMap in="thick" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
 
   <header class="site-header">
     <div class="header-inner">
@@ -34,6 +53,7 @@
 
   <main class="page-content">
     <h1 class="page-title" id="page-title">lists<span class="title-dot">.</span></h1>
+    <hr class="profile-rule">
     <div id="lists-container"></div>
   </main>
 
@@ -85,7 +105,7 @@
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
-    const chevron = `<svg class="profile-link-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+    const chevron = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" style="color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>`;
 
     (async () => {
       const { user, profile: myProfile } = await requireAuth();
@@ -125,49 +145,68 @@
 
         function renderLists(lists) {
           container.innerHTML = '';
+          const wrap = document.createElement('div');
 
-          lists.forEach(list => {
+          lists.forEach((list, i) => {
             const count = (list.books || []).length;
             const href  = isOwn
               ? `../list/?id=${encodeURIComponent(list.id)}`
               : `../list/?u=${encodeURIComponent(ownerUsername)}&id=${encodeURIComponent(list.id)}`;
-            const row = document.createElement('div');
-            row.className = 'profile-links';
-            row.innerHTML = `<div style="display:flex;align-items:center;gap:.5rem">
-              <a class="profile-link-row card" href="${esc(href)}" style="flex:1;text-decoration:none">
-                <span class="profile-link-label">${esc(list.name)}</span>
-                <span class="profile-link-meta">${count} book${count === 1 ? '' : 's'}</span>
+
+            const rowDiv = document.createElement('div');
+            rowDiv.style.cssText = `display:flex;align-items:center;padding:.7rem 0${i < lists.length - 1 ? ';border-bottom:1px solid var(--border)' : ''}`;
+
+            const a = document.createElement('a');
+            a.href = href;
+            a.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:space-between;text-decoration:none;color:var(--text);font-size:.95rem;gap:.5rem';
+            a.innerHTML = `<span>${esc(list.name)}</span>
+              <span style="display:flex;align-items:center;gap:.5rem">
+                <span style="font-size:.8rem;color:var(--text-muted)">${count} book${count === 1 ? '' : 's'}</span>
                 ${chevron}
-              </a>
-              ${isOwn && !list.isDefault && !list.isDnf ? `<button class="btn-danger" data-id="${esc(list.id)}" style="font-size:.75rem;padding:.3rem .65rem;flex-shrink:0">Delete</button>` : ''}
-            </div>`;
+              </span>`;
+            rowDiv.appendChild(a);
+
             if (isOwn && !list.isDefault && !list.isDnf) {
-              row.querySelector('[data-id]').addEventListener('click', async () => {
+              const delBtn = document.createElement('button');
+              delBtn.className = 'btn-danger';
+              delBtn.dataset.id = list.id;
+              delBtn.style.cssText = 'font-size:.75rem;padding:.3rem .65rem;flex-shrink:0;margin-left:.5rem';
+              delBtn.textContent = 'Delete';
+              delBtn.addEventListener('click', async () => {
                 const name = list.name;
                 if (!confirm(`Delete "${name}"?`)) return;
                 await deleteList(user.uid, list.id);
                 lists = lists.filter(l => l.id !== list.id);
                 renderLists(lists);
               });
+              rowDiv.appendChild(delBtn);
             }
-            container.appendChild(row);
+
+            wrap.appendChild(rowDiv);
           });
 
-          if (isOwn) {
-            const newCard = document.createElement('div');
-            newCard.className = 'card';
-            newCard.style.marginTop = '.625rem';
-            newCard.innerHTML = `<div id="new-list-trigger" style="font-size:.875rem;color:var(--accent);cursor:pointer">+ New list</div>
-              <div id="new-list-form" style="display:none;gap:.5rem;margin-top:.5rem">
-                <input id="new-list-input" class="join-club-input" placeholder="List name…" maxlength="60" autocomplete="off" style="flex:1;font-size:.875rem">
-                <button class="join-club-btn" id="new-list-save" style="font-size:.8rem;padding:.35rem .75rem">Add</button>
-              </div>`;
-            container.appendChild(newCard);
+          container.appendChild(wrap);
 
-            const trigger = newCard.querySelector('#new-list-trigger');
-            const form    = newCard.querySelector('#new-list-form');
-            const inp     = newCard.querySelector('#new-list-input');
-            const saveBtn = newCard.querySelector('#new-list-save');
+          if (isOwn) {
+            const newTriggerRow = document.createElement('div');
+            newTriggerRow.style.cssText = 'padding:.7rem 0;border-top:1px solid var(--border)';
+
+            const trigger = document.createElement('div');
+            trigger.id = 'new-list-trigger';
+            trigger.style.cssText = 'font-size:.875rem;color:var(--accent);cursor:pointer';
+            trigger.textContent = '+ New list';
+
+            const form = document.createElement('div');
+            form.id = 'new-list-form';
+            form.style.cssText = 'display:none;gap:.5rem;margin-top:.5rem';
+            form.innerHTML = `<input id="new-list-input" class="join-club-input" placeholder="List name…" maxlength="60" autocomplete="off" style="flex:1;font-size:.875rem">
+              <button class="join-club-btn" id="new-list-save" style="font-size:.8rem;padding:.35rem .75rem">Add</button>`;
+
+            newTriggerRow.append(trigger, form);
+            container.appendChild(newTriggerRow);
+
+            const inp     = form.querySelector('#new-list-input');
+            const saveBtn = form.querySelector('#new-list-save');
 
             trigger.addEventListener('click', () => {
               trigger.style.display = 'none';

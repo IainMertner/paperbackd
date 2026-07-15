@@ -128,7 +128,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, syncBookActivity, getAuthorCountryOverrides } from '../js/firebase.js';
+    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
@@ -913,6 +913,71 @@
       return section;
     }
 
+    let allLists = [];
+
+    function buildListsPanel(book) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = 'Lists ▾';
+      btn.style.cssText = 'font-size:.65rem;font-family:inherit;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;color:var(--text-muted);padding:0 .4rem;height:1.5rem;white-space:nowrap;line-height:1;flex-shrink:0';
+
+      const drop = document.createElement('div');
+      drop.style.cssText = 'display:none;position:fixed;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:1000;min-width:160px;padding:.25rem 0';
+      document.body.appendChild(drop);
+
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (drop.style.display !== 'none') { drop.style.display = 'none'; return; }
+        const rect = btn.getBoundingClientRect();
+        drop.style.top  = rect.bottom + 4 + 'px';
+        drop.style.left = rect.left + 'px';
+        drop.style.display = '';
+      });
+      document.addEventListener('click', () => { drop.style.display = 'none'; });
+      drop.addEventListener('click', e => e.stopPropagation());
+
+      const wrap = btn;
+
+      const membership = {};
+      allLists.forEach(l => { membership[l.id] = (l.books || []).some(b => b.gbid && b.gbid === book.gbid); });
+
+      function buildDrop() {
+        drop.innerHTML = '';
+        allLists.forEach(l => {
+          const item = document.createElement('div');
+          item.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.4rem .75rem;cursor:pointer;font-size:.85rem';
+          item.addEventListener('mouseenter', () => item.style.background = 'var(--bg-alt)');
+          item.addEventListener('mouseleave', () => item.style.background = '');
+          const check = document.createElement('span');
+          check.style.cssText = 'color:var(--accent);width:1em;flex-shrink:0';
+          check.textContent = membership[l.id] ? '✓' : '';
+          const name = document.createElement('span');
+          name.textContent = l.name;
+          item.append(check, name);
+          item.addEventListener('click', async e => {
+            e.stopPropagation();
+            item.style.opacity = '.5';
+            if (membership[l.id]) {
+              await removeBookFromList(user.uid, l.id, book.gbid);
+              membership[l.id] = false;
+              l.books = (l.books || []).filter(b => b.gbid !== book.gbid);
+            } else {
+              const entry = { gbid: book.gbid || '', title: book.title, author: book.author || '', coverUrl: book.coverUrl || '' };
+              await addBookToList(user.uid, l.id, entry);
+              membership[l.id] = true;
+              l.books = [...(l.books || []), entry];
+            }
+            item.style.opacity = '';
+            buildDrop();
+          });
+          drop.appendChild(item);
+        });
+      }
+
+      buildDrop();
+      return wrap;
+    }
+
     function renderReading(book, coverCell, closeModal) {
       const card = document.createElement('div');
       card.className  = 'card';
@@ -1180,7 +1245,7 @@
         detailsSection.style.display = open ? '' : 'none';
         bookInfoBtn.textContent = `Book info ${open ? '▴' : '▾'}`;
       });
-      bookInfoHeader.append(bookInfoBtn, repairBtn, trashBtn);
+      bookInfoHeader.append(bookInfoBtn, buildListsPanel(book), repairBtn, trashBtn);
 
       bookInfoWrap.appendChild(bookInfoHeader);
       bookInfoWrap.appendChild(detailsSection);
@@ -1646,7 +1711,7 @@
         detailsSection.style.display = open ? '' : 'none';
         bookInfoBtn.textContent = `Book info ${open ? '▴' : '▾'}`;
       });
-      bookInfoHeader.append(bookInfoBtn, repairBtn, trashBtn);
+      bookInfoHeader.append(bookInfoBtn, buildListsPanel(book), repairBtn, trashBtn);
 
       bookInfoWrap.appendChild(bookInfoHeader);
       bookInfoWrap.appendChild(detailsSection);
@@ -2197,7 +2262,6 @@
 
       let renderReadingFn    = () => {};
       let reRenderFinishedFn = () => {};
-      let allLists = [];
 
       if (isOwn) {
         const [booksData, lists] = await Promise.all([

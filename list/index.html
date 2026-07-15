@@ -33,6 +33,7 @@
   </header>
 
   <main class="page-content">
+    <h1 class="page-title" id="page-title">lists<span class="title-dot">.</span></h1>
     <div id="list-header"></div>
     <div id="list-add" style="display:none"></div>
 
@@ -46,7 +47,7 @@
 
     <div class="section-header" id="sort-header" style="display:none;margin-bottom:.5rem">
       <div id="list-sort" class="sort-options">
-        <button class="sort-btn" data-key="order"  data-default="asc" data-label="Order">Order</button>
+        <button class="sort-btn" data-key="order"  data-default="asc" data-label="Added">Added</button>
         <button class="sort-btn" data-key="alpha"  data-default="asc" data-label="A–Z">A–Z</button>
         <button class="sort-btn" data-key="author" data-default="asc" data-label="Author">Author</button>
       </div>
@@ -131,6 +132,10 @@
 
       }
 
+      const listsHref = isOwn ? `../lists/` : `../lists/?u=${encodeURIComponent(ownerUsername)}`;
+      document.getElementById('page-title').innerHTML =
+        `<a href="${listsHref}" style="color:var(--accent);text-decoration:none">${ownerUsername}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>lists<span class="title-dot">.</span>`;
+
       const [lists, libBooks] = await Promise.all([
         getLists(ownerUid),
         getBooks(ownerUid),
@@ -146,7 +151,7 @@
         return;
       }
 
-      document.title = `${list.name} - paperbackd`;
+      document.title = `${ownerUsername} // lists. - paperbackd`;
       let books = [...(list.books || [])];
 
       // ── Header ───────────────────────────────────────────────────────────────
@@ -180,7 +185,7 @@
               if (!name) return;
               await renameList(user.uid, list.id, name);
               list.name = name;
-              document.title = `${name} - paperbackd`;
+              document.title = `${ownerUsername} // lists. - paperbackd`;
               renderHeader();
             });
             inp.addEventListener('keydown', e => { if (e.key === 'Enter') card.querySelector('#rename-save').click(); });
