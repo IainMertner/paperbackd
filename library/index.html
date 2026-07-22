@@ -135,6 +135,16 @@
 
     let viewMode = localStorage.getItem('library-view') || 'grid';
 
+    // Full-page navigation (this is a static multi-page app, not an SPA) aborts any
+    // in-flight Firestore write — including edits still sitting in a debounce timer
+    // that hasn't fired yet. Warn before leaving if anything hasn't finished saving.
+    let pendingSaves = 0;
+    function markDirty()  { pendingSaves++; }
+    function markClean()  { pendingSaves = Math.max(0, pendingSaves - 1); }
+    window.addEventListener('beforeunload', e => {
+      if (pendingSaves > 0) { e.preventDefault(); e.returnValue = ''; }
+    });
+
     function makeBookListRow(book) {
       const el = document.createElement('div');
       el.className = 'books-list-row';
@@ -757,13 +767,15 @@
           if (book[field]) {
             book[field] = null;
             book[field + 'Precision'] = null;
-            clearBookDate(user.uid, book.id, field).catch(console.error);
+            markDirty();
+            const pending = [clearBookDate(user.uid, book.id, field).catch(console.error)];
             if (withActivity) {
               const type = field === 'addedAt' ? 'started' : 'finished';
               const bookInfo = { title: book.title, author: book.author, gbid: book.gbid,
                 rating: book.rating, review: book.review, username: profile.username, bookId: book.id };
-              syncBookActivity(user.uid, type, null, null, bookInfo).catch(console.error);
+              pending.push(syncBookActivity(user.uid, type, null, null, bookInfo).catch(console.error));
             }
+            Promise.all(pending).finally(markClean);
           }
           return;
         }
@@ -775,7 +787,8 @@
           title: book.title, author: book.author, gbid: book.gbid,
           rating: book.rating, review: book.review, username: profile.username, bookId: book.id
         } : null;
-        updateBookDates(user.uid, book.id, updates, bookInfo).catch(console.error);
+        markDirty();
+        updateBookDates(user.uid, book.id, updates, bookInfo).catch(console.error).finally(markClean);
       }
 
       val.addEventListener('click', () => {
@@ -871,6 +884,8 @@
           if (val !== (book[key] ?? null)) updates[key] = val;
         });
         if (!Object.keys(updates).length) return;
+        markDirty();
+        try {
         const siblings = book.gbid ? allBooks.filter(b => b.id !== book.id && b.gbid === book.gbid) : [];
         await Promise.all([
           updateBookMeta(user.uid, book.id, updates),
@@ -902,6 +917,9 @@
           const authorEl = card.querySelector('.book-author');
           if (authorEl) { authorEl.textContent = updates.author || ''; if (authorEl.tagName === 'A') authorEl.href = `../author/?slug=${toAuthorSlug(updates.author || '')}`; }
           if (coverCell) coverCell.dataset.author = (updates.author || '').toLowerCase();
+        }
+        } finally {
+          markClean();
         }
       }
 
@@ -1137,37 +1155,43 @@
       pgNumWrap.append(curInput, pgNumBtns);
 
       let pgSaveTimer;
+      let pgDirty = false;
       async function saveProgress() {
         clearTimeout(pgSaveTimer);
-        const cur     = Math.max(0, parseInt(curInput.value) || 0);
-        const total   = totalPagesVal;
-        const clamped = total ? Math.min(cur, total) : cur;
-        curInput.value = clamped;
-        const updates = { currentPage: clamped };
-        if (total !== book.totalPages) updates.totalPages = total;
-        await updateBookMeta(user.uid, book.id, updates, { gbid: book.gbid, title: book.title });
-        book.currentPage = clamped;
-        if (total != null) book.totalPages = total;
-        if (coverCell && total) {
-          let strip = coverCell.querySelector('.library-progress-strip');
-          if (!strip) {
-            strip = document.createElement('div');
-            strip.className = 'library-progress-strip';
-            const fill = document.createElement('div');
-            fill.className = 'library-progress-fill';
-            strip.appendChild(fill);
-            coverCell.insertBefore(strip, coverCell.querySelector('.library-cover-title'));
+        try {
+          const cur     = Math.max(0, parseInt(curInput.value) || 0);
+          const total   = totalPagesVal;
+          const clamped = total ? Math.min(cur, total) : cur;
+          curInput.value = clamped;
+          const updates = { currentPage: clamped };
+          if (total !== book.totalPages) updates.totalPages = total;
+          await updateBookMeta(user.uid, book.id, updates, { gbid: book.gbid, title: book.title });
+          book.currentPage = clamped;
+          if (total != null) book.totalPages = total;
+          if (coverCell && total) {
+            let strip = coverCell.querySelector('.library-progress-strip');
+            if (!strip) {
+              strip = document.createElement('div');
+              strip.className = 'library-progress-strip';
+              const fill = document.createElement('div');
+              fill.className = 'library-progress-fill';
+              strip.appendChild(fill);
+              coverCell.insertBefore(strip, coverCell.querySelector('.library-cover-info'));
+            }
+            const pct = Math.round((clamped / total) * 100);
+            coverCell.querySelector('.library-progress-fill').style.width = pct + '%';
+            let pctEl = coverCell.querySelector('.library-progress-pct');
+            if (!pctEl) { pctEl = document.createElement('div'); pctEl.className = 'library-progress-pct'; coverCell.appendChild(pctEl); }
+            pctEl.textContent = pct + '%';
           }
-          const pct = Math.round((clamped / total) * 100);
-          coverCell.querySelector('.library-progress-fill').style.width = pct + '%';
-          let pctEl = coverCell.querySelector('.library-progress-pct');
-          if (!pctEl) { pctEl = document.createElement('div'); pctEl.className = 'library-progress-pct'; coverCell.appendChild(pctEl); }
-          pctEl.textContent = pct + '%';
+        } finally {
+          if (pgDirty) { pgDirty = false; markClean(); }
         }
       }
 
       curInput.addEventListener('input', () => {
         clearTimeout(pgSaveTimer);
+        if (!pgDirty) { pgDirty = true; markDirty(); }
         pgSaveTimer = setTimeout(saveProgress, 700);
       });
 
@@ -1615,77 +1639,92 @@
       });
 
 
-      async function saveCurrentRead() {
-        const { date: startedAtDate,  precision: startedAtPrec  } = startedPicker.getDate();
-        const { date: finishedAtDate, precision: finishedAtPrec } = finishedPicker.getDate();
-        const existing = reads[selectedReadIdx];
-        if (!existing && !startedAtDate && !finishedAtDate) return;
-        reads[selectedReadIdx] = {
-          startedAt:           startedAtDate  ? { toDate: () => startedAtDate  } : null,
-          startedAtPrecision:  startedAtDate  ? startedAtPrec  : null,
-          finishedAt:          finishedAtDate ? { toDate: () => finishedAtDate } : null,
-          finishedAtPrecision: finishedAtDate ? finishedAtPrec : null,
-          language: langInput.value.trim() || null,
-          format:   fmtSel.value           || null,
-          rating:   starPicker.getValue(),
-          review:   reviewTa.value.trim()  || null,
-        };
-        book.reads = reads;
-        await updateBookReads(user.uid, book.id, reads);
-        const mostRecent = reads.reduce((best, r) => {
-          const rTs = r.finishedAt?.toDate?.()?.getTime?.() ?? 0;
-          const bTs = best?.finishedAt?.toDate?.()?.getTime?.() ?? 0;
-          return rTs > bTs ? r : best;
-        }, null);
-        const selectedRead = reads[selectedReadIdx];
-        const bookInfo = { title: book.title, author: book.author, gbid: book.gbid,
-          rating: mostRecent?.rating ?? null, review: mostRecent?.review ?? null,
-          username: profile.username, bookId: book.id };
+      // Serialize saves: overlapping calls (debounce vs. instant star/review triggers)
+      // must never run concurrently, or whichever Firestore write lands last wins
+      // regardless of which one started with fresher data.
+      let saveQueue = Promise.resolve();
+      function saveCurrentRead() {
+        saveQueue = saveQueue.then(doSaveCurrentRead, err => console.error('Read save failed:', err));
+        return saveQueue;
+      }
+      async function doSaveCurrentRead() {
         try {
-          await syncBookActivity(user.uid, 'finished',
-            mostRecent?.finishedAt?.toDate?.() ?? null,
-            mostRecent?.finishedAtPrecision ?? null,
-            bookInfo
-          );
-        } catch (e) { console.error('Finished activity sync failed:', e); }
-        try {
-          await syncBookActivity(user.uid, 'started',
-            selectedRead?.startedAt?.toDate?.() ?? null,
-            selectedRead?.startedAtPrecision ?? null,
-            bookInfo
-          );
-        } catch (e) { console.error('Started activity sync failed:', e); }
-        book.rating     = mostRecent?.rating;
-        book.review     = mostRecent?.review;
-        book.finishedAt = mostRecent?.finishedAt;
-        if (coverCell) {
-          let badge = coverCell.querySelector('.library-cover-rating');
-          const displayRating = mostRecent?.rating;
-          if (displayRating) {
-            const html = cellRatingHtml(displayRating);
-            if (badge) { badge.innerHTML = html; }
-            else {
-              badge = document.createElement('div');
-              badge.className = 'library-cover-rating';
-              badge.innerHTML = html;
-              const info = coverCell.querySelector('.library-cover-info');
-              if (info) info.insertBefore(badge, info.firstChild);
+          const { date: startedAtDate,  precision: startedAtPrec  } = startedPicker.getDate();
+          const { date: finishedAtDate, precision: finishedAtPrec } = finishedPicker.getDate();
+          const existing = reads[selectedReadIdx];
+          if (!existing && !startedAtDate && !finishedAtDate) return;
+          reads[selectedReadIdx] = {
+            startedAt:           startedAtDate  ? { toDate: () => startedAtDate  } : null,
+            startedAtPrecision:  startedAtDate  ? startedAtPrec  : null,
+            finishedAt:          finishedAtDate ? { toDate: () => finishedAtDate } : null,
+            finishedAtPrecision: finishedAtDate ? finishedAtPrec : null,
+            language: langInput.value.trim() || null,
+            format:   fmtSel.value           || null,
+            rating:   starPicker.getValue(),
+            review:   reviewTa.value.trim()  || null,
+          };
+          book.reads = reads;
+          await updateBookReads(user.uid, book.id, reads);
+          const mostRecent = reads.reduce((best, r) => {
+            const rTs = r.finishedAt?.toDate?.()?.getTime?.() ?? -Infinity;
+            const bTs = best?.finishedAt?.toDate?.()?.getTime?.() ?? -Infinity;
+            return rTs > bTs ? r : best;
+          }, reads[0] ?? null);
+          const selectedRead = reads[selectedReadIdx];
+          const bookInfo = { title: book.title, author: book.author, gbid: book.gbid,
+            rating: mostRecent?.rating ?? null, review: mostRecent?.review ?? null,
+            username: profile.username, bookId: book.id };
+          try {
+            await syncBookActivity(user.uid, 'finished',
+              mostRecent?.finishedAt?.toDate?.() ?? null,
+              mostRecent?.finishedAtPrecision ?? null,
+              bookInfo
+            );
+          } catch (e) { console.error('Finished activity sync failed:', e); }
+          try {
+            await syncBookActivity(user.uid, 'started',
+              selectedRead?.startedAt?.toDate?.() ?? null,
+              selectedRead?.startedAtPrecision ?? null,
+              bookInfo
+            );
+          } catch (e) { console.error('Started activity sync failed:', e); }
+          book.rating     = mostRecent?.rating;
+          book.review     = mostRecent?.review;
+          book.finishedAt = mostRecent?.finishedAt;
+          if (coverCell) {
+            let badge = coverCell.querySelector('.library-cover-rating');
+            const displayRating = mostRecent?.rating;
+            if (displayRating) {
+              const html = cellRatingHtml(displayRating);
+              if (badge) { badge.innerHTML = html; }
+              else {
+                badge = document.createElement('div');
+                badge.className = 'library-cover-rating';
+                badge.innerHTML = html;
+                const info = coverCell.querySelector('.library-cover-info');
+                if (info) info.insertBefore(badge, info.firstChild);
+              }
+            } else if (badge) {
+              badge.remove();
             }
-          } else if (badge) {
-            badge.remove();
           }
+          buildHistList();
+        } finally {
+          if (readsDirty) { readsDirty = false; markClean(); }
         }
-        buildHistList();
       }
 
+      let readsDirty = false;
+      function markReadsDirty() { if (!readsDirty) { readsDirty = true; markDirty(); } }
+
       let saveTimer;
-      function debouncedSave() { clearTimeout(saveTimer); saveTimer = setTimeout(saveCurrentRead, 700); }
+      function debouncedSave() { markReadsDirty(); clearTimeout(saveTimer); saveTimer = setTimeout(saveCurrentRead, 700); }
 
       // Auto-save per-read fields
       rangeEl.addEventListener('change',   debouncedSave);
       rangeEl.addEventListener('focusout', debouncedSave);
-      starPicker.addEventListener('click',  () => saveCurrentRead());
-      reviewTa.addEventListener('blur',    () => { setReviewDisplay(reviewTa.value.trim()); reviewTa.style.display = 'none'; reviewText.style.display = ''; saveCurrentRead(); });
+      starPicker.addEventListener('click',  () => { markReadsDirty(); saveCurrentRead(); });
+      reviewTa.addEventListener('blur',    () => { setReviewDisplay(reviewTa.value.trim()); reviewTa.style.display = 'none'; reviewText.style.display = ''; markReadsDirty(); saveCurrentRead(); });
       reviewTa.addEventListener('input',   debouncedSave);
 
       const detailsSection = addDetailsEditor(card, book, coverCell, [

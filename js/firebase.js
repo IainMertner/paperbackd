@@ -317,16 +317,20 @@ export async function deleteAuthorCountryOverride(author) {
 
 export async function updateBookCover(uid, bookId, coverUrl, { gbid, title } = {}) {
   await updateDoc(doc(db, 'users', uid, 'books', bookId), { coverUrl });
-  if (gbid || title) {
-    const docs = await activityDocsForBook(uid, { gbid, title });
-    if (docs.length) await Promise.all(docs.map(d => updateDoc(d.ref, { coverUrl })));
-  }
+  const docs = await activityDocsForBook(uid, { bookId, gbid, title });
+  if (docs.length) await Promise.all(docs.map(d => updateDoc(d.ref, { coverUrl })));
 }
 
-async function activityDocsForBook(uid, { gbid, title, author }) {
+async function activityDocsForBook(uid, { bookId, gbid, title, author }) {
+  if (bookId) {
+    const snap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid), where('bookId', '==', bookId)));
+    if (snap.docs.length) return snap.docs;
+  }
+  // Legacy fallback: activity docs written before bookId was tracked on them.
   const snap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
   return snap.docs.filter(d => {
     const data = d.data();
+    if (data.bookId) return false; // already covered by the indexed query above
     return (gbid && data.gbid === gbid) || (data.bookTitle === title && data.bookAuthor === author);
   });
 }
@@ -409,6 +413,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, co
       uid,
       username:   username || '',
       type:       'finished',
+      bookId:     bookRef.id,
       bookTitle:  title,
       bookAuthor: author || '',
       gbid:       gbid || '',
@@ -436,21 +441,20 @@ export async function addBook(uid, { title, author, totalPages, gbid, coverUrl, 
   if (coverUrl)    bookData.coverUrl    = coverUrl;
   if (releaseYear) bookData.releaseYear = releaseYear;
   if (country)     bookData.country     = country;
-  const [bookRef] = await Promise.all([
-    addDoc(collection(db, 'users', uid, 'books'), bookData),
-    addDoc(collection(db, 'activity'), {
-      uid,
-      username,
-      type:        'started',
-      bookTitle:   title,
-      bookAuthor:  author || '',
-      gbid:        gbid || '',
-      coverUrl:    coverUrl || '',
-      currentPage: 0,
-      totalPages:  totalPages || 0,
-      timestamp:   serverTimestamp()
-    })
-  ]);
+  const bookRef = await addDoc(collection(db, 'users', uid, 'books'), bookData);
+  await addDoc(collection(db, 'activity'), {
+    uid,
+    username,
+    type:        'started',
+    bookId:      bookRef.id,
+    bookTitle:   title,
+    bookAuthor:  author || '',
+    gbid:        gbid || '',
+    coverUrl:    coverUrl || '',
+    currentPage: 0,
+    totalPages:  totalPages || 0,
+    timestamp:   serverTimestamp()
+  });
   return bookRef.id;
 }
 
@@ -474,11 +478,21 @@ export async function finishBook(uid, bookId, { title, author, gbid, rating, rev
   if (rating != null) bookUpdate.rating = rating;
   if (review)         bookUpdate.review = review;
 
-  const actSnap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
-  const startedDocs = actSnap.docs.filter(d => {
-    const data = d.data();
-    return data.type === 'started' && ((gbid && data.gbid === gbid) || data.bookTitle === title);
-  });
+  const startedSnap = await getDocs(query(
+    collection(db, 'activity'),
+    where('uid', '==', uid),
+    where('bookId', '==', bookId),
+    where('type', '==', 'started')
+  ));
+  let startedDocs = startedSnap.docs;
+  if (!startedDocs.length) {
+    // Legacy fallback: 'started' docs written before bookId was tracked on them.
+    const legacySnap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
+    startedDocs = legacySnap.docs.filter(d => {
+      const data = d.data();
+      return data.type === 'started' && !data.bookId && ((gbid && data.gbid === gbid) || data.bookTitle === title);
+    });
+  }
 
   await Promise.all([
     updateDoc(doc(db, 'users', uid, 'books', bookId), bookUpdate),
@@ -499,19 +513,33 @@ export async function finishBook(uid, bookId, { title, author, gbid, rating, rev
   ]);
 }
 
-async function upsertActivityTimestamp(uid, type, date, { title, author, gbid, rating, review, username }) {
-  const snap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
-  const matching = snap.docs.filter(d => {
-    const data = d.data();
-    if (data.type !== type) return false;
-    if (gbid && data.gbid && data.gbid === gbid) return true;
-    return data.bookTitle === title && data.bookAuthor === author;
-  });
+async function upsertActivityTimestamp(uid, type, date, { bookId, title, author, gbid, rating, review, username }) {
+  let matching = [];
+  if (bookId) {
+    const snap = await getDocs(query(
+      collection(db, 'activity'),
+      where('uid', '==', uid),
+      where('bookId', '==', bookId),
+      where('type', '==', type)
+    ));
+    matching = snap.docs;
+  }
+  if (!matching.length) {
+    // Legacy fallback: activity docs written before bookId was tracked on them.
+    const snap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
+    matching = snap.docs.filter(d => {
+      const data = d.data();
+      if (data.type !== type || data.bookId) return false;
+      if (gbid && data.gbid && data.gbid === gbid) return true;
+      return data.bookTitle === title && data.bookAuthor === author;
+    });
+  }
   if (matching.length > 0) {
     await Promise.all(matching.map(d => updateDoc(d.ref, { timestamp: date })));
   } else {
     const entry = {
       uid, username: username || '', type,
+      bookId: bookId || '',
       bookTitle: title || '', bookAuthor: author || '', gbid: gbid || '',
       timestamp: date
     };
@@ -529,14 +557,15 @@ export async function updateBookDates(uid, bookId, updates, bookInfo) {
   if (firestoreUpdates.finishedAtPrecision === null) firestoreUpdates.finishedAtPrecision = deleteField();
   await updateDoc(doc(db, 'users', uid, 'books', bookId), firestoreUpdates);
   if (bookInfo) {
+    const info = { ...bookInfo, bookId: bookInfo.bookId || bookId };
     try {
       if (updates.addedAt instanceof Date) {
-        if (updates.addedAtPrecision === 'day') await upsertActivityTimestamp(uid, 'started', updates.addedAt, bookInfo);
-        else await deleteActivityForBook(uid, bookInfo.title, bookInfo.author, 'started');
+        if (updates.addedAtPrecision === 'day') await upsertActivityTimestamp(uid, 'started', updates.addedAt, info);
+        else await deleteActivityForBook(uid, { bookId: info.bookId, title: info.title, author: info.author, type: 'started' });
       }
       if (updates.finishedAt instanceof Date) {
-        if (updates.finishedAtPrecision === 'day') await upsertActivityTimestamp(uid, 'finished', updates.finishedAt, bookInfo);
-        else await deleteActivityForBook(uid, bookInfo.title, bookInfo.author, 'finished');
+        if (updates.finishedAtPrecision === 'day') await upsertActivityTimestamp(uid, 'finished', updates.finishedAt, info);
+        else await deleteActivityForBook(uid, { bookId: info.bookId, title: info.title, author: info.author, type: 'finished' });
       }
     } catch (e) { console.error('Activity sync failed:', e); }
   }
@@ -553,8 +582,8 @@ export async function updateBookMeta(uid, bookId, updates, { gbid, title } = {})
   await updateDoc(doc(db, 'users', uid, 'books', bookId), updates);
   const hasProgress = updates.currentPage !== undefined || updates.totalPages !== undefined;
   const hasCover    = updates.coverUrl !== undefined;
-  if ((gbid || title) && (hasProgress || hasCover)) {
-    const docs = await activityDocsForBook(uid, { gbid, title });
+  if (hasProgress || hasCover) {
+    const docs = await activityDocsForBook(uid, { bookId, gbid, title });
     await Promise.all(docs.map(d => {
       const isStarted = d.data().type === 'started';
       const update = {};
@@ -638,17 +667,28 @@ export async function syncBookActivity(uid, type, date, precision, bookInfo) {
   if (date && precision === 'day') {
     await upsertActivityTimestamp(uid, type, date, bookInfo);
   } else {
-    await deleteActivityForBook(uid, bookInfo.title, bookInfo.author, type);
+    await deleteActivityForBook(uid, { bookId: bookInfo.bookId, title: bookInfo.title, author: bookInfo.author, type });
   }
 }
 
-async function deleteActivityForBook(uid, bookTitle, bookAuthor, type) {
+async function deleteActivityForBook(uid, { bookId, title, author, type } = {}) {
+  if (bookId) {
+    const constraints = [where('uid', '==', uid), where('bookId', '==', bookId)];
+    if (type != null) constraints.push(where('type', '==', type));
+    const snap = await getDocs(query(collection(db, 'activity'), ...constraints));
+    if (snap.docs.length) {
+      await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+      return;
+    }
+  }
+  // Legacy fallback: activity docs written before bookId was tracked on them.
   const snap = await getDocs(query(collection(db, 'activity'), where('uid', '==', uid)));
   await Promise.all(
     snap.docs
       .filter(d => {
         const data = d.data();
-        return data.bookTitle === bookTitle && data.bookAuthor === bookAuthor && (type == null || data.type === type);
+        if (data.bookId) return false; // already covered by the indexed query above
+        return data.bookTitle === title && data.bookAuthor === author && (type == null || data.type === type);
       })
       .map(d => deleteDoc(d.ref))
   );
@@ -685,7 +725,7 @@ export function deleteBookDoc(uid, bookId) {
 export async function deleteBook(uid, bookId, { title, author }) {
   await Promise.all([
     deleteDoc(doc(db, 'users', uid, 'books', bookId)),
-    deleteActivityForBook(uid, title, author, null)
+    deleteActivityForBook(uid, { bookId, title, author })
   ]);
 }
 
@@ -714,7 +754,7 @@ export async function dnfBook(uid, bookId, book) {
 export async function unfinishBook(uid, bookId, { title, author }) {
   await Promise.all([
     updateDoc(doc(db, 'users', uid, 'books', bookId), { status: 'reading', finishedAt: deleteField() }),
-    deleteActivityForBook(uid, title, author, 'finished')
+    deleteActivityForBook(uid, { bookId, title, author, type: 'finished' })
   ]);
 }
 
@@ -873,10 +913,15 @@ export async function renameList(uid, listId, name) {
   await updateDoc(doc(db, 'users', uid, 'lists', listId), { name });
 }
 
-export async function removeActivityEvent(uid, activityId, gbid, dateField, bookTitle) {
+export async function removeActivityEvent(uid, activityId, gbid, dateField, bookTitle, bookId) {
   await deleteDoc(doc(db, 'activity', activityId));
   if (dateField) {
-    let book = gbid ? await getBookByGbid(uid, gbid) : null;
+    let book = null;
+    if (bookId) {
+      const snap = await getDoc(doc(db, 'users', uid, 'books', bookId));
+      if (snap.exists()) book = { id: snap.id, ...snap.data() };
+    }
+    if (!book && gbid) book = await getBookByGbid(uid, gbid);
     if (!book && bookTitle) {
       const q = query(collection(db, 'users', uid, 'books'), where('title', '==', bookTitle));
       const snap = await getDocs(q);
@@ -988,6 +1033,7 @@ export async function repairActivityDocs(uid) {
     const book = findBook(ev.gbid, ev.bookTitle);
     if (!book) continue;
     const update = {};
+    if (!ev.bookId) update.bookId = book.id;
     if (book.coverUrl && book.coverUrl !== ev.coverUrl) update.coverUrl = book.coverUrl;
     if (ev.type === 'started') {
       if (book.currentPage !== undefined && book.currentPage !== ev.currentPage) update.currentPage = book.currentPage;
