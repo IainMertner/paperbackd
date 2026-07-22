@@ -94,6 +94,9 @@ a { color: inherit; }
 }
 
 .desktop-nav a {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   padding: 0.35rem 0.7rem;
   border-radius: var(--radius-sm);
   font-size: 0.875rem;
@@ -104,6 +107,7 @@ a { color: inherit; }
   font-family: 'Arvo', serif;
 }
 
+.desktop-nav a svg { width: 15px; height: 15px; stroke-width: 1.75; flex-shrink: 0; }
 .desktop-nav a:hover { color: var(--text); background: var(--bg-alt); }
 .desktop-nav a.active { color: var(--accent-nav); background: var(--accent-nav-dim); }
 
@@ -188,7 +192,7 @@ a { color: inherit; }
 .mobile-nav-item:hover { color: var(--text); }
 
 /* ── Responsive ────────────────────────────────────────────── */
-@media (min-width: 768px) {
+@media (min-width: 900px) {
   .site-header { display: flex; }
   .mobile-nav { display: none; }
   .page-content {

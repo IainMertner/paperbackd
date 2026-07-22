@@ -1,4 +1,4 @@
-const CACHE = 'paperbackd-v9';
+const CACHE = 'paperbackd-v14';
 
 // Firebase API hosts — never intercept these
 const PASS_THROUGH = [

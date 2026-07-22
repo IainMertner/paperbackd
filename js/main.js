@@ -161,12 +161,14 @@ function setActiveNav() {
   const hasU = new URLSearchParams(window.location.search).has('u');
 
   let page = null;
-  if (path === '/' || /\/feed\/?$/.test(path))  page = 'feed';
-  else if (/\/search\/?$/.test(path))           page = 'search';
-  else if (/\/stats\/?$/.test(path)   && !hasU) page = 'stats';
-  else if (/\/settings\/?$/.test(path))         page = 'profile';
-  else if (/\/library\/?$/.test(path) && !hasU) page = 'library';
-  else if (/\/profile\/?$/.test(path) && !hasU) page = 'profile';
+  if (path === '/' || /\/feed\/?$/.test(path))    page = 'feed';
+  else if (/\/search\/?$/.test(path))             page = 'search';
+  else if (/\/stats\/?$/.test(path)   && !hasU)   page = 'stats';
+  else if (/\/settings\/?$/.test(path))           page = 'settings';
+  else if (/\/library\/?$/.test(path) && !hasU)   page = 'library';
+  else if (/\/profile\/?$/.test(path) && !hasU)   page = 'profile';
+  else if (/\/network\/?$/.test(path) && !hasU)   page = 'network';
+  else if (/\/lists?\/?$/.test(path)  && !hasU)   page = 'lists';
 
   if (page) {
     localStorage.setItem('nav-active', page);
