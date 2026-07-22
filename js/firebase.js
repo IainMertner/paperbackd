@@ -66,13 +66,14 @@ export async function signUp(username, password, displayName, email) {
   if (taken.exists()) throw new Error('That username is already taken.');
 
   const authEmail = email.trim().toLowerCase();
+  const cleanDisplayName = displayName.trim().toLowerCase();
   const cred = await createUserWithEmailAndPassword(auth, authEmail, password);
   const uid  = cred.user.uid;
 
   await Promise.all([
-    setDoc(doc(db, 'users', uid),          { username, displayName: displayName.trim(), createdAt: serverTimestamp(), following: [] }),
+    setDoc(doc(db, 'users', uid),          { username, displayName: cleanDisplayName, createdAt: serverTimestamp(), following: [] }),
     setDoc(doc(db, 'usernames', username), { uid, authEmail }),
-    updateProfile(cred.user, { displayName: displayName.trim() }),
+    updateProfile(cred.user, { displayName: cleanDisplayName }),
   ]);
 
   await sendEmailVerification(cred.user, { url: ROOT + 'login/' });
@@ -211,6 +212,35 @@ export async function getFollowing(uid) {
   return getProfilesByUids(uids);
 }
 
+// Friends-of-friends: people followed by people uid follows, excluding uid
+// itself and anyone uid already follows. Ranked by how many of uid's
+// followees follow them, most mutual connections first.
+const SUGGESTED_FOLLOWS_LIMIT = 10;
+const SUGGESTED_FOLLOWS_MIN_MUTUAL = 2;
+
+export async function getSuggestedFollows(uid) {
+  const following = await getFollowing(uid);
+  const exclude = new Set(following.map(f => f.uid));
+  exclude.add(uid);
+
+  const theirFollowingLists = await Promise.all(following.map(f => getFollowing(f.uid)));
+  const suggestions = new Map(); // uid -> { profile, mutualCount }
+  for (const list of theirFollowingLists) {
+    for (const profile of list) {
+      if (exclude.has(profile.uid)) continue;
+      const existing = suggestions.get(profile.uid);
+      if (existing) existing.mutualCount++;
+      else suggestions.set(profile.uid, { profile, mutualCount: 1 });
+    }
+  }
+
+  return Array.from(suggestions.values())
+    .filter(s => s.mutualCount >= SUGGESTED_FOLLOWS_MIN_MUTUAL)
+    .sort((a, b) => b.mutualCount - a.mutualCount)
+    .slice(0, SUGGESTED_FOLLOWS_LIMIT)
+    .map(({ profile, mutualCount }) => ({ ...profile, mutualCount }));
+}
+
 export async function getFollowers(uid) {
   // Compute followers by querying who has this uid in their following array.
   // This avoids cross-user writes entirely — no special Firestore rules needed.
@@ -290,7 +320,8 @@ export function updateAvatarBorderColor(uid, color) {
 }
 
 export function updateDisplayName(uid, name) {
-  return updateDoc(doc(db, 'users', uid), { displayName: name || deleteField() });
+  const clean = name ? name.trim().toLowerCase() : '';
+  return updateDoc(doc(db, 'users', uid), { displayName: clean || deleteField() });
 }
 
 export function updateBio(uid, bio) {

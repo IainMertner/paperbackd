@@ -1025,7 +1025,58 @@ a { color: inherit; }
 }
 .friend-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-.friend-name { font-size: 0.9rem; font-weight: 500; }
+.friend-name { font-size: 0.9rem; font-weight: 500; text-decoration: none; }
+
+/* ── Network (following / followers) ──────────────────────── */
+/* Bare divided rows, same convention as .profile-zine-link — no boxed
+   card wrapper, just border-bottom dividers flowing on the page. */
+.network-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.network-row:last-child { border-bottom: none; }
+
+.network-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+}
+.network-row .friend-name {
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.network-row-handle {
+  font-weight: 400;
+  color: var(--text-muted);
+  text-transform: lowercase;
+}
+
+.network-row-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  opacity: 0.55;
+  flex-shrink: 0;
+  transition: color .15s, opacity .15s;
+}
+.network-row-link svg { width: 14px; height: 14px; }
+.network-row-link:hover { color: var(--accent); opacity: 1; }
+
+.network-row-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+
+.network-empty {
+  padding: 0.7rem 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
 
 /* ── Auth (login / register) ───────────────────────────────── */
 

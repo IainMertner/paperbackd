@@ -19,6 +19,40 @@
 </head>
 <body>
 
+  <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <defs>
+      <filter id="ink-edge" x="-25%" y="-25%" width="150%" height="150%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" seed="5" result="noise"/>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+      <filter id="brush-line" x="-1%" y="-600%" width="102%" height="1300%">
+        <feMorphology operator="dilate" radius="0 1" result="thick"/>
+        <feTurbulence type="fractalNoise" baseFrequency="0.018 0.45" numOctaves="4" seed="8" result="noise"/>
+        <feDisplacementMap in="thick" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
+
+  <style>
+    .card {
+      position: relative;
+      isolation: isolate;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      background: var(--bg-card);
+      box-shadow: var(--shadow);
+      filter: url(#ink-edge);
+      z-index: -1;
+    }
+  </style>
+
   <header class="site-header">
     <div class="header-inner">
       <a class="logo" href="/feed/">paperbackd<span class="title-dot">.</span></a>
@@ -48,9 +82,21 @@
       <p class="auth-hint"  id="follow-ok"    hidden style="margin-top:.4rem;color:var(--accent)"></p>
     </div>
 
-    <div id="tab-bar" style="display:flex;border-bottom:2px solid var(--border);margin-bottom:.75rem">
+    <div class="add-friend card" id="invite-form" style="margin-top:.75rem">
+      <div class="join-club-row" style="align-items:center">
+        <div>
+          <div class="add-friend-label" style="margin-bottom:.1rem">Invite friends</div>
+          <p style="font-size:.78rem;color:var(--text-muted);margin:0">Get more people you know on paperbackd.</p>
+        </div>
+        <button class="join-club-btn" id="invite-btn" style="margin-left:auto;flex-shrink:0">Invite</button>
+      </div>
+      <p class="auth-hint" id="invite-ok" hidden style="margin-top:.5rem;color:var(--accent)"></p>
+    </div>
+
+    <div id="tab-bar" style="display:flex;border-bottom:2px solid var(--border);margin-top:1.25rem;margin-bottom:.75rem">
       <button id="tab-following" style="flex:1;padding:.5rem .25rem;background:none;border:none;border-bottom:2px solid var(--accent);margin-bottom:-2px;font-weight:600;font-size:.9rem;cursor:pointer;color:var(--fg);font-family:inherit">Following</button>
       <button id="tab-followers" style="flex:1;padding:.5rem .25rem;background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;font-weight:400;font-size:.9rem;cursor:pointer;color:var(--text-muted);font-family:inherit">Followers</button>
+      <button id="tab-suggested" style="flex:1;padding:.5rem .25rem;background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;font-weight:400;font-size:.9rem;cursor:pointer;color:var(--text-muted);font-family:inherit">Suggested</button>
     </div>
 
     <div id="following-panel">
@@ -58,6 +104,9 @@
     </div>
     <div id="followers-panel" style="display:none">
       <div id="followers-list"></div>
+    </div>
+    <div id="suggested-panel" style="display:none">
+      <div id="suggested-list"></div>
     </div>
 
   </main>
@@ -104,15 +153,18 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getFollowing, getFollowers, followUser, unfollowUser, removeFollower, getProfileByUsername } from '../js/firebase.js';
+    import { getFollowing, getFollowers, getSuggestedFollows, followUser, unfollowUser, removeFollower, getProfileByUsername } from '../js/firebase.js';
 
     const { user, profile } = await requireAuth();
     const followingList  = document.getElementById('following-list');
     const followersList  = document.getElementById('followers-list');
+    const suggestedList  = document.getElementById('suggested-list');
     const tabFollowing   = document.getElementById('tab-following');
     const tabFollowers   = document.getElementById('tab-followers');
+    const tabSuggested   = document.getElementById('tab-suggested');
     const followingPanel = document.getElementById('following-panel');
     const followersPanel = document.getElementById('followers-panel');
+    const suggestedPanel = document.getElementById('suggested-panel');
 
     const params      = new URLSearchParams(location.search);
     const targetParam = params.get('u')?.toLowerCase();
@@ -129,16 +181,38 @@
         document.getElementById('page-title').innerHTML = `<a href="../profile/?u=${encodeURIComponent(targetProfile.username)}" style="color:var(--accent);text-decoration:none">${esc(targetProfile.username)}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>network<span class="title-dot">.</span>`;
       }
       document.getElementById('follow-form').style.display = 'none';
+      document.getElementById('invite-form').style.display = 'none';
+      tabSuggested.style.display = 'none';
     }
 
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
+    // Same icon used for "network" in the site nav — links here take you to
+    // that person's own network page, so you can browse friends-of-friends.
+    const NETWORK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><line x1="8.7" y1="10.7" x2="15.3" y2="7.3"/><line x1="8.7" y1="13.3" x2="15.3" y2="16.7"/></svg>';
+
+    function networkLinkHtml(username) {
+      const label = `Browse ${esc(username)}'s network`;
+      return `<a class="network-row-link" href="../network/?u=${esc(username)}" title="${label}" aria-label="${label}">${NETWORK_ICON}</a>`;
+    }
+
+    // Username stays primary; only add the display name (muted, to the
+    // right) when it actually differs — no point showing "iain iain".
+    // Case-insensitive: older display names predate lowercase enforcement
+    // and may still differ from the username only by casing.
+    function nameHtml(profile) {
+      if (profile.displayName && profile.displayName.toLowerCase() !== profile.username.toLowerCase()) {
+        return `${esc(profile.username)} <span class="network-row-handle">${esc(profile.displayName)}</span>`;
+      }
+      return esc(profile.username);
+    }
+
     function showEmpty(container, id, msg) {
       const p = document.createElement('p');
       p.id = id;
-      p.style.cssText = 'color:var(--text-muted);font-size:.875rem;margin-bottom:.625rem';
+      p.className = 'network-empty';
       p.textContent = msg;
       container.appendChild(p);
     }
@@ -154,33 +228,41 @@
       tab.textContent = `${label} · ${n}`;
     }
 
+    const TABS = {
+      following: { tab: tabFollowing, panel: followingPanel },
+      followers: { tab: tabFollowers, panel: followersPanel },
+      suggested: { tab: tabSuggested, panel: suggestedPanel },
+    };
+
     function switchTab(which) {
-      const onFollowing = which === 'following';
-      followingPanel.style.display = onFollowing ? '' : 'none';
-      followersPanel.style.display = onFollowing ? 'none' : '';
-      tabFollowing.style.fontWeight       = onFollowing ? '600' : '400';
-      tabFollowing.style.color            = onFollowing ? 'var(--fg)' : 'var(--text-muted)';
-      tabFollowing.style.borderBottomColor = onFollowing ? 'var(--accent)' : 'transparent';
-      tabFollowers.style.fontWeight       = onFollowing ? '400' : '600';
-      tabFollowers.style.color            = onFollowing ? 'var(--text-muted)' : 'var(--fg)';
-      tabFollowers.style.borderBottomColor = onFollowing ? 'transparent' : 'var(--accent)';
+      for (const [key, { tab, panel }] of Object.entries(TABS)) {
+        const active = key === which;
+        panel.style.display        = active ? '' : 'none';
+        tab.style.fontWeight        = active ? '600' : '400';
+        tab.style.color             = active ? 'var(--fg)' : 'var(--text-muted)';
+        tab.style.borderBottomColor = active ? 'var(--accent)' : 'transparent';
+      }
     }
 
     tabFollowing.addEventListener('click', () => switchTab('following'));
     tabFollowers.addEventListener('click', () => switchTab('followers'));
+    tabSuggested.addEventListener('click', () => switchTab('suggested'));
 
     // Render a person with optional follow button
     function renderPerson(profile, myFollowingUids) {
       const card = document.createElement('div');
-      card.className = 'card';
+      card.className = 'network-row';
       card.dataset.uid = profile.uid;
       const isMe        = profile.uid === user.uid;
       const alreadyFollow = myFollowingUids.includes(profile.uid);
-      card.innerHTML = `<div class="friend-item">
+      card.innerHTML = `
         <a class="friend-avatar" href="../profile/?u=${esc(profile.username)}" style="text-decoration:none;color:inherit;${profile.avatarBorderColor ? `border-color:${profile.avatarBorderColor}` : ''}">${avatarHtml(profile)}</a>
-        <a class="friend-name" href="../profile/?u=${esc(profile.username)}">${esc(profile.username)}</a>
-        ${!isMe && !alreadyFollow ? `<button class="join-club-btn follow-back-btn" style="margin-left:auto;font-size:.75rem;padding:.3rem .75rem">Follow</button>` : ''}
-      </div>`;
+        <div class="network-row-main">
+          <a class="friend-name" href="../profile/?u=${esc(profile.username)}">${nameHtml(profile)}</a>
+          ${networkLinkHtml(profile.username)}
+        </div>
+        ${!isMe && !alreadyFollow ? `<button class="join-club-btn follow-back-btn" style="font-size:.75rem;padding:.3rem .75rem">Follow</button>` : ''}
+      `;
       if (!isMe && !alreadyFollow) {
         const btn = card.querySelector('.follow-back-btn');
         btn.addEventListener('click', async () => {
@@ -208,19 +290,22 @@
     // Render own following entry (with Unfollow button)
     function renderOwnFollowing(profile, myFollowingUids) {
       const card = document.createElement('div');
-      card.className = 'card';
+      card.className = 'network-row';
       card.dataset.uid = profile.uid;
-      card.innerHTML = `<div class="friend-item">
+      card.innerHTML = `
         <a class="friend-avatar" href="../profile/?u=${esc(profile.username)}" style="text-decoration:none;color:inherit;${profile.avatarBorderColor ? `border-color:${profile.avatarBorderColor}` : ''}">${avatarHtml(profile)}</a>
-        <a class="friend-name" href="../profile/?u=${esc(profile.username)}">${esc(profile.username)}</a>
-        <button class="btn-danger btn-unfollow" style="margin-left:auto;font-size:.75rem;padding:.3rem .75rem">Unfollow</button>
-      </div>`;
+        <div class="network-row-main">
+          <a class="friend-name" href="../profile/?u=${esc(profile.username)}">${nameHtml(profile)}</a>
+          ${networkLinkHtml(profile.username)}
+        </div>
+        <button class="btn-danger btn-unfollow" style="font-size:.75rem;padding:.3rem .75rem">Unfollow</button>
+      `;
       card.querySelector('.btn-unfollow').addEventListener('click', async () => {
         await unfollowUser(user.uid, profile.uid);
         const idx = myFollowingUids.indexOf(profile.uid);
         if (idx !== -1) myFollowingUids.splice(idx, 1);
         card.remove();
-        if (!followingList.querySelector('.card')) {
+        if (!followingList.querySelector('.network-row')) {
           showEmpty(followingList, 'following-empty', 'Not following anyone yet.');
         }
         // Update follow button in followers list if visible
@@ -228,9 +313,9 @@
         if (followerCard && !followerCard.querySelector('.follow-back-btn')) {
           const btn = document.createElement('button');
           btn.className = 'join-club-btn follow-back-btn';
-          btn.style.cssText = 'margin-left:auto;font-size:.75rem;padding:.3rem .75rem';
+          btn.style.cssText = 'font-size:.75rem;padding:.3rem .75rem';
           btn.textContent = 'Follow';
-          followerCard.querySelector('.friend-item').appendChild(btn);
+          followerCard.querySelector('.network-row-actions').prepend(btn);
           btn.addEventListener('click', async () => {
             btn.disabled = true; btn.textContent = 'Following…';
             try {
@@ -250,17 +335,20 @@
     // Render own follower entry (with Follow back + Remove buttons)
     function renderOwnFollower(profile, myFollowingUids) {
       const card = document.createElement('div');
-      card.className = 'card';
+      card.className = 'network-row';
       card.dataset.uid = profile.uid;
       const alreadyFollowing = myFollowingUids.includes(profile.uid);
-      card.innerHTML = `<div class="friend-item">
+      card.innerHTML = `
         <a class="friend-avatar" href="../profile/?u=${esc(profile.username)}" style="text-decoration:none;color:inherit;${profile.avatarBorderColor ? `border-color:${profile.avatarBorderColor}` : ''}">${avatarHtml(profile)}</a>
-        <a class="friend-name" href="../profile/?u=${esc(profile.username)}">${esc(profile.username)}</a>
-        <div style="display:flex;gap:.4rem;margin-left:auto">
+        <div class="network-row-main">
+          <a class="friend-name" href="../profile/?u=${esc(profile.username)}">${nameHtml(profile)}</a>
+          ${networkLinkHtml(profile.username)}
+        </div>
+        <div class="network-row-actions">
           ${!alreadyFollowing ? `<button class="join-club-btn follow-back-btn" style="font-size:.75rem;padding:.3rem .75rem">Follow back</button>` : ''}
           <button class="btn-danger btn-remove-follower" style="font-size:.75rem;padding:.3rem .75rem">Remove</button>
         </div>
-      </div>`;
+      `;
       if (!alreadyFollowing) {
         const followBtn = card.querySelector('.follow-back-btn');
         followBtn.addEventListener('click', async () => {
@@ -279,7 +367,7 @@
       card.querySelector('.btn-remove-follower').addEventListener('click', async () => {
         await removeFollower(user.uid, profile.uid);
         card.remove();
-        const count = followersList.querySelectorAll('.card').length;
+        const count = followersList.querySelectorAll('.network-row').length;
         setTabCount(tabFollowers, 'Followers', count);
         if (count === 0) showEmpty(followersList, 'followers-empty', 'No followers yet.');
       });
@@ -290,17 +378,26 @@
       let following, followers, myFollowingUids;
 
       if (isOwn) {
-        [following, followers] = await Promise.all([getFollowing(viewUid), getFollowers(viewUid)]);
+        let suggested;
+        [following, followers, suggested] = await Promise.all([
+          getFollowing(viewUid),
+          getFollowers(viewUid),
+          getSuggestedFollows(viewUid),
+        ]);
         myFollowingUids = following.map(f => f.uid);
 
         setTabCount(tabFollowing, 'Following', following.length);
         setTabCount(tabFollowers, 'Followers', followers.length);
+        setTabCount(tabSuggested, 'Suggested', suggested.length);
 
         if (following.length === 0) showEmpty(followingList, 'following-empty', 'Not following anyone yet.');
         else following.forEach(f => followingList.appendChild(renderOwnFollowing(f, myFollowingUids)));
 
         if (followers.length === 0) showEmpty(followersList, 'followers-empty', 'No followers yet.');
         else followers.forEach(f => followersList.appendChild(renderOwnFollower(f, myFollowingUids)));
+
+        if (suggested.length === 0) showEmpty(suggestedList, 'suggested-empty', 'No suggestions yet - follow more people to see suggestions here.');
+        else suggested.forEach(f => suggestedList.appendChild(renderPerson(f, myFollowingUids)));
       } else {
         [following, followers, myFollowingUids] = await Promise.all([
           getFollowing(viewUid),
@@ -338,7 +435,7 @@
         try {
           const followed = await followUser(user.uid, username);
           document.getElementById('following-empty')?.remove();
-          const myFollowingUids = Array.from(followingList.querySelectorAll('.card')).map(c => c.dataset.uid);
+          const myFollowingUids = Array.from(followingList.querySelectorAll('.network-row')).map(c => c.dataset.uid);
           myFollowingUids.push(followed.uid);
           followingList.appendChild(renderOwnFollowing(followed, myFollowingUids));
           okEl.textContent = `Now following ${followed.username}!`;
@@ -353,6 +450,33 @@
         }
       });
       input.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
+    }
+
+    // ── Invite friends ─────────────────────────────────────────────────────────
+    const inviteBtn = document.getElementById('invite-btn');
+    const inviteOk  = document.getElementById('invite-ok');
+
+    if (inviteBtn) {
+      inviteBtn.addEventListener('click', async () => {
+        const url  = 'https://paperbackd.ink/';
+        const text = `${profile.username} is using paperbackd to keep track of what they're reading — come join!`;
+
+        if (navigator.share) {
+          try {
+            await navigator.share({ title: 'paperbackd', text, url });
+          } catch (e) { /* user cancelled the share sheet — nothing to do */ }
+          return;
+        }
+
+        try {
+          await navigator.clipboard.writeText(`${text} ${url}`);
+          inviteOk.textContent = 'Invite link copied!';
+        } catch (e) {
+          inviteOk.textContent = url;
+        }
+        inviteOk.hidden = false;
+        setTimeout(() => { inviteOk.hidden = true; }, 3000);
+      });
     }
   </script>
   <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>

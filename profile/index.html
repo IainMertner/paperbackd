@@ -687,7 +687,7 @@
 
             const input = document.createElement('input');
             input.value = current;
-            input.style.cssText = 'width:100%;box-sizing:border-box;padding:.45rem .6rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-alt);color:var(--text);font-family:inherit;font-size:.9rem;outline:none';
+            input.style.cssText = 'width:100%;box-sizing:border-box;padding:.45rem .6rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-alt);color:var(--text);font-family:inherit;font-size:.9rem;outline:none;text-transform:lowercase';
             input.addEventListener('focus', () => { input.style.borderColor = 'var(--accent)'; });
             input.addEventListener('blur',  () => { input.style.borderColor = 'var(--border)'; });
 
@@ -704,7 +704,7 @@
             saveBtn.style.cssText = 'padding:.4rem .9rem;border-radius:var(--radius);border:none;background:var(--accent);color:#fff;cursor:pointer;font-family:inherit;font-size:.85rem;font-weight:600';
 
             async function doSave() {
-              const newName = input.value.trim() || myProfile.username;
+              const newName = (input.value.trim() || myProfile.username).toLowerCase();
               overlay.remove();
               setDisplayName(newName);
               fitDisplayName(displayNameEl);

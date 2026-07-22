@@ -65,7 +65,7 @@
 
     <div class="card" style="margin-bottom:.625rem">
       <div class="edit-field-label" style="margin-bottom:.35rem">Display name</div>
-      <input type="text" id="display-name-input" class="join-club-input" placeholder="Your name" maxlength="16" autocomplete="off" required style="width:100%;box-sizing:border-box">
+      <input type="text" id="display-name-input" class="join-club-input" placeholder="Your name" maxlength="16" autocomplete="off" required style="width:100%;box-sizing:border-box;text-transform:lowercase">
     </div>
 
     <div class="card" style="margin-bottom:.625rem">
@@ -335,7 +335,7 @@
     const cancelBtn = document.getElementById('cancel-btn');
 
     saveBtn.addEventListener('click', async () => {
-      const newDisplayName = displayNameInput.value.trim();
+      const newDisplayName = displayNameInput.value.trim().toLowerCase();
       if (!newDisplayName) { alert('Please enter a display name.'); return; }
       saveBtn.disabled = true;
       try {
