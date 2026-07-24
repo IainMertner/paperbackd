@@ -54,7 +54,7 @@
     /* Feed scroll + fades */
     .home-feed-wrap { position: relative; }
     .home-feed-scroll {
-      max-height: 22rem;
+      max-height: 28rem;
       overflow-y: auto;
       scrollbar-width: none;
     }
@@ -292,13 +292,6 @@
       </svg>
       library
     </a>
-    <a class="mobile-nav-item" href="../profile/" data-nav="profile">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
-        <circle cx="12" cy="7" r="4"/>
-      </svg>
-      profile
-    </a>
     <a class="mobile-nav-item" href="../stats/" data-nav="stats">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="13" width="4" height="7" rx="0.5"/>
@@ -306,6 +299,13 @@
         <rect x="17" y="9" width="4" height="11" rx="0.5"/>
       </svg>
       stats
+    </a>
+    <a class="mobile-nav-item" href="../profile/" data-nav="profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      profile
     </a>
   </nav>
 
@@ -812,6 +812,23 @@
       feedFadeBot.style.opacity = atBot ? '0' : '1';
     }
     feedScrollEl.addEventListener('scroll', updateFeedFades, { passive: true });
+
+    // Chain feed scroll to page scroll on mobile when hitting top/bottom boundary
+    let feedTouchStartY = 0;
+    feedScrollEl.addEventListener('touchstart', e => {
+      feedTouchStartY = e.touches[0].pageY;
+    }, { passive: true });
+    feedScrollEl.addEventListener('touchmove', e => {
+      const y  = e.touches[0].pageY;
+      const dy = feedTouchStartY - y; // positive = scrolling down
+      const atBot = feedScrollEl.scrollTop + feedScrollEl.clientHeight >= feedScrollEl.scrollHeight - 2;
+      const atTop = feedScrollEl.scrollTop <= 0;
+      if ((dy > 0 && atBot) || (dy < 0 && atTop)) {
+        e.preventDefault();
+        window.scrollBy(0, dy);
+        feedTouchStartY = y;
+      }
+    }, { passive: false });
   </script>
   <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
 </body>
