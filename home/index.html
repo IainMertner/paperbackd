@@ -135,7 +135,6 @@
       color: var(--text-muted);
       text-decoration: none;
       white-space: nowrap;
-      max-width: 7rem;
       overflow: hidden;
       text-overflow: ellipsis;
       flex-shrink: 0;
@@ -164,7 +163,7 @@
       border: none;
       box-shadow: none;
       border-radius: var(--radius-sm);
-      padding: .6rem .75rem;
+      padding: .6rem .75rem 1.75rem;
     }
     .home-announcement::before {
       content: '';
@@ -313,7 +312,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getFollowing, getReadingBooks, getFeed, getAnnouncements, toggleReaction, getBookByGbid } from '../js/firebase.js';
+    import { getFollowing, getReadingBooks, getFeed, getAnnouncements, toggleReaction, toggleAnnouncementReaction, getBookByGbid } from '../js/firebase.js';
 
     function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
     function toAuthorSlug(n) { return n.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,''); }
@@ -380,7 +379,8 @@
     let avatarMap = {}, borderColorMap = {}, usernameMap = {};
     let currentUser = null;
 
-    function buildReactionsBar(event, isOwn = false) {
+    function buildReactionsBar(event, isOwn = false, toggleFn = null) {
+      const doToggle = toggleFn || toggleReaction;
       const state = {};
       REACTIONS.forEach(({ key }) => { state[key] = [...((event.reactions || {})[key] || [])]; });
 
@@ -473,14 +473,14 @@
             const promises = [];
             if (prevKey && !toggling) {
               state[prevKey] = state[prevKey].filter(u => u !== currentUser.uid);
-              promises.push(toggleReaction(event.id, prevKey, currentUser.uid, false));
+              promises.push(doToggle(event.id, prevKey, currentUser.uid, false));
             }
             if (toggling) {
               state[key] = state[key].filter(u => u !== currentUser.uid);
-              promises.push(toggleReaction(event.id, key, currentUser.uid, false));
+              promises.push(doToggle(event.id, key, currentUser.uid, false));
             } else {
               state[key] = [...state[key], currentUser.uid];
-              promises.push(toggleReaction(event.id, key, currentUser.uid, true));
+              promises.push(doToggle(event.id, key, currentUser.uid, true));
             }
             renderInline();
             updateTotal();
@@ -702,6 +702,7 @@
         });
         const scroll = document.createElement('div');
         scroll.className = 'home-reading-scroll';
+        const labelPairs = [];
         withBooks.forEach(({ reader, books }, i) => {
           if (i > 0) {
             const sep = document.createElement('span');
@@ -728,8 +729,10 @@
           });
           group.append(booksDiv, nameLink);
           scroll.appendChild(group);
+          labelPairs.push([booksDiv, nameLink]);
         });
         readingNowEl.appendChild(scroll);
+        labelPairs.forEach(([bd, nl]) => { nl.style.maxWidth = bd.offsetWidth + 'px'; });
         const readFadeLeft  = document.getElementById('reading-fade-left');
         const readFadeRight = document.getElementById('reading-fade-right');
         function updateReadFades() {
@@ -774,6 +777,7 @@
           bodyEl.className = 'home-announcement-body';
           bodyEl.textContent = item.body || '';
           el.appendChild(bodyEl);
+          el.appendChild(buildReactionsBar(item, false, toggleAnnouncementReaction));
           announcementsList.appendChild(el);
         });
       })
@@ -813,22 +817,6 @@
     }
     feedScrollEl.addEventListener('scroll', updateFeedFades, { passive: true });
 
-    // Chain feed scroll to page scroll on mobile when hitting top/bottom boundary
-    let feedTouchStartY = 0;
-    feedScrollEl.addEventListener('touchstart', e => {
-      feedTouchStartY = e.touches[0].pageY;
-    }, { passive: true });
-    feedScrollEl.addEventListener('touchmove', e => {
-      const y  = e.touches[0].pageY;
-      const dy = feedTouchStartY - y; // positive = scrolling down
-      const atBot = feedScrollEl.scrollTop + feedScrollEl.clientHeight >= feedScrollEl.scrollHeight - 2;
-      const atTop = feedScrollEl.scrollTop <= 0;
-      if ((dy > 0 && atBot) || (dy < 0 && atTop)) {
-        e.preventDefault();
-        window.scrollBy(0, dy);
-        feedTouchStartY = y;
-      }
-    }, { passive: false });
   </script>
   <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
 </body>

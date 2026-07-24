@@ -52,10 +52,16 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Announcements — readable by any signed-in user, writable only by admins.
+    // Announcements — readable by any signed-in user.
+    // Admins can create/delete and edit content; any signed-in user can update reactions only.
     match /announcements/{announcementId} {
-      allow read:  if request.auth != null;
-      allow write: if isAdmin();
+      allow read:   if request.auth != null;
+      allow create: if isAdmin();
+      allow delete: if isAdmin();
+      allow update: if isAdmin() || (
+        request.auth != null &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+      );
     }
 
     // Username index — publicly readable so signup can check availability

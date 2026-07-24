@@ -1108,3 +1108,9 @@ export async function toggleReaction(activityId, emoji, uid, add) {
   });
 }
 
+export async function toggleAnnouncementReaction(announcementId, emoji, uid, add) {
+  await updateDoc(doc(db, 'announcements', announcementId), {
+    [`reactions.${emoji}`]: add ? arrayUnion(uid) : arrayRemove(uid)
+  });
+}
+
