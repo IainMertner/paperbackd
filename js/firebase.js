@@ -1075,6 +1075,27 @@ export async function repairActivityDocs(uid) {
   return writes.length;
 }
 
+export async function addAnnouncement({ title, body }) {
+  return addDoc(collection(db, 'announcements'), { title, body, createdAt: serverTimestamp() });
+}
+
+export async function updateAnnouncement(id, { title, body }) {
+  return updateDoc(doc(db, 'announcements', id), { title, body });
+}
+
+export async function deleteAnnouncement(id) {
+  return deleteDoc(doc(db, 'announcements', id));
+}
+
+export async function getAnnouncements(n = 5) {
+  const snap = await getDocs(query(
+    collection(db, 'announcements'),
+    orderBy('createdAt', 'desc'),
+    limit(n)
+  ));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
 export async function setThemeColorForAllUsers(color) {
   const snap = await getDocs(collection(db, 'users'));
   await Promise.all(snap.docs.map(d => updateDoc(d.ref, { avatarBorderColor: color })));

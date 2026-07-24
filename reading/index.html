@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>currently reading - paperbackd</title>
+  <link rel="stylesheet" href="../css/main.css">
+  <style>
+    .reading-person {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      padding: .85rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .reading-person:last-child { border-bottom: none; }
+
+    .reading-person-head {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .3rem;
+      width: 4.5rem;
+      flex-shrink: 0;
+    }
+    .reading-person-name {
+      font-size: .75rem;
+      font-weight: 600;
+      color: var(--text);
+      text-decoration: none;
+      text-align: center;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%;
+    }
+    .reading-person-name:hover { text-decoration: underline; }
+
+    .reading-person-books {
+      display: flex;
+      gap: .6rem;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+    .reading-book {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .25rem;
+      text-decoration: none;
+      color: var(--text);
+    }
+    .reading-book-cover {
+      width: 4.5rem;
+      height: 6.6rem;
+      object-fit: cover;
+      border-radius: 2px;
+      box-shadow: 0 2px 6px rgba(0,0,0,.2);
+      display: block;
+      flex-shrink: 0;
+    }
+    .reading-book-cover-wrap {
+      position: relative;
+      overflow: hidden;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    .reading-book-title {
+      font-size: .65rem;
+      color: var(--text-muted);
+      width: 4.5rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .reading-empty {
+      font-size: .875rem;
+      color: var(--text-muted);
+      padding: 2rem 0;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/home/">paperbackd<span class="title-dot">.</span></a>
+      <nav class="desktop-nav">
+        <a href="../feed/"     data-nav="feed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>feed</a>
+        <a href="../search/"   data-nav="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>search</a>
+        <a href="../network/"  data-nav="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><line x1="8.7" y1="10.7" x2="15.3" y2="7.3"/><line x1="8.7" y1="13.3" x2="15.3" y2="16.7"/></svg>network</a>
+        <a href="../library/"  data-nav="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>library</a>
+        <a href="../lists/"    data-nav="lists"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg>lists</a>
+        <a href="../stats/"    data-nav="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="13" width="4" height="7" rx="0.5"/><rect x="10" y="3" width="4" height="17" rx="0.5"/><rect x="17" y="9" width="4" height="11" rx="0.5"/></svg>stats</a>
+        <a href="../profile/"  data-nav="profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>profile</a>
+        <a href="../settings/" data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>settings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-content">
+    <h1 class="page-title">currently reading<span class="title-dot">.</span></h1>
+    <div id="reading-list"></div>
+  </main>
+
+  <nav class="mobile-nav">
+    <a class="mobile-nav-item" href="../home/" data-nav="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+      home
+    </a>
+    <a class="mobile-nav-item" href="../search/" data-nav="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      search
+    </a>
+    <a class="mobile-nav-item" href="../library/" data-nav="library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
+        <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+      </svg>
+      library
+    </a>
+    <a class="mobile-nav-item" href="../profile/" data-nav="profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      profile
+    </a>
+    <a class="mobile-nav-item" href="../stats/" data-nav="stats">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="13" width="4" height="7" rx="0.5"/>
+        <rect x="10" y="3" width="4" height="17" rx="0.5"/>
+        <rect x="17" y="9" width="4" height="11" rx="0.5"/>
+      </svg>
+      stats
+    </a>
+  </nav>
+
+  <script src="../js/main.js"></script>
+  <script>document.body.classList.add('auth-loading');</script>
+  <script type="module">
+    import { requireAuth } from '../js/auth.js';
+    import { getFollowing, getReadingBooks } from '../js/firebase.js';
+
+    function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    const { user, profile: myProfile } = await requireAuth();
+    document.body.classList.remove('auth-loading');
+
+    const listEl = document.getElementById('reading-list');
+    const following = await getFollowing(user.uid);
+
+    const selfReader = { uid: user.uid, username: myProfile.username, avatarUrl: myProfile.avatarUrl || null, avatarBorderColor: myProfile.avatarBorderColor || null };
+    const allReaders = [selfReader, ...following];
+
+    const rows = await Promise.all(
+      allReaders.map(f =>
+        getReadingBooks(f.uid)
+          .then(books => ({ reader: f, books: books.filter(b => b.coverUrl) }))
+          .catch(() => ({ reader: f, books: [] }))
+      )
+    );
+
+    const withBooks = rows
+        .filter(r => r.books.length > 0)
+        .sort((a, b) => {
+          const latestA = Math.max(...a.books.map(bk => bk.addedAt?.seconds ?? 0));
+          const latestB = Math.max(...b.books.map(bk => bk.addedAt?.seconds ?? 0));
+          return latestB - latestA;
+        });
+
+      if (!withBooks.length) {
+        listEl.innerHTML = '<p class="reading-empty">Nobody is currently reading anything.</p>';
+      } else {
+        withBooks.forEach(({ reader, books }) => {
+          const row = document.createElement('div');
+          row.className = 'reading-person';
+
+          const head = document.createElement('div');
+          head.className = 'reading-person-head';
+
+          const avatarLink = document.createElement('a');
+          avatarLink.className = 'friend-avatar';
+          avatarLink.href = `../profile/?u=${encodeURIComponent(reader.username)}`;
+          avatarLink.style.cssText = 'text-decoration:none;color:inherit';
+          if (reader.avatarBorderColor) avatarLink.style.borderColor = reader.avatarBorderColor;
+          avatarLink.innerHTML = reader.avatarUrl
+            ? `<img src="${esc(reader.avatarUrl)}" alt="" loading="lazy">`
+            : esc((reader.username?.[0] || '?').toUpperCase());
+
+          const nameLink = document.createElement('a');
+          nameLink.className = 'reading-person-name';
+          nameLink.href = `../profile/?u=${encodeURIComponent(reader.username)}`;
+          nameLink.textContent = reader.username;
+
+          head.append(avatarLink, nameLink);
+
+          const booksDiv = document.createElement('div');
+          booksDiv.className = 'reading-person-books';
+
+          books.forEach(book => {
+            const a = document.createElement('a');
+            a.className = 'reading-book';
+            a.href = book.gbid ? `../book/?gbid=${encodeURIComponent(book.gbid)}` : '#';
+
+            const coverWrap = document.createElement('div');
+            coverWrap.className = 'reading-book-cover-wrap';
+
+            const img = document.createElement('img');
+            img.className = 'reading-book-cover';
+            img.src = book.coverUrl;
+            img.alt = book.title || '';
+            coverWrap.appendChild(img);
+
+            if (book.totalPages > 0) {
+              const pct = Math.min(100, Math.round((book.currentPage || 0) / book.totalPages * 100));
+              const track = document.createElement('div');
+              track.className = 'cover-progress-track';
+              const bar = document.createElement('div');
+              bar.className = 'cover-progress';
+              bar.style.width = `${pct}%`;
+              bar.style.background = reader.avatarBorderColor || 'var(--accent)';
+              track.appendChild(bar);
+              coverWrap.appendChild(track);
+            }
+
+            a.appendChild(coverWrap);
+
+            if (book.title) {
+              const titleEl = document.createElement('div');
+              titleEl.className = 'reading-book-title';
+              titleEl.textContent = book.title;
+              a.appendChild(titleEl);
+            }
+
+            booksDiv.appendChild(a);
+          });
+
+          row.append(head, booksDiv);
+          listEl.appendChild(row);
+        });
+      }
+  </script>
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
+</body>
+</html>

@@ -161,7 +161,8 @@ function setActiveNav() {
   const hasU = new URLSearchParams(window.location.search).has('u');
 
   let page = null;
-  if (path === '/' || /\/feed\/?$/.test(path))    page = 'feed';
+  if (/\/home\/?$/.test(path))                     page = 'home';
+  else if (path === '/' || /\/feed\/?$/.test(path)) page = 'feed';
   else if (/\/search\/?$/.test(path))             page = 'search';
   else if (/\/stats\/?$/.test(path)   && !hasU)   page = 'stats';
   else if (/\/settings\/?$/.test(path))           page = 'settings';

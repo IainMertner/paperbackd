@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>announcements - paperbackd</title>
+  <link rel="stylesheet" href="../css/main.css">
+  <style>
+    #announcements-list { display: flex; flex-direction: column; gap: .6rem; }
+
+    .announcement-card {
+      position: relative;
+      isolation: isolate;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      border-radius: var(--radius);
+      padding: .85rem 1rem;
+    }
+    .announcement-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      background: var(--bg-card);
+      box-shadow: var(--shadow);
+      filter: url(#ink-edge);
+      z-index: -1;
+    }
+    .announcement-date { font-size: .75rem; color: var(--text-muted); margin-bottom: .25rem; }
+    .announcement-title { font-weight: 700; font-size: 1rem; margin-bottom: .4rem; }
+    .announcement-body { font-size: .875rem; color: var(--text); line-height: 1.6; white-space: pre-wrap; }
+
+    .announcement-actions { display: flex; gap: .75rem; margin-top: .5rem; }
+    .announcement-btn {
+      background: none; border: none; padding: 0;
+      font-size: .75rem; cursor: pointer; font-family: inherit;
+    }
+    .announcement-btn-edit   { color: var(--accent); }
+    .announcement-btn-delete { color: var(--text-muted); }
+
+    .admin-add-btn {
+      background: none; border: none; padding: .1rem 0 .5rem;
+      font-size: .8rem; color: var(--accent); cursor: pointer;
+      font-family: inherit; display: block;
+    }
+
+    .edit-input {
+      width: 100%; box-sizing: border-box; padding: .3rem .4rem;
+      border: 1px solid var(--border); border-radius: 4px;
+      background: var(--bg); color: var(--text); font-family: inherit;
+    }
+    .edit-title  { font-size: .9rem; margin-bottom: .35rem; }
+    .edit-body   { font-size: .875rem; resize: vertical; }
+    .edit-actions { display: flex; gap: .5rem; margin-top: .4rem; }
+
+    .empty { font-size: .875rem; color: var(--text-muted); padding: 1.5rem 0; text-align: center; }
+  </style>
+</head>
+<body>
+
+  <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <defs>
+      <filter id="ink-edge" x="-25%" y="-25%" width="150%" height="150%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" seed="5" result="noise"/>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/home/">paperbackd<span class="title-dot">.</span></a>
+      <nav class="desktop-nav">
+        <a href="../feed/"     data-nav="feed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>feed</a>
+        <a href="../search/"   data-nav="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>search</a>
+        <a href="../network/"  data-nav="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><line x1="8.7" y1="10.7" x2="15.3" y2="7.3"/><line x1="8.7" y1="13.3" x2="15.3" y2="16.7"/></svg>network</a>
+        <a href="../library/"  data-nav="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>library</a>
+        <a href="../lists/"    data-nav="lists"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg>lists</a>
+        <a href="../stats/"    data-nav="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="13" width="4" height="7" rx="0.5"/><rect x="10" y="3" width="4" height="17" rx="0.5"/><rect x="17" y="9" width="4" height="11" rx="0.5"/></svg>stats</a>
+        <a href="../profile/"  data-nav="profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>profile</a>
+        <a href="../settings/" data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>settings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-content">
+    <h1 class="page-title">announcements<span class="title-dot">.</span></h1>
+    <div id="announcements-list"></div>
+  </main>
+
+  <nav class="mobile-nav">
+    <a class="mobile-nav-item" href="../home/" data-nav="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+      home
+    </a>
+    <a class="mobile-nav-item" href="../search/" data-nav="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      search
+    </a>
+    <a class="mobile-nav-item" href="../library/" data-nav="library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
+        <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+      </svg>
+      library
+    </a>
+    <a class="mobile-nav-item" href="../profile/" data-nav="profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      profile
+    </a>
+    <a class="mobile-nav-item" href="../stats/" data-nav="stats">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="13" width="4" height="7" rx="0.5"/>
+        <rect x="10" y="3" width="4" height="17" rx="0.5"/>
+        <rect x="17" y="9" width="4" height="11" rx="0.5"/>
+      </svg>
+      stats
+    </a>
+  </nav>
+
+  <script src="../js/main.js"></script>
+  <script>document.body.classList.add('auth-loading');</script>
+  <script type="module">
+    import { requireAuth } from '../js/auth.js';
+    import { getAnnouncements, addAnnouncement, updateAnnouncement, deleteAnnouncement, getProfile } from '../js/firebase.js';
+
+    const { user, profile: cachedProfile } = await requireAuth();
+    document.body.classList.remove('auth-loading');
+    const myProfile = (await getProfile(user.uid).catch(() => null)) || cachedProfile;
+    const isAdmin = !!myProfile.isAdmin;
+
+    const listEl = document.getElementById('announcements-list');
+
+    function formatDate(ts) {
+      const d = ts?.toDate?.() ?? null;
+      return d ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+    }
+
+    function renderAnnouncement(item) {
+      const card = document.createElement('div');
+      card.className = 'announcement-card';
+
+      function showView() {
+        card.innerHTML = '';
+        const dateStr = formatDate(item.createdAt);
+        if (dateStr) {
+          const d = document.createElement('div');
+          d.className = 'announcement-date';
+          d.textContent = dateStr;
+          card.appendChild(d);
+        }
+        const titleEl = document.createElement('div');
+        titleEl.className = 'announcement-title';
+        titleEl.textContent = item.title || '';
+        card.appendChild(titleEl);
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'announcement-body';
+        bodyEl.textContent = item.body || '';
+        card.appendChild(bodyEl);
+
+        if (isAdmin) {
+          const actions = document.createElement('div');
+          actions.className = 'announcement-actions';
+          const editBtn = document.createElement('button');
+          editBtn.className = 'announcement-btn announcement-btn-edit';
+          editBtn.textContent = 'edit';
+          editBtn.addEventListener('click', showEdit);
+          const delBtn = document.createElement('button');
+          delBtn.className = 'announcement-btn announcement-btn-delete';
+          delBtn.textContent = 'delete';
+          delBtn.addEventListener('click', async () => {
+            if (!confirm('Delete this announcement?')) return;
+            await deleteAnnouncement(item.id);
+            card.remove();
+          });
+          actions.append(editBtn, delBtn);
+          card.appendChild(actions);
+        }
+      }
+
+      function showEdit() {
+        card.innerHTML = '';
+        const titleInput = document.createElement('input');
+        titleInput.className = 'edit-input edit-title';
+        titleInput.type = 'text';
+        titleInput.value = item.title || '';
+        titleInput.placeholder = 'Title';
+        const bodyInput = document.createElement('textarea');
+        bodyInput.className = 'edit-input edit-body';
+        bodyInput.value = item.body || '';
+        bodyInput.placeholder = 'Body';
+        bodyInput.rows = 5;
+        const actions = document.createElement('div');
+        actions.className = 'edit-actions';
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'announcement-btn announcement-btn-edit';
+        saveBtn.textContent = 'save';
+        saveBtn.addEventListener('click', async () => {
+          const newTitle = titleInput.value.trim();
+          const newBody  = bodyInput.value.trim();
+          if (!newTitle) return;
+          await updateAnnouncement(item.id, { title: newTitle, body: newBody });
+          item.title = newTitle;
+          item.body  = newBody;
+          showView();
+        });
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'announcement-btn announcement-btn-delete';
+        cancelBtn.textContent = 'cancel';
+        cancelBtn.addEventListener('click', showView);
+        actions.append(saveBtn, cancelBtn);
+        card.append(titleInput, bodyInput, actions);
+        titleInput.focus();
+      }
+
+      showView();
+      return card;
+    }
+
+    function showNewForm() {
+      const card = document.createElement('div');
+      card.className = 'announcement-card';
+      const titleInput = document.createElement('input');
+      titleInput.className = 'edit-input edit-title';
+      titleInput.type = 'text';
+      titleInput.placeholder = 'Title';
+      const bodyInput = document.createElement('textarea');
+      bodyInput.className = 'edit-input edit-body';
+      bodyInput.placeholder = 'Body';
+      bodyInput.rows = 5;
+      const actions = document.createElement('div');
+      actions.className = 'edit-actions';
+      const postBtn = document.createElement('button');
+      postBtn.className = 'announcement-btn announcement-btn-edit';
+      postBtn.textContent = 'post';
+      postBtn.addEventListener('click', async () => {
+        const title = titleInput.value.trim();
+        const body  = bodyInput.value.trim();
+        if (!title) return;
+        const ref = await addAnnouncement({ title, body });
+        const newItem = { id: ref.id, title, body, createdAt: null };
+        card.replaceWith(renderAnnouncement(newItem));
+      });
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'announcement-btn announcement-btn-delete';
+      cancelBtn.textContent = 'cancel';
+      cancelBtn.addEventListener('click', () => card.remove());
+      actions.append(postBtn, cancelBtn);
+      card.append(titleInput, bodyInput, actions);
+      listEl.prepend(card);
+      titleInput.focus();
+    }
+
+    const items = await getAnnouncements(100).catch(() => []);
+
+    if (isAdmin) {
+      const addBtn = document.createElement('button');
+      addBtn.className = 'admin-add-btn';
+      addBtn.textContent = '+ new announcement';
+      addBtn.addEventListener('click', showNewForm);
+      listEl.appendChild(addBtn);
+    }
+
+    if (!items.length && !isAdmin) {
+      listEl.innerHTML = '<p class="empty">No announcements yet.</p>';
+    } else {
+      items.forEach(item => listEl.appendChild(renderAnnouncement(item)));
+    }
+  </script>
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
+</body>
+</html>

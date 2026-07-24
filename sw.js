@@ -1,4 +1,4 @@
-const CACHE = 'paperbackd-v14';
+const CACHE = 'paperbackd-v16';
 
 // Firebase API hosts — never intercept these
 const PASS_THROUGH = [
@@ -12,6 +12,14 @@ const PASS_THROUGH = [
 const PRECACHE = [
   '/library/',
   '/library/index.html',
+  '/',
+  '/index.html',
+  '/home/',
+  '/home/index.html',
+  '/reading/',
+  '/reading/index.html',
+  '/announcements/',
+  '/announcements/index.html',
   '/feed/',
   '/feed/index.html',
   '/login/',
@@ -73,19 +81,6 @@ self.addEventListener('fetch', event => {
           return response;
         })
       )
-    );
-    return;
-  }
-
-  // Root URL — serve feed content but with the p favicon so bookmarks show p not f
-  if (url.origin === self.location.origin && (url.pathname === '/' || url.pathname === '/index.html')) {
-    event.respondWith(
-      fetch('/feed/').then(res => res.text()).then(html => {
-        const patched = html
-          .replace('/favicon-f.svg', '/favicon.svg')
-          .replace('/favicon-f.png', '/favicon.png');
-        return new Response(patched, { headers: { 'Content-Type': 'text/html' } });
-      })
     );
     return;
   }

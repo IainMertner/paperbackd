@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>home - paperbackd</title>
+  <link rel="stylesheet" href="../css/main.css">
+  <style>
+    .card {
+      position: relative;
+      isolation: isolate;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      background: var(--bg-card);
+      box-shadow: var(--shadow);
+      filter: url(#ink-edge);
+      z-index: -1;
+    }
+
+    .home-section { margin-bottom: 1rem; }
+
+    .home-section-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: .5rem;
+    }
+    .home-section-title {
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--text-muted);
+      text-decoration: none;
+    }
+    .home-see-all { font-size: .8rem; color: var(--accent); text-decoration: none; }
+    .home-see-all:hover { text-decoration: underline; }
+
+    /* Feed scroll + fades */
+    .home-feed-wrap { position: relative; }
+    .home-feed-scroll {
+      max-height: 22rem;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+    .home-feed-scroll::-webkit-scrollbar { display: none; }
+
+    /* Currently reading */
+    .home-reading-wrap {
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Shared fade styles */
+    .home-card-fade-bottom,
+    .home-card-fade-top,
+    .home-card-fade-right,
+    .home-card-fade-left {
+      position: absolute;
+      pointer-events: none;
+      z-index: 1;
+      opacity: 0;
+      transition: opacity .2s;
+    }
+    .home-card-fade-bottom {
+      bottom: 0; left: 0; right: 0;
+      height: 4.5rem;
+      background: linear-gradient(to bottom, transparent, var(--bg-card));
+    }
+    .home-card-fade-top {
+      top: 0; left: 0; right: 0;
+      height: 4.5rem;
+      background: linear-gradient(to top, transparent, var(--bg-card));
+    }
+    .home-card-fade-right {
+      top: 0; right: 0; bottom: 0;
+      width: 3.5rem;
+      background: linear-gradient(to right, transparent, var(--bg-card));
+    }
+    .home-card-fade-left {
+      top: 0; left: 0; bottom: 0;
+      width: 3.5rem;
+      background: linear-gradient(to left, transparent, var(--bg-card));
+    }
+
+    /* Individual feed preview items — no card chrome, just separator */
+    .home-feed-item {
+      position: relative;
+      padding: .5rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .home-feed-item:last-child { border-bottom: none; }
+
+    /* Currently reading — single horizontal scroll strip */
+    .home-reading-scroll {
+      display: flex;
+      overflow-x: auto;
+      scrollbar-width: none;
+      align-items: center;
+      padding: .15rem 0;
+    }
+    .home-reading-scroll::-webkit-scrollbar { display: none; }
+    .home-reading-group {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: .25rem;
+      flex-shrink: 0;
+    }
+    .home-reading-sep {
+      width: 1px;
+      height: 4.5rem;
+      background: var(--border);
+      flex-shrink: 0;
+      margin: 0 .55rem;
+    }
+    .home-reading-username {
+      font-size: .7rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-decoration: none;
+      white-space: nowrap;
+      max-width: 7rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex-shrink: 0;
+    }
+    .home-reading-username:hover { color: var(--text); }
+    .home-reading-books {
+      display: flex;
+      gap: .2rem;
+    }
+    .home-reading-cover {
+      width: 2.5rem;
+      height: 3.65rem;
+      object-fit: cover;
+      border-radius: 2px;
+      flex-shrink: 0;
+      display: block;
+      box-shadow: 0 1px 4px rgba(0,0,0,.2);
+    }
+
+    /* Announcements */
+    #announcements-list { display: flex; flex-direction: column; gap: .45rem; }
+    .home-announcement {
+      position: relative;
+      isolation: isolate;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      border-radius: var(--radius-sm);
+      padding: .6rem .75rem;
+    }
+    .home-announcement::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius-sm);
+      background: var(--bg);
+      box-shadow: 0 1px 3px rgba(0,0,0,.07);
+      filter: url(#ink-edge);
+      z-index: -1;
+    }
+    .home-announcement-date { font-size: .72rem; color: var(--text-muted); margin-bottom: .2rem; }
+    .home-announcement-title { font-weight: 600; font-size: .95rem; margin-bottom: .35rem; }
+    .home-announcement-body { font-size: .875rem; color: var(--text); line-height: 1.55; white-space: pre-wrap; }
+
+    /* Explore zine nav */
+    .home-zine-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: .65rem 0;
+      border-bottom: 1px solid var(--border);
+      text-decoration: none;
+      color: var(--text);
+      font-size: .95rem;
+    }
+    .home-zine-link:last-child { border-bottom: none; }
+
+    /* Empty states */
+    .home-empty { font-size: .875rem; color: var(--text-muted); padding: .25rem 0; margin: 0; }
+  </style>
+</head>
+<body>
+
+  <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <defs>
+      <filter id="ink-edge" x="-25%" y="-25%" width="150%" height="150%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" seed="5" result="noise"/>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/home/" data-nav="home">paperbackd<span class="title-dot">.</span></a>
+      <nav class="desktop-nav">
+        <a href="../feed/" data-nav="feed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>feed</a>
+        <a href="../search/"   data-nav="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>search</a>
+        <a href="../network/"  data-nav="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><line x1="8.7" y1="10.7" x2="15.3" y2="7.3"/><line x1="8.7" y1="13.3" x2="15.3" y2="16.7"/></svg>network</a>
+        <a href="../library/"  data-nav="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>library</a>
+        <a href="../lists/"    data-nav="lists"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg>lists</a>
+        <a href="../stats/"    data-nav="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="13" width="4" height="7" rx="0.5"/><rect x="10" y="3" width="4" height="17" rx="0.5"/><rect x="17" y="9" width="4" height="11" rx="0.5"/></svg>stats</a>
+        <a href="../profile/"  data-nav="profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>profile</a>
+        <a href="../settings/" data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>settings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-content">
+    <h1 class="page-title">home<span class="title-dot">.</span></h1>
+
+    <div class="home-section">
+      <div class="card">
+        <div class="home-section-head">
+          <a href="../reading/" class="home-section-title">currently reading</a>
+          <a href="../reading/" class="home-see-all">see all &rarr;</a>
+        </div>
+        <div class="home-reading-wrap">
+          <div id="reading-now"></div>
+          <div class="home-card-fade-left"  id="reading-fade-left"></div>
+          <div class="home-card-fade-right" id="reading-fade-right"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="home-section">
+      <div class="card">
+        <div class="home-section-head">
+          <a href="../feed/" class="home-section-title">feed</a>
+          <a href="../feed/" class="home-see-all">see all &rarr;</a>
+        </div>
+        <div class="home-feed-wrap">
+          <div class="home-card-fade-top"    id="feed-fade-top"></div>
+          <div id="feed-preview" class="home-feed-scroll"></div>
+          <div class="home-card-fade-bottom" id="feed-fade-bottom"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="home-section">
+      <div class="card">
+        <div class="home-section-head">
+          <a href="../announcements/" class="home-section-title">announcements</a>
+          <a href="../announcements/" class="home-see-all">see all &rarr;</a>
+        </div>
+        <div id="announcements-list"></div>
+      </div>
+    </div>
+
+    <div class="home-section">
+      <div id="explore-nav"></div>
+    </div>
+  </main>
+
+  <nav class="mobile-nav">
+    <a class="mobile-nav-item" href="./" data-nav="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+      home
+    </a>
+    <a class="mobile-nav-item" href="../search/" data-nav="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      search
+    </a>
+    <a class="mobile-nav-item" href="../library/" data-nav="library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
+        <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+      </svg>
+      library
+    </a>
+    <a class="mobile-nav-item" href="../profile/" data-nav="profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      profile
+    </a>
+    <a class="mobile-nav-item" href="../stats/" data-nav="stats">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="13" width="4" height="7" rx="0.5"/>
+        <rect x="10" y="3" width="4" height="17" rx="0.5"/>
+        <rect x="17" y="9" width="4" height="11" rx="0.5"/>
+      </svg>
+      stats
+    </a>
+  </nav>
+
+  <script src="../js/main.js"></script>
+  <script>document.body.classList.add('auth-loading');</script>
+  <script type="module">
+    import { requireAuth } from '../js/auth.js';
+    import { getFollowing, getReadingBooks, getFeed, getAnnouncements, toggleReaction, getBookByGbid } from '../js/firebase.js';
+
+    function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function toAuthorSlug(n) { return n.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,''); }
+
+    function timeAgo(ts) {
+      if (!ts?.seconds) return '';
+      const diff = Date.now() - ts.seconds * 1000;
+      const m = Math.floor(diff/60000), h = Math.floor(diff/3600000), d = Math.floor(diff/86400000);
+      if (m < 1) return 'just now';
+      if (m < 60) return `${m}m ago`;
+      if (h < 24) return `${h}h ago`;
+      if (d < 7)  return `${d}d ago`;
+      return new Date(ts.seconds*1000).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+    }
+
+    function renderStars(rating) {
+      if (!rating) return '';
+      let html = '<span class="stars-display">';
+      for (let i = 1; i <= 5; i++) {
+        if (rating >= i)        html += '<span class="star-char full">★</span>';
+        else if (rating >= i-.5) html += '<span class="star-char half">★</span>';
+        else                    html += '<span class="star-char">★</span>';
+      }
+      return html + '</span>';
+    }
+
+    function showReviewModal(reviewText, bookTitle, username, rating) {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;box-sizing:border-box';
+      const modal = document.createElement('div');
+      modal.style.cssText = 'background:var(--bg-card);border-radius:var(--radius);padding:1.25rem;max-width:480px;width:100%;max-height:80vh;overflow-y:auto;position:relative;box-shadow:0 8px 32px rgba(0,0,0,.3)';
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '×';
+      closeBtn.style.cssText = 'position:absolute;top:.6rem;right:.75rem;background:none;border:none;font-size:1.4rem;line-height:1;cursor:pointer;color:var(--text-muted);padding:0';
+      closeBtn.addEventListener('click', () => overlay.remove());
+      const title = document.createElement('div');
+      title.style.cssText = 'font-weight:700;font-size:.95rem;margin-bottom:.15rem;padding-right:1.5rem';
+      title.textContent = bookTitle;
+      const byline = document.createElement('div');
+      byline.style.cssText = 'font-size:.78rem;color:var(--text-muted);margin-bottom:.5rem';
+      byline.textContent = `${username}'s review`;
+      const starsRow = document.createElement('div');
+      starsRow.style.cssText = 'margin-bottom:.75rem';
+      starsRow.innerHTML = rating ? renderStars(rating) : '';
+      const body = document.createElement('div');
+      body.style.cssText = 'font-size:.9rem;line-height:1.6;white-space:pre-wrap';
+      body.textContent = reviewText;
+      modal.append(closeBtn, title, byline, starsRow, body);
+      overlay.appendChild(modal);
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      document.body.appendChild(overlay);
+    }
+
+    const REACTIONS = [
+      { key: 'heart',        svg: `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.593C6.37 16.054 1 11.296 1 7.191 1 3.4 4.068 2 6.281 2c1.312 0 4.151.501 5.719 4.457C13.59 2.489 16.464 2 17.726 2 20.266 2 23 3.621 23 7.181c0 4.069-5.136 8.625-11 14.412z"/></svg>` },
+      { key: 'broken_heart', svg: `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.593C6.37 16.054 1 11.296 1 7.191 1 3.4 4.068 2 6.281 2c1.312 0 4.151.501 5.719 4.457C13.59 2.489 16.464 2 17.726 2 20.266 2 23 3.621 23 7.181c0 4.069-5.136 8.625-11 14.412z"/><polyline points="12,6 10,10 13.5,12.5 10,17"/></svg>` },
+      { key: 'shocked',      svg: `<svg viewBox="0 0 36 36" width="15" height="15" fill="none" stroke="currentColor" stroke-width="3.5"><circle cx="18" cy="18" r="15.5"/><ellipse cx="12" cy="13.5" rx="2.5" ry="3.5" fill="currentColor" stroke="none"/><ellipse cx="24" cy="13.5" rx="2.5" ry="3.5" fill="currentColor" stroke="none"/><ellipse cx="18" cy="25" rx="4" ry="5" fill="currentColor" stroke="none"/></svg>` },
+      { key: 'laugh_cry',    svg: `<svg viewBox="0 0 512 512" width="15" height="15" fill="currentColor" overflow="visible" xmlns="http://www.w3.org/2000/svg"><path d="M256,0C114.618,0,0,114.618,0,256s114.618,256,256,256s256-114.618,256-256S397.382,0,256,0z M256,469.333c-117.818,0-213.333-95.515-213.333-213.333S138.182,42.667,256,42.667S469.333,138.182,469.333,256S373.818,469.333,256,469.333z"/><path d="M384,298.667H128c-11.782,0-21.333,9.551-21.333,21.333c0,77.189,65.715,128,149.333,128s149.333-50.811,149.333-128C405.333,308.218,395.782,298.667,384,298.667z M256,405.333c-52.965,0-93.164-25.064-103.851-64h207.701C349.164,380.269,308.965,405.333,256,405.333z"/><path d="M134.248,249.752c8.331,8.331,21.839,8.331,30.17,0l42.667-42.667c8.331-8.331,8.331-21.839,0-30.17l-42.667-42.667c-8.331-8.331-21.839-8.331-30.17,0s-8.331,21.839,0,30.17L161.83,192l-27.582,27.582C125.917,227.913,125.917,241.42,134.248,249.752z"/><path d="M347.582,249.752c8.331,8.331,21.839,8.331,30.17,0c8.331-8.331,8.331-21.839,0-30.17L350.17,192l27.582-27.582c8.331-8.331,8.331-21.839,0-30.17c-8.331-8.331-21.839-8.331-30.17,0l-42.667,42.667c-8.331,8.331-8.331,21.839,0,30.17L347.582,249.752z"/><path d="M 0,0 C 14,48 44,74 44,118 A 44,44 0 0,1 -44,118 C -44,74 -14,48 0,0 Z" transform="translate(85,200) rotate(45)"/><path d="M 0,0 C 14,48 44,74 44,118 A 44,44 0 0,1 -44,118 C -44,74 -14,48 0,0 Z" transform="translate(427,200) rotate(-45)"/></svg>` },
+    ];
+
+    let openPickerClose = null;
+    document.addEventListener('click', () => { if (openPickerClose) { openPickerClose(); openPickerClose = null; } });
+
+    let avatarMap = {}, borderColorMap = {}, usernameMap = {};
+    let currentUser = null;
+
+    function buildReactionsBar(event, isOwn = false) {
+      const state = {};
+      REACTIONS.forEach(({ key }) => { state[key] = [...((event.reactions || {})[key] || [])]; });
+
+      const bar = document.createElement('div');
+      bar.style.cssText = 'position:absolute;bottom:.5rem;right:.65rem;display:flex;align-items:center;gap:0';
+
+      const wrap = document.createElement('span');
+      wrap.style.cssText = 'position:relative;display:inline-flex;align-items:center;height:1.5rem;overflow:visible';
+
+      const totalBadge = document.createElement('span');
+      totalBadge.style.cssText = 'font-size:.65rem;font-weight:600;color:var(--text-muted);opacity:.55;font-variant-numeric:tabular-nums;display:none;line-height:1;margin-right:.2rem';
+
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.style.cssText = 'position:relative;display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;border-radius:50%;border:none;background:transparent;cursor:pointer;color:var(--text-muted);opacity:.55;padding:0;flex-shrink:0';
+      addBtn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+      if (isOwn) addBtn.style.display = 'none';
+
+      const picker = document.createElement('div');
+      picker.style.cssText = 'display:none;position:fixed;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:.3rem .5rem;gap:.3rem;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:1000;white-space:nowrap';
+
+      let pickerOpen = false;
+      const closePicker = () => {
+        pickerOpen = false;
+        picker.style.display = 'none';
+        if (picker.parentNode === document.body) document.body.removeChild(picker);
+      };
+
+      function updateTotal() {
+        const total = Object.values(state).reduce((sum, arr) => sum + arr.length, 0);
+        totalBadge.textContent = total || '';
+        totalBadge.style.display = total > 0 ? 'inline' : 'none';
+      }
+
+      function renderInline() {
+        wrap.innerHTML = '';
+        const active = REACTIONS.filter(({ key }) => state[key].length > 0);
+        if (active.length > 0) {
+          active.forEach(({ key, svg }, i) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.style.cssText = `position:relative;width:19px;height:19px;border-radius:50%;background:var(--bg-card);display:inline-flex;align-items:center;justify-content:center;border:none;cursor:pointer;padding:0;color:var(--accent);flex-shrink:0;z-index:${active.length - i};${i > 0 ? 'margin-left:-6px;' : ''}`;
+            btn.innerHTML = svg;
+            btn.addEventListener('click', e => {
+              e.stopPropagation();
+              if (openPickerClose && openPickerClose !== closePicker) openPickerClose();
+              pickerOpen = !pickerOpen;
+              if (pickerOpen) {
+                renderPicker();
+                const rect = wrap.getBoundingClientRect();
+                picker.style.top = `${rect.bottom + 6}px`;
+                picker.style.right = `${window.innerWidth - rect.right}px`;
+                picker.style.display = 'flex';
+                document.body.appendChild(picker);
+                openPickerClose = closePicker;
+              } else { closePicker(); }
+            });
+            wrap.appendChild(btn);
+          });
+        } else {
+          wrap.appendChild(addBtn);
+        }
+      }
+
+      function renderPicker() {
+        picker.innerHTML = '';
+        picker.style.flexDirection = 'column';
+        picker.style.alignItems = 'stretch';
+
+        const emojiRow = document.createElement('div');
+        emojiRow.style.cssText = 'display:flex;gap:.3rem';
+
+        REACTIONS.forEach(({ key, svg }) => {
+          const users = state[key];
+          const mine = users.includes(currentUser.uid);
+          const eb = document.createElement('button');
+          eb.type = 'button';
+          eb.style.cssText = `position:relative;background:${mine ? 'var(--bg-alt)' : 'none'};border:none;cursor:pointer;padding:.3rem .35rem .45rem;border-radius:6px;line-height:1;display:inline-flex;align-items:center;justify-content:center;color:var(--accent)`;
+          eb.innerHTML = svg;
+          if (users.length) {
+            const badge = document.createElement('span');
+            badge.style.cssText = 'position:absolute;bottom:3px;right:3px;font-size:.48rem;font-weight:700;color:var(--accent);line-height:1;font-variant-numeric:tabular-nums';
+            badge.textContent = users.length;
+            eb.appendChild(badge);
+          }
+          eb.addEventListener('click', async e => {
+            e.stopPropagation();
+            const prevKey = REACTIONS.find(r => state[r.key].includes(currentUser.uid))?.key;
+            const toggling = prevKey === key;
+            const promises = [];
+            if (prevKey && !toggling) {
+              state[prevKey] = state[prevKey].filter(u => u !== currentUser.uid);
+              promises.push(toggleReaction(event.id, prevKey, currentUser.uid, false));
+            }
+            if (toggling) {
+              state[key] = state[key].filter(u => u !== currentUser.uid);
+              promises.push(toggleReaction(event.id, key, currentUser.uid, false));
+            } else {
+              state[key] = [...state[key], currentUser.uid];
+              promises.push(toggleReaction(event.id, key, currentUser.uid, true));
+            }
+            renderInline();
+            updateTotal();
+            renderPicker();
+            Promise.all(promises).catch(console.error);
+          });
+          emojiRow.appendChild(eb);
+        });
+        if (!isOwn) picker.appendChild(emojiRow);
+
+        const total = Object.values(state).reduce((sum, arr) => sum + arr.length, 0);
+        if (total > 0) {
+          const listEl = document.createElement('div');
+          listEl.style.cssText = 'display:flex;flex-direction:column;gap:.25rem;padding-top:.3rem;margin-top:.3rem;border-top:1px solid var(--border)';
+          REACTIONS.forEach(({ key, svg }) => {
+            state[key].forEach(uid => {
+              const uname = usernameMap[uid] || uid;
+              const avatarUrl = avatarMap[uid];
+              const initial = (uname?.[0] || '?').toUpperCase();
+              const row = document.createElement('div');
+              row.style.cssText = 'display:flex;align-items:center;gap:.35rem;font-size:.7rem;color:var(--text)';
+              const av = document.createElement('a');
+              av.href = `../profile/?u=${esc(uname)}`;
+              av.className = 'friend-avatar';
+              av.style.cssText = 'width:16px;height:16px;font-size:.45rem;flex-shrink:0;text-decoration:none;color:inherit';
+              av.innerHTML = avatarUrl ? `<img src="${esc(avatarUrl)}" alt="" loading="lazy">` : esc(initial);
+              const name = document.createElement('a');
+              name.href = `../profile/?u=${esc(uname)}`;
+              name.style.cssText = 'color:inherit;text-decoration:none;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+              name.textContent = uname;
+              const icon = document.createElement('span');
+              icon.innerHTML = svg;
+              icon.style.cssText = 'color:var(--accent);display:flex;align-items:center;flex-shrink:0';
+              row.append(av, name, icon);
+              listEl.appendChild(row);
+            });
+          });
+          picker.appendChild(listEl);
+        }
+      }
+
+      addBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (openPickerClose && openPickerClose !== closePicker) openPickerClose();
+        pickerOpen = !pickerOpen;
+        if (pickerOpen) {
+          renderPicker();
+          const rect = addBtn.getBoundingClientRect();
+          picker.style.top = `${rect.bottom + 6}px`;
+          picker.style.right = `${window.innerWidth - rect.right}px`;
+          picker.style.display = 'flex';
+          document.body.appendChild(picker);
+          openPickerClose = closePicker;
+        } else { closePicker(); openPickerClose = null; }
+      });
+      picker.addEventListener('click', e => e.stopPropagation());
+      wrap.append(addBtn);
+      bar.append(totalBadge, wrap);
+      renderPicker();
+      renderInline();
+      updateTotal();
+      return bar;
+    }
+
+    function aggregateFollows(events) {
+      const out = [], byKey = {};
+      for (const e of events) {
+        if (e.type !== 'followed') { out.push(e); continue; }
+        const day = e.timestamp?.seconds ? new Date(e.timestamp.seconds * 1000).toDateString() : '';
+        const key = `${e.uid}_${day}`;
+        if (byKey[key]) {
+          byKey[key].targets.push({ username: e.targetUsername, isMe: e.targetUid === currentUser.uid });
+        } else {
+          const agg = { ...e, targets: [{ username: e.targetUsername, isMe: e.targetUid === currentUser.uid }] };
+          byKey[key] = agg;
+          out.push(agg);
+        }
+      }
+      return out;
+    }
+
+    function renderFeedItem(event) {
+      const isFollowed = event.type === 'followed';
+      const container  = document.createElement('div');
+      container.className = 'home-feed-item';
+
+      const username      = usernameMap[event.uid] || event.username;
+      const isMe          = event.uid === currentUser.uid;
+      const avatarUrl     = avatarMap[event.uid];
+      const borderColor   = borderColorMap[event.uid];
+      const borderStyle   = borderColor ? `border-color:${borderColor};` : '';
+      const avatarContent = avatarUrl
+        ? `<img src="${esc(avatarUrl)}" alt="" loading="lazy">`
+        : esc((username?.[0] || '?').toUpperCase());
+
+      if (isFollowed) {
+        const targets = event.targets || [{ username: event.targetUsername, isMe: event.targetUid === currentUser.uid }];
+        const followLinks = targets.map(t =>
+          t.isMe ? 'you' : `<a href="../profile/?u=${esc(t.username)}" style="font-weight:600;color:inherit;text-decoration:none">${esc(t.username)}</a>`
+        );
+        const followPhrase = followLinks.length === 1 ? followLinks[0]
+          : followLinks.length === 2 ? `${followLinks[0]} and ${followLinks[1]}`
+          : `${followLinks.slice(0, -1).join(', ')}, and ${followLinks[followLinks.length - 1]}`;
+        const who = isMe ? 'You' : `<a href="../profile/?u=${esc(username)}" style="color:inherit;text-decoration:none;font-weight:500">${esc(username)}</a>`;
+        container.innerHTML = `<div style="display:flex;align-items:center;gap:.55rem;font-size:.8rem;color:var(--text-muted);line-height:1.5"><div style="width:36px;height:36px;flex-shrink:0;display:flex;align-items:center;justify-content:center"><a class="friend-avatar" href="../profile/?u=${esc(username)}" style="width:26px;height:26px;font-size:.65rem;text-decoration:none;color:inherit;${borderStyle}">${avatarContent}</a></div><span>${who} followed ${followPhrase} <span style="opacity:.6">· ${timeAgo(event.timestamp)}</span></span></div>`;
+        return container;
+      }
+
+      const bookLink = event.gbid
+        ? `<a href="../book/?gbid=${esc(event.gbid)}" style="font-style:italic;color:inherit;text-decoration:none">${esc(event.bookTitle)}</a>`
+        : `<em>${esc(event.bookTitle)}</em>`;
+      const action = event.type === 'started'
+        ? `started reading ${bookLink}`
+        : `finished ${bookLink}`;
+      const author = event.bookAuthor
+        ? `<span style="color:var(--text-muted)"> by <a href="../author/?slug=${toAuthorSlug(event.bookAuthor)}" style="color:inherit;text-decoration:none">${esc(event.bookAuthor)}</a></span>`
+        : '';
+      const reviewBtn = event.hasReview && event.gbid
+        ? `<button class="review-btn" style="font-size:.75rem;color:var(--accent);background:none;border:none;padding:0;cursor:pointer;font-family:inherit">Read review</button>`
+        : '';
+      const ratingRow = (event.type === 'finished' && event.rating != null)
+        ? `<div style="margin-top:.2rem;display:flex;align-items:center;gap:.5rem">${renderStars(event.rating)}${reviewBtn}</div>`
+        : '';
+      const pct = event.totalPages ? Math.round((event.currentPage / event.totalPages) * 100) : 0;
+      const progressRow = (event.type === 'started' && event.totalPages && event.currentPage > 0)
+        ? `<div style="margin-top:.3rem;display:flex;align-items:center;gap:.5rem"><div style="font-size:.7rem;color:var(--text-muted);white-space:nowrap">Page ${event.currentPage} of ${event.totalPages} · ${pct}%</div><div style="height:3px;background:var(--bg-alt);border-radius:2px;overflow:hidden;width:60px;flex-shrink:0"><div style="height:100%;background:#F2BA00;width:${pct}%"></div></div></div>`
+        : '';
+      const coverThumb = (event.coverUrl && event.gbid)
+        ? `<a href="../book/?gbid=${esc(event.gbid)}" style="position:absolute;bottom:-4px;right:-7px;z-index:1;display:block"><img src="${esc(event.coverUrl)}" alt="" loading="lazy" style="width:22px;border-radius:2px;display:block;box-shadow:0 1px 4px rgba(0,0,0,.4)"></a>`
+        : '';
+
+      container.innerHTML = `<div class="friend-item">
+        <div style="position:relative;flex-shrink:0;width:36px;height:36px">
+          <a class="friend-avatar" href="../profile/?u=${esc(username)}" style="text-decoration:none;color:inherit;${borderStyle}">${avatarContent}</a>
+          ${coverThumb}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.9rem;line-height:1.4">${isMe ? '<span>You</span>' : `<a href="../profile/?u=${esc(username)}" style="font-weight:600;color:inherit;text-decoration:none">${esc(username)}</a>`} ${action}${author}</div>
+          ${progressRow}${ratingRow}
+          <div class="book-finished-meta">${timeAgo(event.timestamp)}</div>
+        </div>
+      </div>`;
+
+      const reviewBtnEl = container.querySelector('.review-btn');
+      if (reviewBtnEl) {
+        reviewBtnEl.addEventListener('click', async () => {
+          reviewBtnEl.textContent = 'Loading…';
+          reviewBtnEl.disabled = true;
+          try {
+            const book = await getBookByGbid(event.uid, event.gbid);
+            if (book?.review) showReviewModal(book.review, event.bookTitle, username, event.rating);
+          } finally {
+            reviewBtnEl.textContent = 'Read review';
+            reviewBtnEl.disabled = false;
+          }
+        });
+      }
+
+      const isOwn = event.uid === currentUser.uid;
+      const hasReactions = Object.values(event.reactions || {}).some(arr => arr.length > 0);
+      if (!isOwn || hasReactions) {
+        container.appendChild(buildReactionsBar(event, isOwn));
+      }
+
+      return container;
+    }
+
+    // ── Boot ──────────────────────────────────────────────────────
+    const { user, profile: myProfile } = await requireAuth();
+    currentUser = user;
+    document.body.classList.remove('auth-loading');
+
+    avatarMap[user.uid]      = myProfile.avatarUrl || null;
+    borderColorMap[user.uid] = myProfile.avatarBorderColor || null;
+    usernameMap[user.uid]    = myProfile.username || null;
+
+    const following = await getFollowing(user.uid);
+    following.forEach(f => {
+      avatarMap[f.uid]      = f.avatarUrl || null;
+      borderColorMap[f.uid] = f.avatarBorderColor || null;
+      usernameMap[f.uid]    = f.username || null;
+    });
+    const followingUids = following.map(f => f.uid);
+
+    // — Feed preview ———————————————————————————————————————————————
+    const feedPreviewEl = document.getElementById('feed-preview');
+    getFeed(user.uid, followingUids, null, 30)
+      .then(({ events }) => {
+        if (!events.length) {
+          feedPreviewEl.innerHTML = '<p class="home-empty">Follow some readers to see their updates.</p>';
+          return;
+        }
+        aggregateFollows(events).forEach(ev => feedPreviewEl.appendChild(renderFeedItem(ev)));
+        updateFeedFades();
+      })
+      .catch(() => { feedPreviewEl.innerHTML = '<p class="home-empty">Could not load feed.</p>'; });
+
+    // — Currently reading —————————————————————————————————————————
+    const readingNowEl = document.getElementById('reading-now');
+    if (!following.length) {
+      readingNowEl.innerHTML = '<p class="home-empty">Follow readers to see what they\'re reading.</p>';
+    } else {
+      Promise.all(
+        following.map(f =>
+          getReadingBooks(f.uid)
+            .then(books => ({ reader: f, books: books.filter(b => b.coverUrl) }))
+            .catch(() => ({ reader: f, books: [] }))
+        )
+      ).then(rows => {
+        const withBooks = rows.filter(r => r.books.length > 0).slice(0, 10);
+        if (!withBooks.length) {
+          readingNowEl.innerHTML = '<p class="home-empty">Nobody you follow is currently reading.</p>';
+          return;
+        }
+        withBooks.sort((a, b) => {
+          const latestA = Math.max(...a.books.map(bk => bk.addedAt?.seconds ?? 0));
+          const latestB = Math.max(...b.books.map(bk => bk.addedAt?.seconds ?? 0));
+          return latestB - latestA;
+        });
+        const scroll = document.createElement('div');
+        scroll.className = 'home-reading-scroll';
+        withBooks.forEach(({ reader, books }, i) => {
+          if (i > 0) {
+            const sep = document.createElement('span');
+            sep.className = 'home-reading-sep';
+            scroll.appendChild(sep);
+          }
+          const group = document.createElement('div');
+          group.className = 'home-reading-group';
+          const nameLink = document.createElement('a');
+          nameLink.className = 'home-reading-username';
+          nameLink.href = `../profile/?u=${encodeURIComponent(reader.username)}`;
+          nameLink.textContent = reader.username;
+          const booksDiv = document.createElement('div');
+          booksDiv.className = 'home-reading-books';
+          books.forEach(book => {
+            const a = document.createElement('a');
+            a.href = book.gbid ? `../book/?gbid=${encodeURIComponent(book.gbid)}` : '#';
+            const img = document.createElement('img');
+            img.className = 'home-reading-cover';
+            img.src = book.coverUrl;
+            img.alt = book.title || '';
+            a.appendChild(img);
+            booksDiv.appendChild(a);
+          });
+          group.append(booksDiv, nameLink);
+          scroll.appendChild(group);
+        });
+        readingNowEl.appendChild(scroll);
+        const readFadeLeft  = document.getElementById('reading-fade-left');
+        const readFadeRight = document.getElementById('reading-fade-right');
+        function updateReadFades() {
+          const atLeft  = scroll.scrollLeft <= 1;
+          const atRight = scroll.scrollLeft + scroll.clientWidth >= scroll.scrollWidth - 1;
+          readFadeLeft.style.opacity  = atLeft  ? '0' : '1';
+          readFadeRight.style.opacity = atRight ? '0' : '1';
+        }
+        scroll.addEventListener('scroll', updateReadFades, { passive: true });
+        scroll.addEventListener('wheel', e => {
+          if (e.deltaY === 0) return;
+          e.preventDefault();
+          scroll.scrollLeft += e.deltaY;
+        }, { passive: false });
+        updateReadFades();
+      }).catch(() => {
+        readingNowEl.innerHTML = '<p class="home-empty">Could not load reading data.</p>';
+      });
+    }
+
+    // — Announcements ——————————————————————————————————————————————
+    const announcementsList = document.getElementById('announcements-list');
+
+    getAnnouncements(1)
+      .then(items => {
+        items.forEach(item => {
+          const el = document.createElement('div');
+          el.className = 'home-announcement';
+          const date = item.createdAt?.toDate?.() ?? null;
+          const dateStr = date ? date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+          if (dateStr) {
+            const d = document.createElement('div');
+            d.className = 'home-announcement-date';
+            d.textContent = dateStr;
+            el.appendChild(d);
+          }
+          const titleEl = document.createElement('div');
+          titleEl.className = 'home-announcement-title';
+          titleEl.textContent = item.title || '';
+          el.appendChild(titleEl);
+          const bodyEl = document.createElement('div');
+          bodyEl.className = 'home-announcement-body';
+          bodyEl.textContent = item.body || '';
+          el.appendChild(bodyEl);
+          announcementsList.appendChild(el);
+        });
+      })
+      .catch(() => {});
+
+    // — Explore nav ————————————————————————————————————————————————
+    const exploreNav = document.getElementById('explore-nav');
+    const username = myProfile.username || '';
+    const chevron = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" style="color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>`;
+    const navIcon = s => `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;color:var(--text-muted)">${s}</svg>`;
+    [
+      { label: 'feed',     href: '../feed/',     icon: navIcon(`<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>`) },
+      { label: 'search',   href: '../search/',   icon: navIcon(`<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>`) },
+      { label: 'network',  href: '../network/',  icon: navIcon(`<circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><line x1="8.7" y1="10.7" x2="15.3" y2="7.3"/><line x1="8.7" y1="13.3" x2="15.3" y2="16.7"/>`) },
+      { label: 'library',  href: '../library/',  icon: navIcon(`<path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>`) },
+      { label: 'lists',    href: '../lists/',    icon: navIcon(`<line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/>`) },
+      { label: 'stats',    href: '../stats/',    icon: navIcon(`<rect x="3" y="13" width="4" height="7" rx="0.5"/><rect x="10" y="3" width="4" height="17" rx="0.5"/><rect x="17" y="9" width="4" height="11" rx="0.5"/>`) },
+      { label: 'profile',  href: '../profile/',  icon: navIcon(`<path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>`) },
+      { label: 'settings', href: '../settings/', icon: navIcon(`<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>`) },
+    ].forEach(({ label, href, icon }) => {
+      const a = document.createElement('a');
+      a.className = 'home-zine-link';
+      a.href = href;
+      a.innerHTML = `<span style="display:flex;align-items:center;gap:.5rem">${icon}<span>${label}</span></span>${chevron}`;
+      exploreNav.appendChild(a);
+    });
+
+    // — Scroll fades ——————————————————————————————————————————————
+    const feedScrollEl = document.getElementById('feed-preview');
+    const feedFadeTop  = document.getElementById('feed-fade-top');
+    const feedFadeBot  = document.getElementById('feed-fade-bottom');
+    function updateFeedFades() {
+      const atTop = feedScrollEl.scrollTop <= 1;
+      const atBot = feedScrollEl.scrollTop + feedScrollEl.clientHeight >= feedScrollEl.scrollHeight - 1;
+      feedFadeTop.style.opacity = atTop ? '0' : '1';
+      feedFadeBot.style.opacity = atBot ? '0' : '1';
+    }
+    feedScrollEl.addEventListener('scroll', updateFeedFades, { passive: true });
+  </script>
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
+</body>
+</html>
