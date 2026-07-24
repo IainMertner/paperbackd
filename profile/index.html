@@ -195,6 +195,19 @@
       document.getElementById(cardId).style.display = '';
     }
 
+    function showBooksSection() {
+      const coversEl = document.getElementById('activity-covers');
+      coversEl.innerHTML = '';
+      for (let i = 0; i < 4; i++) {
+        const s = document.createElement('div');
+        s.className = 'shelf-cover-empty';
+        s.style.transform = `rotate(${COVER_ROTATIONS[i % COVER_ROTATIONS.length]}deg)`;
+        coversEl.appendChild(s);
+      }
+      document.getElementById('activity-card').style.display = '';
+      document.getElementById('books-section').style.display = '';
+    }
+
     function renderShelf(shelf, onEmptyClick) {
       document.getElementById('shelf-covers').innerHTML = '';
       renderCovers(shelf || [], 'shelf-covers', 'shelf-card');
@@ -595,6 +608,7 @@
     }
 
     function renderActivity(readingBooks, finishedBooks) {
+      document.getElementById('activity-covers').innerHTML = '';
       const items = [
         ...readingBooks.filter(i => i.coverUrl).map(b => ({ ...b, isReading: true })),
         ...finishedBooks.filter(i => i.coverUrl)
@@ -750,6 +764,7 @@
         inkRing.style.cursor = 'pointer';
         inkRing.addEventListener('click', openProfileEdit);
         renderShelf(myProfile.shelf, openShelfEdit);
+        showBooksSection();
         document.getElementById('shelf-label').innerHTML = `shelf<span id="shelf-edit-btn" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border);cursor:pointer">edit</span>`;
         document.getElementById('shelf-edit-btn').addEventListener('click', openShelfEdit);
         document.getElementById('activity-label').innerHTML = `<a href="../activity/?u=${encodeURIComponent(myProfile?.username || '')}" style="color:inherit;text-decoration:none">activity</a><span id="activity-summary" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border)"></span>`;
@@ -797,6 +812,7 @@
           fitDisplayName(document.getElementById('profile-display-name'));
           document.getElementById('profile-username').textContent = '@' + target.username;
           renderShelf(target.shelf);
+          showBooksSection();
           document.getElementById('activity-label').innerHTML = `<a href="../activity/?u=${encodeURIComponent(target.username)}" style="color:inherit;text-decoration:none">activity</a><span id="activity-summary" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border)"></span>`;
           Promise.all([getReadingBooks(target.uid), getRecentlyFinishedBooks(target.uid)])
             .then(([reading, finished]) => renderActivity(reading, finished))

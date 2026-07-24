@@ -991,8 +991,7 @@ export async function searchUsers(q, currentUid, pageSize = 10) {
     limit(pageSize)
   ));
   return snap.docs
-    .map(d => ({ uid: d.id, ...d.data() }))
-    .filter(u => u.uid !== currentUid);
+    .map(d => ({ uid: d.id, ...d.data() }));
 }
 
 export async function getFeed(currentUid, followingUids, cursor = null, pageSize = 20) {
