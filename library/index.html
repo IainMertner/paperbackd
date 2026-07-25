@@ -162,6 +162,8 @@
       const flags = [];
       if (!book.coverUrl)              flags.push('no-cover');
       if (!book.country)               flags.push('no-country');
+      if (!book.authorGender)          flags.push('no-gender');
+      if (!book.genres?.length)        flags.push('no-genre');
       if (book.releaseYear == null)    flags.push('no-year');
       if (!book.totalPages)            flags.push('no-pages');
       if (!book.language)              flags.push('no-language');
@@ -176,7 +178,9 @@
       el.dataset.author   = (book.author   || '').toLowerCase();
       el.dataset.language = (book.language || '').toLowerCase();
       el.dataset.format   = (book.format   || '').toLowerCase();
-      el.dataset.country  = (book.country  || '').toLowerCase();
+      el.dataset.country  = (book.country      || '').toLowerCase();
+      el.dataset.gender   = (book.authorGender || '').toLowerCase();
+      el.dataset.genre    = (book.genres || []).map(g => g.toLowerCase()).join(',');
       el.dataset.rating   = book.rating != null ? String(book.rating) : '';
       el.dataset.lists    = book._listIds || '';
       el.dataset.gbid     = book.gbid || '';
@@ -483,7 +487,9 @@
       cell.dataset.author   = (book.author   || '').toLowerCase();
       cell.dataset.language = (book.language || '').toLowerCase();
       cell.dataset.format   = (book.format   || '').toLowerCase();
-      cell.dataset.country  = (book.country  || '').toLowerCase();
+      cell.dataset.country  = (book.country      || '').toLowerCase();
+      cell.dataset.gender   = (book.authorGender || '').toLowerCase();
+      cell.dataset.genre    = (book.genres || []).map(g => g.toLowerCase()).join(',');
       cell.dataset.rating   = book.rating != null ? String(book.rating) : '';
       cell.dataset.lists    = book._listIds || '';
       cell.dataset.gbid     = book.gbid || '';
@@ -863,7 +869,7 @@
       el.style.cssText = 'display:flex;align-items:center;gap:.4rem;margin-top:.35rem';
       if (label) {
         const lbl = document.createElement('span');
-        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:80px';
         lbl.textContent = label;
         el.appendChild(lbl);
       }
@@ -1046,7 +1052,9 @@
           if (el) {
             if (updates.title    != null) { el.dataset.title    = updates.title.toLowerCase(); }
             if ('author'   in updates)    { el.dataset.author   = (updates.author   || '').toLowerCase(); }
-            if ('country'  in updates)    { el.dataset.country  = (updates.country  || '').toLowerCase(); }
+            if ('country'      in updates) { el.dataset.country = (updates.country      || '').toLowerCase(); }
+            if ('authorGender' in updates) { el.dataset.gender  = (updates.authorGender || '').toLowerCase(); }
+            if ('genres'       in updates) { el.dataset.genre   = (updates.genres || []).map(g => g.toLowerCase()).join(','); }
             const titleEl  = el.querySelector('.book-title');
             const authorEl = el.querySelector('.book-author');
             if (titleEl  && updates.title  != null) titleEl.textContent  = updates.title;
@@ -1235,7 +1243,7 @@
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:.4rem';
         const lbl = document.createElement('span');
-        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:80px';
         lbl.textContent = labelText;
         const textEl = document.createElement('span');
         textEl.className = 'book-date-editable';
@@ -1646,7 +1654,7 @@
           const row = document.createElement('div');
           row.style.cssText = 'display:flex;align-items:center;gap:.4rem';
           const lbl = document.createElement('span');
-          lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+          lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:80px';
           lbl.textContent = labelText;
 
           const picker = createPartialDatePicker(ts || null, prec || null);
@@ -1693,7 +1701,7 @@
           const row = document.createElement('div');
           row.style.cssText = 'display:flex;align-items:center;gap:.4rem';
           const lbl = document.createElement('span');
-          lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+          lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:80px';
           lbl.textContent = labelText;
           return { row, lbl };
         }
@@ -2060,7 +2068,7 @@
       const startedRow = document.createElement('div');
       startedRow.style.cssText = 'display:flex;align-items:center;gap:.4rem';
       const startedLbl = document.createElement('span');
-      startedLbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+      startedLbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:80px';
       startedLbl.textContent = 'Started';
       const startedVal = document.createElement('span');
       startedVal.style.cssText = 'font-size:.8rem;color:var(--text)';
@@ -2074,7 +2082,7 @@
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:.4rem';
         const lbl = document.createElement('span');
-        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:80px';
         lbl.textContent = labelText;
         const textEl = document.createElement('span');
         textEl.style.cssText = 'font-size:.8rem;color:var(--text)';
@@ -2154,7 +2162,7 @@
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:.4rem';
         const lbl = document.createElement('span');
-        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:80px';
         lbl.textContent = labelText;
         const textEl = document.createElement('span');
         textEl.style.cssText = 'font-size:.8rem;color:var(--text)';
@@ -2166,7 +2174,7 @@
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:.4rem';
         const lbl = document.createElement('span');
-        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:50px';
+        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:80px';
         lbl.textContent = labelText;
         const textEl = document.createElement('span');
         textEl.style.cssText = 'font-size:.8rem;color:var(--text)';
@@ -2548,7 +2556,7 @@
         const listBtn     = document.getElementById('view-list-btn');
         filterWrap.style.display = '';
 
-        const activeFilters = { format: new Set(), language: new Set(), country: new Set(), rating: new Set(), lists: new Set(), completeness: new Set() };
+        const activeFilters = { format: new Set(), language: new Set(), country: new Set(), gender: new Set(), genre: new Set(), rating: new Set(), lists: new Set(), completeness: new Set() };
 
         const filterDropdownBtn = document.getElementById('filter-dropdown-btn');
         const filterDropdown    = document.getElementById('filter-dropdown');
@@ -2560,8 +2568,13 @@
               let show = !q || el.dataset.title.includes(q) || el.dataset.author.includes(q);
               if (show && activeFilters.format.size)   show = activeFilters.format.has(el.dataset.format || '');
               if (show && activeFilters.language.size) show = activeFilters.language.has(el.dataset.language || '');
-              if (show && activeFilters.country.size)  show = activeFilters.country.has(el.dataset.country || '');
-              if (show && activeFilters.rating.size)  show = activeFilters.rating.has(el.dataset.rating || '');
+              if (show && activeFilters.country.size) show = activeFilters.country.has(el.dataset.country || '');
+              if (show && activeFilters.gender.size)  show = activeFilters.gender.has(el.dataset.gender || '');
+              if (show && activeFilters.genre.size) {
+                const bookGenres = (el.dataset.genre || '').split(',').filter(Boolean);
+                show = bookGenres.some(g => activeFilters.genre.has(g));
+              }
+              if (show && activeFilters.rating.size) show = activeFilters.rating.has(el.dataset.rating || '');
               if (show && activeFilters.lists.size) {
                 const bookLists = (el.dataset.lists || '').split(',').filter(Boolean);
                 show = bookLists.some(l => activeFilters.lists.has(l));
@@ -2645,10 +2658,10 @@
 
         addSection('Format',   'format',   formats.map(v => ({ val: v.toLowerCase(), label: v, count: allBooks.filter(b => b.format === v).length })));
         addSection('Language', 'language', languages.map(v => ({ val: v.toLowerCase(), label: v, count: allBooks.filter(b => b.language === v).length })));
-        const countryEntries = countries.map(v => ({ val: v.toLowerCase(), label: v, count: allBooks.filter(b => b.country === v).length }));
-        const noCountryCount = allBooks.filter(b => !b.country).length;
-        if (noCountryCount > 0) countryEntries.push({ val: '', label: 'No country', count: noCountryCount });
-        addSection('Country',  'country',  countryEntries);
+
+        const GENDER_ORDER = ['Male', 'Female', 'Non-binary', 'Other'];
+        const genders = GENDER_ORDER.filter(g => allBooks.some(b => b.authorGender === g));
+        addSection('Gender', 'gender', genders.map(g => ({ val: g.toLowerCase(), label: g, count: allBooks.filter(b => b.authorGender === g).length })), { sort: false });
 
         const ratingVals = [...new Set(allBooks.map(b => b.rating).filter(r => r != null))].sort((a, b) => b - a);
         function ratingLabel(r) { return '★'.repeat(Math.floor(r)) + (r % 1 >= 0.5 ? '½' : ''); }
@@ -2663,12 +2676,24 @@
         const completenessItems = [
           { val: 'no-cover',    label: 'Missing cover',    count: allBooks.filter(b => !b.coverUrl).length },
           { val: 'no-country',  label: 'Missing country',  count: allBooks.filter(b => !b.country).length },
+          { val: 'no-gender',   label: 'Missing gender',   count: allBooks.filter(b => !b.authorGender).length },
+          { val: 'no-genre',    label: 'Missing genre',    count: allBooks.filter(b => !b.genres?.length).length },
           { val: 'no-year',     label: 'Missing year',     count: allBooks.filter(b => b.releaseYear == null).length },
           { val: 'no-pages',    label: 'Missing pages',    count: allBooks.filter(b => !b.totalPages).length },
           { val: 'no-language', label: 'Missing language', count: allBooks.filter(b => !b.language).length },
           { val: 'no-format',   label: 'Missing format',   count: allBooks.filter(b => !b.format).length },
         ].filter(i => i.count > 0);
         addSection('Completeness', 'completeness', completenessItems, { sort: false });
+
+        const countryEntries = countries.map(v => ({ val: v.toLowerCase(), label: v, count: allBooks.filter(b => b.country === v).length }));
+        const noCountryCount = allBooks.filter(b => !b.country).length;
+        if (noCountryCount > 0) countryEntries.push({ val: '', label: 'No country', count: noCountryCount });
+        addSection('Country', 'country', countryEntries);
+
+        const genreMap = {};
+        for (const b of allBooks) for (const g of (b.genres || [])) genreMap[g] = (genreMap[g] || 0) + 1;
+        const genreEntries = Object.entries(genreMap).map(([g, count]) => ({ val: g.toLowerCase(), label: g, count }));
+        addSection('Genre', 'genre', genreEntries);
 
         if (!filterDropdown.children.length) filterDropdownBtn.style.display = 'none';
 

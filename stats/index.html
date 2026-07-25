@@ -350,6 +350,16 @@
         <div class="chart-wrap"><canvas id="chart-authors"></canvas></div>
         <div class="chart-empty" id="chart-authors-empty" style="display:none">Not enough data.</div>
       </div>
+      <div class="card chart-card" id="chart-gender-card">
+        <div class="chart-title">Author gender</div>
+        <div class="chart-wrap"><canvas id="chart-gender"></canvas></div>
+        <div class="chart-empty" id="chart-gender-empty" style="display:none">Not enough data.</div>
+      </div>
+      <div class="card chart-card" id="chart-genres-card">
+        <div class="chart-title">Top genres</div>
+        <div class="chart-wrap"><canvas id="chart-genres"></canvas></div>
+        <div class="chart-empty" id="chart-genres-empty" style="display:none">Not enough data.</div>
+      </div>
     </div>
 
     <!-- Targets panel -->
@@ -2209,6 +2219,45 @@
         } else {
           authorsCanvas.style.display = 'none';
           document.getElementById('chart-authors-empty').style.display = '';
+        }
+      }
+
+      // Author gender
+      {
+        const seen = new Set();
+        const genderCounts = {};
+        for (const b of books) {
+          if (!b.author || !b.authorGender) continue;
+          if (seen.has(b.author)) continue;
+          seen.add(b.author);
+          genderCounts[b.authorGender] = (genderCounts[b.authorGender] || 0) + 1;
+        }
+        const ORDER = ['Male', 'Female', 'Non-binary', 'Other'];
+        const entries = ORDER.filter(g => genderCounts[g])
+          .map(g => ({ label: g, value: genderCounts[g] }));
+        const genderCanvas = document.getElementById('chart-gender');
+        if (entries.length >= 1) {
+          drawHBar(genderCanvas, entries);
+        } else {
+          genderCanvas.style.display = 'none';
+          document.getElementById('chart-gender-empty').style.display = '';
+        }
+      }
+
+      // Top genres
+      {
+        const genreCounts = {};
+        for (const b of books) for (const g of (b.genres || [])) genreCounts[g] = (genreCounts[g] || 0) + 1;
+        const top = Object.entries(genreCounts)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 10)
+          .map(([label, value]) => ({ label, value }));
+        const genresCanvas = document.getElementById('chart-genres');
+        if (top.length >= 1) {
+          drawHBar(genresCanvas, top);
+        } else {
+          genresCanvas.style.display = 'none';
+          document.getElementById('chart-genres-empty').style.display = '';
         }
       }
     }
