@@ -29,17 +29,18 @@
       border: none;
       border-bottom: 2px solid transparent;
       margin-bottom: -2px;
-      font-size: .9rem;
+      font-size: .7rem;
       cursor: pointer;
       color: var(--text-muted);
       font-family: inherit;
-      font-weight: 400;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
       transition: color .15s;
     }
     .stats-tab-btn.active {
       border-bottom-color: var(--accent);
       color: var(--text);
-      font-weight: 600;
     }
     .target-card {
       padding: 1rem;
@@ -118,11 +119,28 @@
     .chart-card {
       padding: 1rem;
       margin-bottom: .75rem;
+      position: relative;
+      isolation: isolate;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    .chart-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      background: var(--bg-card);
+      box-shadow: var(--shadow);
+      filter: url(#ink-edge);
+      z-index: -1;
     }
     .chart-title {
-      font-size: .85rem;
-      font-weight: 600;
-      color: var(--text);
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--text-muted);
       margin-bottom: .75rem;
     }
     .chart-title-row {
@@ -163,17 +181,67 @@
       font-size: .85rem;
     }
     .chart-summary {
-      font-size: .82rem;
-      color: var(--text-muted);
-      padding: .5rem 0 .1rem;
+      font-size: .9rem;
+      font-weight: 500;
+      color: var(--text);
+      padding: .6rem 0 .1rem;
     }
     canvas.scatter {
       display: block;
       width: 100%;
     }
+    .summary-list {
+      display: grid;
+      grid-template-columns: 1fr;
+      column-gap: 1.5rem;
+    }
+    @media (min-width: 580px) {
+      .summary-list:not(.summary-list--single) { grid-template-columns: 1fr 1fr; }
+    }
+    .summary-list--single { grid-template-columns: 1fr; }
+    .summary-row {
+      padding: .45rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: .875rem;
+    }
+    .summary-row:last-child { border-bottom: none; }
+    @media (min-width: 580px) {
+      .summary-list:not(.summary-list--single) .summary-row:nth-last-child(-n+2) { border-bottom: none; }
+    }
+    #panel-summary .card { margin-top: 0; }
+    .summary-card {
+      position: relative;
+      isolation: isolate;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      border-radius: var(--radius);
+      padding: .25rem 1rem;
+    }
+    .summary-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      background: var(--bg-card);
+      box-shadow: var(--shadow);
+      filter: url(#ink-edge);
+      z-index: -1;
+    }
+    .summary-row-value { font-weight: 700; margin-right: .6em; }
+    .summary-row-label { color: var(--text-muted); }
   </style>
 </head>
 <body>
+
+<svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+  <defs>
+    <filter id="ink-edge" x="-25%" y="-25%" width="150%" height="150%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" seed="5" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+</svg>
 
   <header class="site-header">
     <div class="header-inner">
@@ -196,27 +264,31 @@
     <h1 class="page-title" id="page-heading"></h1>
 
     <div class="stats-tab-bar">
-      <button class="stats-tab-btn active" id="tab-general">Graphs</button>
+      <button class="stats-tab-btn active" id="tab-summary">Summary</button>
+      <button class="stats-tab-btn"        id="tab-general">Graphs</button>
       <button class="stats-tab-btn"        id="tab-targets">Targets</button>
     </div>
 
+    <!-- Summary panel -->
+    <div id="panel-summary"></div>
+
     <!-- General stats panel -->
-    <div id="panel-general">
+    <div id="panel-general" hidden>
       <div class="card chart-card" id="chart-countries-card" style="padding-top:.5rem;padding-bottom:.5rem">
         <div class="chart-title-row">
           <div class="chart-title">Countries</div>
           <div class="view-toggle" id="countries-view-toggle" style="display:none">
-            <button class="view-toggle-btn active" id="countries-map-btn" title="Map">
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="8" cy="8" r="5.5"/>
-                <path d="M2.5 8h11M8 2.5c-2 2-2 7 0 11M8 2.5c2 2 2 7 0 11"/>
-              </svg>
-            </button>
-            <button class="view-toggle-btn" id="countries-bubble-btn" title="Bubble chart">
+            <button class="view-toggle-btn active" id="countries-bubble-btn" title="Bubble chart">
               <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
                 <circle cx="5.5" cy="10" r="3.5"/>
                 <circle cx="12" cy="6.5" r="2.5"/>
                 <circle cx="10" cy="13" r="1.5"/>
+              </svg>
+            </button>
+            <button class="view-toggle-btn" id="countries-map-btn" title="Map">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="8" cy="8" r="5.5"/>
+                <path d="M2.5 8h11M8 2.5c-2 2-2 7 0 11M8 2.5c2 2 2 7 0 11"/>
               </svg>
             </button>
           </div>
@@ -307,13 +379,35 @@
     const CY   = NOW.getFullYear();
     const CM   = NOW.getMonth();
 
-    const TARGET_TYPES  = { books: 'Books read', countries: 'Countries' };
+    const TARGET_TYPES = {
+      books:          'Books read',
+      languages:      'Languages',
+      countries:      'Countries',
+      african:        'African books',
+      asian:          'Asian books',
+      european:       'European books',
+      northamerican:  'North American books',
+      oceanian:       'Oceanian books',
+      southamerican:  'South American books',
+    };
+    const ISO_CONTINENT = {
+      ng:'AF', za:'AF', eg:'AF', ke:'AF', gh:'AF', et:'AF', ma:'AF', tz:'AF', ug:'AF', zw:'AF', rw:'AF', ao:'AF',
+      jp:'AS', cn:'AS', kr:'AS', tw:'AS', in:'AS', pk:'AS', bd:'AS', lk:'AS', vn:'AS', th:'AS', id:'AS', ph:'AS',
+      my:'AS', sg:'AS', mm:'AS', kh:'AS', ir:'AS', tr:'AS', il:'AS', jo:'AS', iq:'AS', sa:'AS', ae:'AS', hk:'AS',
+      gb:'EU', fr:'EU', de:'EU', it:'EU', es:'EU', pt:'EU', nl:'EU', be:'EU', ch:'EU', at:'EU', se:'EU', no:'EU',
+      dk:'EU', fi:'EU', pl:'EU', ua:'EU', gr:'EU', cz:'EU', hu:'EU', ro:'EU', rs:'EU', hr:'EU', sk:'EU', bg:'EU',
+      ru:'EU', ie:'EU', is:'EU', lu:'EU', ee:'EU', lv:'EU', lt:'EU',
+      us:'NA', ca:'NA', mx:'NA', cu:'NA', gt:'NA', cr:'NA', tt:'NA', jm:'NA', ht:'NA', do:'NA',
+      au:'OC', nz:'OC',
+      br:'SA', ar:'SA', co:'SA', cl:'SA', pe:'SA', ve:'SA', ec:'SA', bo:'SA', uy:'SA', py:'SA',
+    };
+    const CONTINENT_TYPE = { african:'AF', asian:'AS', european:'EU', northamerican:'NA', oceanian:'OC', southamerican:'SA' };
     const PERIODS       = ['monthly', 'yearly', 'overall'];
     const PERIOD_LABELS = { monthly: 'Monthly', yearly: 'Yearly', overall: 'Overall' };
     const PERIOD_COLORS = {
-      monthly: getComputedStyle(document.documentElement).getPropertyValue('--palette-terracotta').trim(),
-      yearly:  '#E0AC00',
-      overall: getComputedStyle(document.documentElement).getPropertyValue('--palette-burgundy').trim(),
+      monthly: '#2D7DD2',
+      yearly:  '#EDB820',
+      overall: '#D4174A',
     };
 
     let editMode = false;
@@ -765,21 +859,136 @@
 
     // ── Tab switching ──────────────────────────────────────────────────────────
 
-    const tabTargets = document.getElementById('tab-targets');
-    const tabGeneral = document.getElementById('tab-general');
-    const panelTargets = document.getElementById('panel-targets');
-    const panelGeneral = document.getElementById('panel-general');
+    const tabSummary  = document.getElementById('tab-summary');
+    const tabGeneral  = document.getElementById('tab-general');
+    const tabTargets  = document.getElementById('tab-targets');
+    const panelSummary  = document.getElementById('panel-summary');
+    const panelGeneral  = document.getElementById('panel-general');
+    const panelTargets  = document.getElementById('panel-targets');
 
     function switchTab(name) {
-      const onGeneral = name === 'general';
-      tabGeneral.classList.toggle('active', onGeneral);
-      tabTargets.classList.toggle('active', !onGeneral);
-      panelGeneral.hidden = !onGeneral;
-      panelTargets.hidden = onGeneral;
+      tabSummary.classList.toggle('active', name === 'summary');
+      tabGeneral.classList.toggle('active', name === 'general');
+      tabTargets.classList.toggle('active', name === 'targets');
+      panelSummary.hidden = name !== 'summary';
+      panelGeneral.hidden = name !== 'general';
+      panelTargets.hidden = name !== 'targets';
     }
 
-    tabGeneral.addEventListener('click', () => switchTab('general'));
-    tabTargets.addEventListener('click', () => switchTab('targets'));
+    tabSummary.addEventListener('click', () => { switchTab('summary'); localStorage.setItem('stats-tab', 'summary'); });
+    tabGeneral.addEventListener('click', () => { switchTab('general'); drawCharts(); localStorage.setItem('stats-tab', 'general'); });
+    tabTargets.addEventListener('click', () => { switchTab('targets'); localStorage.setItem('stats-tab', 'targets'); });
+
+    const savedTab = localStorage.getItem('stats-tab') || 'summary';
+    switchTab(savedTab);
+    if (savedTab === 'general') drawCharts();
+
+    // ── Summary ────────────────────────────────────────────────────────────────
+
+    function buildSummary() {
+      const panel = document.getElementById('panel-summary');
+      panel.innerHTML = '';
+
+      const total = books.length;
+      if (!total) {
+        const empty = document.createElement('p');
+        empty.style.cssText = 'color:var(--text-muted);text-align:center;padding:2rem';
+        empty.textContent = 'No books read yet.';
+        panel.appendChild(empty);
+        return;
+      }
+
+      const rated = books.filter(b => b.rating != null && b.rating >= 0.5);
+      const avgRating = rated.length ? rated.reduce((s, b) => s + b.rating, 0) / rated.length : null;
+      const stdDev = avgRating != null && rated.length >= 2
+        ? Math.sqrt(rated.reduce((s, b) => s + Math.pow(b.rating - avgRating, 2), 0) / rated.length)
+        : null;
+
+      const withPages = books.filter(b => b.totalPages > 0);
+      const totalPages = withPages.reduce((s, b) => s + b.totalPages, 0);
+      const avgPages = withPages.length ? Math.round(totalPages / withPages.length) : null;
+
+      const uniqueAuthors   = new Set(books.map(b => b.author).filter(Boolean)).size;
+      const uniqueCountries = new Set(books.map(b => b.country).filter(Boolean)).size;
+      const uniqueLanguages = new Set(books.map(b => b.language).filter(Boolean)).size;
+
+      const now = new Date();
+      const thisYear  = books.filter(b => { const d = b.finishedAt?.toDate?.() ?? null; return d && d.getFullYear() === now.getFullYear(); }).length;
+      const thisMonth = books.filter(b => { const d = b.finishedAt?.toDate?.() ?? null; return d && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); }).length;
+
+      const continentCounts = { AF: 0, AS: 0, EU: 0, NA: 0, OC: 0, SA: 0 };
+      for (const b of books) {
+        if (!b.country) continue;
+        const iso = COUNTRY_ISO[b.country.toLowerCase()];
+        const cont = iso && ISO_CONTINENT[iso];
+        if (cont) continentCounts[cont]++;
+      }
+
+      const sections = [
+        { title: 'books', stats: [
+          { label: 'books read',         value: total.toLocaleString() },
+          { label: 'books read this year',  value: thisYear },
+          { label: 'books read this month', value: thisMonth },
+          { label: 'authors read',       value: uniqueAuthors || '–' },
+          { label: 'pages read',         value: totalPages ? totalPages.toLocaleString() : '–' },
+          { label: 'average pages',      value: avgPages != null ? avgPages.toLocaleString() : '–' },
+        ]},
+        { title: 'ratings', stats: [
+          { label: 'average rating', value: avgRating != null ? avgRating.toFixed(1) + ' ★' : '–' },
+          { label: 'standard deviation', value: stdDev != null ? stdDev.toFixed(2) : '–' },
+          { label: '5 star reviews',   value: rated.filter(b => b.rating === 5).length },
+          { label: '1/2 star reviews', value: rated.filter(b => b.rating === 0.5).length },
+        ]},
+        { title: 'countries', stats: [
+          { label: 'countries',      value: uniqueCountries || '–' },
+          { label: 'languages',      value: uniqueLanguages || '–' },
+          { label: 'african books',        value: continentCounts.AF },
+          { label: 'asian books',          value: continentCounts.AS },
+          { label: 'european books',       value: continentCounts.EU },
+          { label: 'north american books', value: continentCounts.NA },
+          { label: 'oceanian books',       value: continentCounts.OC },
+          { label: 'south american books', value: continentCounts.SA },
+        ]},
+        { title: 'highlights', stats: (() => {
+          const authorCounts = {};
+          for (const b of books) if (b.author) authorCounts[b.author] = (authorCounts[b.author] || 0) + 1;
+          const topAuthor = Object.entries(authorCounts).sort((a, b) => b[1] - a[1])[0];
+
+          const countryCounts = {};
+          for (const b of books) if (b.country) countryCounts[b.country] = (countryCounts[b.country] || 0) + 1;
+          const topCountry = Object.entries(countryCounts).sort((a, b) => b[1] - a[1])[0];
+
+          const longest  = withPages.length ? withPages.reduce((a, b) => b.totalPages > a.totalPages ? b : a) : null;
+          const shortest = withPages.length ? withPages.reduce((a, b) => b.totalPages < a.totalPages ? b : a) : null;
+
+          return [
+            { label: 'most read author',  value: topAuthor  ? topAuthor[0]  : '–' },
+            { label: 'most read country', value: topCountry ? topCountry[0] : '–' },
+            { label: 'longest book',      value: longest    ? longest.title  : '–' },
+            { label: 'shortest book',     value: shortest   ? shortest.title : '–' },
+          ];
+        })() },
+      ];
+
+      for (const section of sections) {
+        const heading = document.createElement('div');
+        heading.className = 'section-title';
+        heading.textContent = section.title;
+        panel.appendChild(heading);
+
+        const grid = document.createElement('div');
+        grid.className = `summary-card summary-list${section.title === 'highlights' ? ' summary-list--single' : ''}`;
+        for (const s of section.stats) {
+          const row = document.createElement('div');
+          row.className = 'summary-row';
+          row.innerHTML = `<span class="summary-row-value">${s.value}</span><span class="summary-row-label">${s.label}</span>`;
+          grid.appendChild(row);
+        }
+        panel.appendChild(grid);
+      }
+    }
+
+    buildSummary();
 
     // ── Targets ────────────────────────────────────────────────────────────────
 
@@ -796,7 +1005,13 @@
         return true;
       });
       if (type === 'books')     return finished.length;
+      if (type === 'languages') return new Set(finished.map(b => b.language).filter(Boolean)).size;
       if (type === 'countries') return new Set(finished.map(b => b.country).filter(Boolean)).size;
+      const contKey = CONTINENT_TYPE[type];
+      if (contKey) return finished.filter(b => {
+        const iso = b.country && COUNTRY_ISO[b.country.toLowerCase()];
+        return iso && ISO_CONTINENT[iso] === contKey;
+      }).length;
       return 0;
     }
 
@@ -815,8 +1030,20 @@
     const targetsContent = document.getElementById('targets-content');
     const sectionsEl = document.createElement('div');
 
+    function updateTargetsTab() {
+      const total = Object.keys(targetsData).length;
+      if (!total) { tabTargets.textContent = 'Targets'; return; }
+      let done = 0;
+      for (const [key, val] of Object.entries(targetsData)) {
+        const [type, period] = key.split('_');
+        if (computeProgress(type, period) >= val) done++;
+      }
+      tabTargets.textContent = `Targets (${done}/${total})`;
+    }
+
     function rebuildSections() {
       sectionsEl.innerHTML = '';
+      updateTargetsTab();
       let hasAny = false;
       for (const period of PERIODS) {
         const entries = Object.entries(targetsData)
@@ -837,7 +1064,7 @@
         section.appendChild(heading);
 
         const sectionGrid = document.createElement('div');
-        sectionGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:.625rem';
+        sectionGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(9rem,1fr));gap:.625rem';
         for (const { type, value } of entries) {
           const current = computeProgress(type, period);
           sectionGrid.appendChild(buildRingCard(type, period, value, current, isOwn, {
@@ -888,7 +1115,7 @@
 
       headerRow.appendChild(addBtn);
       headerRow.appendChild(lockBtn);
-      headerRow.style.cssText = 'display:flex;align-items:center;gap:.5rem;margin-top:.75rem';
+      headerRow.style.cssText = 'display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem';
 
       // Add target form
       const addForm = document.createElement('div');
@@ -921,14 +1148,13 @@
       formAddBtn.addEventListener('click', async () => {
         const value = parseInt(numInput.value, 10);
         if (!value || value < 1) return;
-        addForm.style.display = 'none';
         numInput.value = '';
         await saveTarget(typeSelect.value, periodSelect.value, value);
       });
 
+      addForm.appendChild(numInput);
       addForm.appendChild(typeSelect);
       addForm.appendChild(periodSelect);
-      addForm.appendChild(numInput);
       addForm.appendChild(formAddBtn);
 
       addBtn.addEventListener('click', () => {
@@ -938,9 +1164,9 @@
         sectionsEl.querySelectorAll('.target-remove-btn').forEach(b => { b.style.display = editMode ? 'block' : 'none'; });
         sectionsEl.querySelectorAll('.target-input-row').forEach(r => { r.style.display = editMode ? 'flex' : 'none'; });
       });
-      targetsContent.appendChild(sectionsEl);
-      targetsContent.appendChild(addForm);
       targetsContent.appendChild(headerRow);
+      targetsContent.appendChild(addForm);
+      targetsContent.appendChild(sectionsEl);
       rebuildSections();
 
     } else if (targetProfile.targetsPrivate !== false) {
@@ -1598,7 +1824,7 @@
           bubbleBtn.addEventListener('click', () => { showBubble(); localStorage.setItem('countries-view', 'bubble'); });
           mapBtn.addEventListener('click',    () => { showMap();   localStorage.setItem('countries-view', 'map'); });
 
-          if (localStorage.getItem('countries-view') === 'bubble') showBubble(); else await showMap();
+          if (localStorage.getItem('countries-view') === 'map') await showMap(); else showBubble();
         }
       } else {
         countriesCanvas.style.display = 'none';
@@ -1659,9 +1885,12 @@
       }
     }
 
-    drawCharts();
-
-    window.addEventListener('resize', () => drawCharts());
+    let _lastChartWidth = 0;
+    window.addEventListener('resize', () => {
+      if (panelGeneral.hidden) return;
+      const w = document.documentElement.clientWidth;
+      if (w !== _lastChartWidth) { _lastChartWidth = w; drawCharts(); }
+    });
 
     } // end if (targetProfile)
     } finally {

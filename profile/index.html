@@ -128,7 +128,10 @@
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;color:var(--text-muted)"><rect x="3" y="13" width="4" height="7" rx="0.5"/><rect x="10" y="3" width="4" height="17" rx="0.5"/><rect x="17" y="9" width="4" height="11" rx="0.5"/></svg>
           stats
         </span>
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        <span style="display:flex;align-items:center;gap:.5rem">
+          <span id="stat-targets" style="font-size:.8rem;color:var(--text-muted)"></span>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </span>
       </a>
     </div>
 
@@ -620,6 +623,65 @@
       renderList();
     }
 
+    function computeCompletedTargets(targets, finishedBooks) {
+      const now = new Date();
+      const COUNTRY_ISO = {
+        'united states':'us','usa':'us','us':'us','united kingdom':'gb','uk':'gb','england':'gb','great britain':'gb','britain':'gb','scotland':'gb','wales':'gb','northern ireland':'gb',
+        'france':'fr','germany':'de','italy':'it','spain':'es','portugal':'pt','netherlands':'nl','belgium':'be','switzerland':'ch','austria':'at',
+        'sweden':'se','norway':'no','denmark':'dk','finland':'fi','poland':'pl','ukraine':'ua','greece':'gr',
+        'czech republic':'cz','czechia':'cz','hungary':'hu','romania':'ro','serbia':'rs','croatia':'hr','slovakia':'sk','bulgaria':'bg',
+        'russia':'ru','ireland':'ie','iceland':'is','luxembourg':'lu','estonia':'ee','latvia':'lv','lithuania':'lt',
+        'japan':'jp','china':'cn','south korea':'kr','korea':'kr','taiwan':'tw','india':'in','pakistan':'pk','bangladesh':'bd','sri lanka':'lk',
+        'vietnam':'vn','thailand':'th','indonesia':'id','philippines':'ph','malaysia':'my','singapore':'sg','myanmar':'mm','cambodia':'kh',
+        'iran':'ir','turkey':'tr','israel':'il','jordan':'jo','iraq':'iq','saudi arabia':'sa','united arab emirates':'ae','uae':'ae',
+        'canada':'ca','mexico':'mx','cuba':'cu','guatemala':'gt','costa rica':'cr','trinidad and tobago':'tt','trinidad':'tt','tobago':'tt','jamaica':'jm','haiti':'ht','dominican republic':'do',
+        'brazil':'br','argentina':'ar','colombia':'co','chile':'cl','peru':'pe','venezuela':'ve','ecuador':'ec','bolivia':'bo','uruguay':'uy','paraguay':'py',
+        'australia':'au','new zealand':'nz',
+        'nigeria':'ng','south africa':'za','egypt':'eg','kenya':'ke','ghana':'gh','ethiopia':'et','morocco':'ma','tanzania':'tz',
+        'uganda':'ug','zimbabwe':'zw','rwanda':'rw','angola':'ao','hong kong':'hk',
+      };
+      const ISO_CONTINENT = {
+        ng:'AF',za:'AF',eg:'AF',ke:'AF',gh:'AF',et:'AF',ma:'AF',tz:'AF',ug:'AF',zw:'AF',rw:'AF',ao:'AF',
+        jp:'AS',cn:'AS',kr:'AS',tw:'AS',in:'AS',pk:'AS',bd:'AS',lk:'AS',vn:'AS',th:'AS',id:'AS',ph:'AS',my:'AS',sg:'AS',mm:'AS',kh:'AS',ir:'AS',tr:'AS',il:'AS',jo:'AS',iq:'AS',sa:'AS',ae:'AS',hk:'AS',
+        gb:'EU',fr:'EU',de:'EU',it:'EU',es:'EU',pt:'EU',nl:'EU',be:'EU',ch:'EU',at:'EU',se:'EU',no:'EU',dk:'EU',fi:'EU',pl:'EU',ua:'EU',gr:'EU',cz:'EU',hu:'EU',ro:'EU',rs:'EU',hr:'EU',sk:'EU',bg:'EU',ru:'EU',ie:'EU',is:'EU',lu:'EU',ee:'EU',lv:'EU',lt:'EU',
+        us:'NA',ca:'NA',mx:'NA',cu:'NA',gt:'NA',cr:'NA',tt:'NA',jm:'NA',ht:'NA',do:'NA',
+        au:'OC',nz:'OC',
+        br:'SA',ar:'SA',co:'SA',cl:'SA',pe:'SA',ve:'SA',ec:'SA',bo:'SA',uy:'SA',py:'SA',
+      };
+      const CONTINENT_TYPE = { african:'AF', asian:'AS', european:'EU', northamerican:'NA', oceanian:'OC', southamerican:'SA' };
+
+      function booksInPeriod(period) {
+        if (period === 'overall') return finishedBooks;
+        return finishedBooks.filter(b => {
+          const d = b.finishedAt?.toDate?.() ?? null;
+          if (!d) return false;
+          if (period === 'yearly')  return d.getFullYear() === now.getFullYear();
+          if (period === 'monthly') return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+          return false;
+        });
+      }
+
+      function progressFor(type, period) {
+        const bs = booksInPeriod(period);
+        if (type === 'books')     return bs.length;
+        if (type === 'languages') return new Set(bs.map(b => b.language).filter(Boolean)).size;
+        if (type === 'countries') return new Set(bs.map(b => b.country).filter(Boolean)).size;
+        const contKey = CONTINENT_TYPE[type];
+        if (contKey) return bs.filter(b => {
+          const iso = b.country && COUNTRY_ISO[b.country.toLowerCase()];
+          return iso && ISO_CONTINENT[iso] === contKey;
+        }).length;
+        return 0;
+      }
+
+      let done = 0;
+      for (const [key, val] of Object.entries(targets)) {
+        const [type, period] = key.split('_');
+        if (progressFor(type, period) >= val) done++;
+      }
+      return done;
+    }
+
     function renderActivity(readingBooks, finishedBooks) {
       document.getElementById('activity-covers').innerHTML = '';
       const items = [
@@ -782,7 +844,15 @@
         document.getElementById('shelf-edit-btn').addEventListener('click', openShelfEdit);
         document.getElementById('activity-label').innerHTML = `<a href="../activity/?u=${encodeURIComponent(myProfile?.username || '')}" style="color:inherit;text-decoration:none">activity</a><span id="activity-summary" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border)"></span>`;
         Promise.all([getReadingBooks(user.uid), getRecentlyFinishedBooks(user.uid)])
-          .then(([reading, finished]) => renderActivity(reading, finished))
+          .then(([reading, finished]) => {
+            renderActivity(reading, finished);
+            const t = myProfile.targets || {};
+            const total = Object.keys(t).length;
+            if (total) {
+              const done = computeCompletedTargets(t, finished);
+              document.getElementById('stat-targets').textContent = `${total} targets · ${done} completed`;
+            }
+          })
           .catch(() => { document.getElementById('books-section').style.display = ''; });
         document.getElementById('own-actions').style.display = '';
         const profileMenuBtn = document.getElementById('profile-menu-btn');
@@ -805,7 +875,7 @@
           document.getElementById('stat-books').textContent = `${n} book${n === 1 ? '' : 's'}`;
         });
         getListCount(user.uid).then(n => {
-          document.getElementById('lists-count').textContent = n;
+          document.getElementById('lists-count').textContent = `${n} list${n === 1 ? '' : 's'}`;
         });
       } else {
 
@@ -828,7 +898,15 @@
           showBooksSection();
           document.getElementById('activity-label').innerHTML = `<a href="../activity/?u=${encodeURIComponent(target.username)}" style="color:inherit;text-decoration:none">activity</a><span id="activity-summary" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border)"></span>`;
           Promise.all([getReadingBooks(target.uid), getRecentlyFinishedBooks(target.uid)])
-            .then(([reading, finished]) => renderActivity(reading, finished))
+            .then(([reading, finished]) => {
+              renderActivity(reading, finished);
+              const t = target.targets || {};
+              const total = Object.keys(t).length;
+              if (total) {
+                const done = computeCompletedTargets(t, finished);
+                document.getElementById('stat-targets').textContent = `${total} targets · ${done} completed`;
+              }
+            })
             .catch(() => { document.getElementById('books-section').style.display = ''; });
           document.getElementById('stat-following').textContent = (target.following || []).length;
           document.getElementById('stats-link').href   = `../stats/?u=${encodeURIComponent(target.username)}`;
@@ -842,7 +920,7 @@
             document.getElementById('stat-books').textContent = `${n} book${n === 1 ? '' : 's'}`;
           });
           getListCount(target.uid).then(n => {
-            document.getElementById('lists-count').textContent = n;
+            document.getElementById('lists-count').textContent = `${n} list${n === 1 ? '' : 's'}`;
           });
 
           const myFollowing = myFreshProfile?.following || myProfile.following || myProfile.friends || [];
