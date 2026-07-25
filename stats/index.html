@@ -320,6 +320,21 @@
         <div class="chart-summary" id="chart-age-summary"></div>
         <div class="chart-empty" id="chart-age-empty" style="display:none">Not enough data yet.</div>
       </div>
+      <div class="card chart-card" id="chart-byyear-card">
+        <div class="chart-title">Books read per year</div>
+        <div class="chart-wrap"><canvas id="chart-byyear"></canvas></div>
+        <div class="chart-empty" id="chart-byyear-empty" style="display:none">Not enough data.</div>
+      </div>
+      <div class="card chart-card" id="chart-bymonth-card">
+        <div class="chart-title">Books read per month</div>
+        <div class="chart-wrap"><canvas id="chart-bymonth"></canvas></div>
+        <div class="chart-empty" id="chart-bymonth-empty" style="display:none">Not enough data.</div>
+      </div>
+      <div class="card chart-card" id="chart-authors-card">
+        <div class="chart-title">Most-read authors</div>
+        <div class="chart-wrap"><canvas id="chart-authors"></canvas></div>
+        <div class="chart-empty" id="chart-authors-empty" style="display:none">Not enough data.</div>
+      </div>
     </div>
 
     <!-- Targets panel -->
@@ -1493,8 +1508,14 @@
       const xLeft   = (-130 * Math.PI / 360) * (1 + Math.cos(phi1)); // clip east Pacific at 130°W
 
       mapEl.innerHTML = '';
+      mapEl.style.position = 'relative';
+
+      const zoomWrap = document.createElement('div');
+      zoomWrap.style.cssText = 'position:absolute;inset:0;transform-origin:0 0;will-change:transform';
+      mapEl.appendChild(zoomWrap);
+
       const canvas = document.createElement('canvas');
-      mapEl.appendChild(canvas);
+      zoomWrap.appendChild(canvas);
 
       const dpr = window.devicePixelRatio || 1;
       const W   = mapEl.offsetWidth || 600;
@@ -1502,6 +1523,7 @@
       canvas.width  = W * dpr;
       canvas.height = H * dpr;
       canvas.style.cssText = `width:100%;height:${H}px;display:block`;
+      mapEl.style.height = H + 'px';
 
       const ctx = canvas.getContext('2d');
       ctx.scale(dpr, dpr);
@@ -1585,12 +1607,11 @@
       for (const { p } of drawn) ctx.stroke(p);
 
       // Overlay canvas for hover/pin highlight — drawn on top, avoids redrawing base map
-      mapEl.style.position = 'relative';
       const overlay = document.createElement('canvas');
       overlay.width  = W * dpr;
       overlay.height = H * dpr;
       overlay.style.cssText = `position:absolute;top:0;left:0;width:100%;height:${H}px;pointer-events:none`;
-      mapEl.appendChild(overlay);
+      zoomWrap.appendChild(overlay);
       const octx = overlay.getContext('2d');
       octx.scale(dpr, dpr);
 
@@ -1638,6 +1659,7 @@
       });
 
       canvas.addEventListener('click', e => {
+        if (didDrag) { didDrag = false; e.stopImmediatePropagation(); return; }
         const hit = hitTest(e);
         if (!hit) { pinned = null; redrawOverlay(); showLabel(hovered); return; }
         if (pinned === hit && hit.count > 0) {
@@ -1650,6 +1672,202 @@
         redrawOverlay();
         showLabel(pinned || hovered);
       });
+
+      // ── Zoom & pan ──────────────────────────────────────────────────────────
+      let zoom = 1, panX = 0, panY = 0;
+
+      const clampPan = () => {
+        panX = Math.min(0, Math.max(panX, mapEl.offsetWidth  * (1 - zoom)));
+        panY = Math.min(0, Math.max(panY, mapEl.offsetHeight * (1 - zoom)));
+      };
+      const applyZoom = () => {
+        zoomWrap.style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`;
+        mapEl.style.cursor = zoom > 1 && !isPan ? 'grab' : '';
+      };
+
+      // Wheel zoom toward cursor
+      mapEl.addEventListener('wheel', e => {
+        e.preventDefault();
+        const r = mapEl.getBoundingClientRect();
+        const cx = e.clientX - r.left, cy = e.clientY - r.top;
+        const ns = Math.min(Math.max(zoom * (e.deltaY < 0 ? 1.2 : 1 / 1.2), 1), 10);
+        panX = cx - (cx - panX) * ns / zoom;
+        panY = cy - (cy - panY) * ns / zoom;
+        zoom = ns; clampPan(); applyZoom();
+      }, { passive: false });
+
+      // Mouse drag pan
+      let isPan = false, didDrag = false, panX0, panY0, dragX0, dragY0;
+      canvas.addEventListener('mousedown', e => {
+        if (zoom <= 1) return;
+        isPan = true; didDrag = false;
+        panX0 = panX; panY0 = panY;
+        dragX0 = e.clientX; dragY0 = e.clientY;
+        mapEl.style.cursor = 'grabbing';
+      });
+      document.addEventListener('mousemove', e => {
+        if (!isPan) return;
+        const dx = e.clientX - dragX0, dy = e.clientY - dragY0;
+        if (Math.hypot(dx, dy) > 4) didDrag = true;
+        panX = panX0 + dx; panY = panY0 + dy;
+        clampPan(); applyZoom();
+      });
+      document.addEventListener('mouseup', () => {
+        if (!isPan) return;
+        isPan = false;
+        mapEl.style.cursor = zoom > 1 ? 'grab' : '';
+      });
+
+      // Touch pinch + pan
+      let lastTs = [];
+      mapEl.addEventListener('touchstart', e => { e.preventDefault(); lastTs = Array.from(e.touches); }, { passive: false });
+      mapEl.addEventListener('touchmove', e => {
+        e.preventDefault();
+        const ts = Array.from(e.touches);
+        if (ts.length === 1 && zoom > 1 && lastTs.length >= 1) {
+          panX += ts[0].clientX - lastTs[0].clientX;
+          panY += ts[0].clientY - lastTs[0].clientY;
+          clampPan(); applyZoom();
+        } else if (ts.length === 2 && lastTs.length >= 2) {
+          const pd = Math.hypot(lastTs[0].clientX - lastTs[1].clientX, lastTs[0].clientY - lastTs[1].clientY);
+          const nd = Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
+          const r  = mapEl.getBoundingClientRect();
+          const cx = (ts[0].clientX + ts[1].clientX) / 2 - r.left;
+          const cy = (ts[0].clientY + ts[1].clientY) / 2 - r.top;
+          const ns = Math.min(Math.max(zoom * nd / pd, 1), 10);
+          panX = cx - (cx - panX) * ns / zoom;
+          panY = cy - (cy - panY) * ns / zoom;
+          zoom = ns; clampPan(); applyZoom();
+        }
+        lastTs = ts;
+      }, { passive: false });
+      mapEl.addEventListener('touchend', e => { lastTs = Array.from(e.touches); });
+
+    }
+
+    // Generic vertical bar chart. labels[] and counts[] are parallel arrays.
+    function drawVBar(canvasEl, labels, counts, { color } = {}) {
+      const dpr  = window.devicePixelRatio || 1;
+      const W_CSS = canvasEl.parentElement.clientWidth || 300;
+      const N     = labels.length;
+      // Height: enough for longest label rotated 45°, capped between 160 and 240
+      const H_CSS = Math.min(240, Math.max(160, Math.ceil(W_CSS * 0.45)));
+      canvasEl.width  = W_CSS * dpr;
+      canvasEl.height = H_CSS * dpr;
+      canvasEl.style.width  = W_CSS + 'px';
+      canvasEl.style.height = H_CSS + 'px';
+      const ctx = canvasEl.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      const accent = color || cssVar('--palette-rose');
+      const muted  = cssVar('--text-muted');
+
+      const fontSize = Math.max(9, Math.min(11, Math.floor(W_CSS / (N * 1.5))));
+      ctx.font = `${fontSize}px -apple-system, sans-serif`;
+      let maxLabelW = 0;
+      for (const l of labels) maxLabelW = Math.max(maxLabelW, ctx.measureText(l).width);
+      const labelSpace = Math.min(maxLabelW + 4, 56);
+
+      const pad   = { top: 20, right: 8, bottom: labelSpace, left: 28 };
+      const plotW = W_CSS - pad.left - pad.right;
+      const plotH = H_CSS - pad.top  - pad.bottom;
+      const maxVal = Math.max(...counts, 1);
+      const slotW  = plotW / N;
+
+      ctx.clearRect(0, 0, W_CSS, H_CSS);
+
+      for (let i = 0; i < N; i++) {
+        const v    = counts[i];
+        const barH = (v / maxVal) * plotH;
+        const x    = pad.left + i * slotW + slotW * 0.1;
+        const bw   = slotW * 0.8;
+        const y    = pad.top + plotH - barH;
+
+        if (v > 0) {
+          ctx.globalAlpha = 0.82;
+          ctx.fillStyle = accent;
+          if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, bw, barH, [3, 3, 0, 0]); ctx.fill(); }
+          else { ctx.fillRect(x, y, bw, barH); }
+          ctx.globalAlpha = 1;
+
+          // Count above bar
+          ctx.fillStyle = muted;
+          ctx.font = `bold ${fontSize}px -apple-system, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(v, x + bw / 2, y - 2);
+        }
+
+        // Label (rotated 45° so it fits)
+        ctx.save();
+        ctx.font = `${fontSize}px -apple-system, sans-serif`;
+        ctx.fillStyle = muted;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.translate(x + bw / 2, pad.top + plotH + 6);
+        ctx.rotate(-Math.PI / 4);
+        ctx.fillText(labels[i], 0, 0);
+        ctx.restore();
+      }
+    }
+
+    // Horizontal bar chart for author-style lists. entries = [{label, value}]
+    function drawHBar(canvasEl, entries, { color } = {}) {
+      const dpr   = window.devicePixelRatio || 1;
+      const W_CSS = canvasEl.parentElement.clientWidth || 300;
+      const N     = entries.length;
+      const ROW_H = 28;
+      const H_CSS = N * ROW_H + 24;
+      canvasEl.width  = W_CSS * dpr;
+      canvasEl.height = H_CSS * dpr;
+      canvasEl.style.width  = W_CSS + 'px';
+      canvasEl.style.height = H_CSS + 'px';
+      const ctx = canvasEl.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      const accent = color || cssVar('--palette-rose');
+      const muted  = cssVar('--text-muted');
+      const text   = cssVar('--text');
+
+      const labelFontSize = 12;
+      ctx.font = `${labelFontSize}px -apple-system, sans-serif`;
+      let maxLabelW = 0;
+      for (const e of entries) maxLabelW = Math.max(maxLabelW, ctx.measureText(e.label).width);
+      const labelCol = Math.min(maxLabelW + 10, W_CSS * 0.4);
+
+      const maxVal = Math.max(...entries.map(e => e.value), 1);
+      const barArea = W_CSS - labelCol - 36;
+
+      ctx.clearRect(0, 0, W_CSS, H_CSS);
+
+      for (let i = 0; i < N; i++) {
+        const { label, value } = entries[i];
+        const y    = 12 + i * ROW_H;
+        const barW = (value / maxVal) * barArea;
+        const barH = ROW_H * 0.55;
+        const barY = y + (ROW_H - barH) / 2;
+
+        // Label
+        ctx.fillStyle = text;
+        ctx.font = `${labelFontSize}px -apple-system, sans-serif`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, labelCol - 6, y + ROW_H / 2);
+
+        // Bar
+        ctx.globalAlpha = 0.82;
+        ctx.fillStyle = accent;
+        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(labelCol, barY, barW, barH, 3); ctx.fill(); }
+        else { ctx.fillRect(labelCol, barY, barW, barH); }
+        ctx.globalAlpha = 1;
+
+        // Count
+        ctx.fillStyle = muted;
+        ctx.font = `bold ${labelFontSize}px -apple-system, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(value, labelCol + barW + 6, y + ROW_H / 2);
+      }
     }
 
     function drawRatingBar(canvasEl, counts, { onBarClick } = {}) {
@@ -1882,6 +2100,58 @@
       } else {
         ageCanvas.style.display = 'none';
         document.getElementById('chart-age-empty').style.display = '';
+      }
+
+      // Books by year
+      {
+        const yearCounts = {};
+        for (const b of books) {
+          const d = b.finishedAt?.toDate?.() ?? null;
+          if (d) { const y = d.getFullYear(); yearCounts[y] = (yearCounts[y] || 0) + 1; }
+        }
+        const years = Object.keys(yearCounts).map(Number).sort((a, b) => a - b);
+        const byYearCanvas = document.getElementById('chart-byyear');
+        if (years.length >= 2) {
+          drawVBar(byYearCanvas, years.map(String), years.map(y => yearCounts[y]));
+        } else {
+          byYearCanvas.style.display = 'none';
+          document.getElementById('chart-byyear-empty').style.display = '';
+        }
+      }
+
+      // Books by month (aggregated across all years)
+      {
+        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const monthCounts = new Array(12).fill(0);
+        for (const b of books) {
+          const d = b.finishedAt?.toDate?.() ?? null;
+          if (d) monthCounts[d.getMonth()]++;
+        }
+        const byMonthCanvas = document.getElementById('chart-bymonth');
+        if (monthCounts.some(c => c > 0)) {
+          drawVBar(byMonthCanvas, MONTHS, monthCounts);
+        } else {
+          byMonthCanvas.style.display = 'none';
+          document.getElementById('chart-bymonth-empty').style.display = '';
+        }
+      }
+
+      // Most-read authors (top 10)
+      {
+        const authorCounts2 = {};
+        for (const b of books) if (b.author) authorCounts2[b.author] = (authorCounts2[b.author] || 0) + 1;
+        const top = Object.entries(authorCounts2)
+          .filter(([, v]) => v > 1)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 10)
+          .map(([label, value]) => ({ label, value }));
+        const authorsCanvas = document.getElementById('chart-authors');
+        if (top.length >= 2) {
+          drawHBar(authorsCanvas, top);
+        } else {
+          authorsCanvas.style.display = 'none';
+          document.getElementById('chart-authors-empty').style.display = '';
+        }
       }
     }
 
