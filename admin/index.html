@@ -83,7 +83,7 @@
 
         <div class="settings-row" id="repair-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
           <span class="settings-row-label">Repair library</span>
-          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Merge duplicate entries, re-match unmatched books, fill metadata gaps, look up missing countries.</p>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Merge duplicate entries, re-match unmatched books, fill metadata gaps, look up missing countries, genres, and author gender.</p>
           <button class="btn-update" id="repair-btn" type="button">Repair</button>
           <div id="repair-status" style="display:none;font-size:.85rem"></div>
         </div>
@@ -471,10 +471,12 @@
 
         const dupeGroups   = computeDupeGroups(books);
         let unmatched      = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
-        let incomplete     = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author));
-        let needsCountry   = books.filter(b => !b.country && b.author);
+        let incomplete        = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author || !b.genres?.length));
+        let needsGenreNumeric = books.filter(b => b.gbid && /^\d+$/.test(b.gbid) && !b.genres?.length);
+        let needsCountry      = books.filter(b => !b.country && b.author);
+        let needsGender       = books.filter(b => !b.authorGender && b.author);
 
-        if (!dupeGroups.length && !unmatched.length && !incomplete.length && !needsCountry.length) {
+        if (!dupeGroups.length && !unmatched.length && !incomplete.length && !needsGenreNumeric.length && !needsCountry.length && !needsGender.length) {
           repairStatus.textContent = 'Nothing to repair — all books are matched and complete.';
           repairStatus.style.color = 'var(--accent)';
           repairBtn.disabled = false;
@@ -538,10 +540,12 @@
             fixed++;
           }
 
-          books        = await getBooks(targetUid);
-          unmatched    = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
-          incomplete   = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author));
-          needsCountry = books.filter(b => !b.country && b.author);
+          books             = await getBooks(targetUid);
+          unmatched         = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
+          incomplete        = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author || !b.genres?.length));
+          needsGenreNumeric = books.filter(b => b.gbid && /^\d+$/.test(b.gbid) && !b.genres?.length);
+          needsCountry      = books.filter(b => !b.country && b.author);
+          needsGender       = books.filter(b => !b.authorGender && b.author);
         }
 
         // ── Phase 1: match unmatched books ────────────────────────────────────
@@ -568,7 +572,7 @@
             const slugs = chunk.map(b => b.gbid);
             try {
               const data = await hcQuery(
-                `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:${CHUNK}){slug pages release_year contributions{author{name}}}}`,
+                `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:${CHUNK}){slug pages release_year contributions{author{name}} cached_tags}}`,
                 { slugs }
               );
               const bySlug = new Map((data?.data?.books || []).map(b => [b.slug, b]));
@@ -579,9 +583,36 @@
                 if (book.releaseYear == null && hc.release_year) updates.releaseYear = hc.release_year;
                 if (!book.totalPages && hc.pages)                updates.totalPages  = hc.pages;
                 if (!book.author) { const name = hc.contributions?.[0]?.author?.name; if (name) updates.author = name; }
+                if (!book.genres?.length) {
+                  const genres = (hc.cached_tags?.Genre || []).map(t => t.tag).filter(Boolean);
+                  if (genres.length) updates.genres = genres;
+                }
                 if (Object.keys(updates).length) { await updateBookMeta(targetUid, book.id, updates); fixed++; }
               }
             } catch (e) { console.warn('Slug batch failed', e); }
+          }
+        }
+
+        // ── Phase 2b: genres for numeric-ID books ────────────────────────────
+        if (needsGenreNumeric.length) {
+          const CHUNK = 50;
+          for (let c = 0; c < needsGenreNumeric.length; c += CHUNK) {
+            const chunk = needsGenreNumeric.slice(c, c + CHUNK);
+            repairStatus.textContent = `Fetching genres ${c + 1}–${Math.min(c + CHUNK, needsGenreNumeric.length)}/${needsGenreNumeric.length}…`;
+            try {
+              const ids = chunk.map(b => parseInt(b.gbid, 10));
+              const data = await hcQuery(
+                `query($ids:[Int!]!){books(where:{id:{_in:$ids}},limit:${CHUNK}){id cached_tags}}`,
+                { ids }
+              );
+              const byId = new Map((data?.data?.books || []).map(b => [b.id, b]));
+              for (const book of chunk) {
+                const hc = byId.get(parseInt(book.gbid, 10));
+                if (!hc) continue;
+                const genres = (hc.cached_tags?.Genre || []).map(t => t.tag).filter(Boolean);
+                if (genres.length) { await updateBookMeta(targetUid, book.id, { genres }); fixed++; }
+              }
+            } catch (e) { console.warn('Numeric genre batch failed', e); }
           }
         }
 
@@ -595,17 +626,27 @@
           }
         }
 
-        // ── Phase 3: fill country via overrides then Wikidata ─────────────────
-        if (needsCountry.length) {
-          repairStatus.textContent = `Looking up countries for ${needsCountry.length} book${needsCountry.length === 1 ? '' : 's'}…`;
+        // ── Phase 3: fill country + gender via Wikidata ───────────────────────
+        const wikiAuthors = [...new Set([
+          ...needsCountry.map(b => b.author),
+          ...needsGender.map(b => b.author),
+        ])];
+        if (wikiAuthors.length) {
+          repairStatus.textContent = `Looking up author data for ${wikiAuthors.length} author${wikiAuthors.length === 1 ? '' : 's'}…`;
           const authorOverrides = await getAuthorCountryOverrides();
-          const authorMap       = new Map();
-          const uniqueAuthors   = [...new Set(needsCountry.map(b => b.author))];
-          for (const authorName of uniqueAuthors) {
+          const countryMap = new Map();
+          const genderMap  = new Map();
+          const GENDER_MAP = {
+            Q6581072: 'Female', Q6581097: 'Male', Q1097630: 'Other',
+            Q48270: 'Non-binary', Q2449503: 'Female', Q1052281: 'Male',
+          };
+          for (const authorName of wikiAuthors) {
+            const needCountry = needsCountry.some(b => b.author === authorName);
+            const needGender  = needsGender.some(b => b.author === authorName);
             const overrideKey = authorName.toLowerCase().trim();
-            if (authorOverrides[overrideKey]) {
-              authorMap.set(authorName, authorOverrides[overrideKey]);
-              continue;
+            if (needCountry && authorOverrides[overrideKey]) {
+              countryMap.set(authorName, authorOverrides[overrideKey]);
+              if (!needGender) continue;
             }
             try {
               const base = 'https://www.wikidata.org/w/api.php';
@@ -616,28 +657,42 @@
               if (!qid) continue;
               const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
               if (!er.ok) continue;
-              const ed = await er.json();
-              const p27 = ed.entities?.[qid]?.claims?.P27 || [];
-              const bestP27 = p27.find(c => c.rank === 'preferred') || p27.find(c => c.rank === 'normal') || p27[0];
-              const countryQid = bestP27?.mainsnak?.datavalue?.value?.id;
-              if (!countryQid) continue;
-              const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
-              if (!lr.ok) continue;
-              const ld = await lr.json();
-              const country = ld.entities?.[countryQid]?.labels?.en?.value;
-              if (country) authorMap.set(authorName, normalizeCountry(country));
+              const claims = (await er.json()).entities?.[qid]?.claims || {};
+              if (needCountry && !countryMap.has(authorName)) {
+                const p27 = claims.P27 || [];
+                const bestP27 = p27.find(c => c.rank === 'preferred') || p27.find(c => c.rank === 'normal') || p27[0];
+                const countryQid = bestP27?.mainsnak?.datavalue?.value?.id;
+                if (countryQid) {
+                  const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
+                  if (lr.ok) {
+                    const ld = await lr.json();
+                    const country = ld.entities?.[countryQid]?.labels?.en?.value;
+                    if (country) countryMap.set(authorName, normalizeCountry(country));
+                  }
+                }
+              }
+              if (needGender) {
+                const p21 = claims.P21 || [];
+                const bestP21 = p21.find(c => c.rank === 'preferred') || p21.find(c => c.rank === 'normal') || p21[0];
+                const genderQid = bestP21?.mainsnak?.datavalue?.value?.id;
+                if (genderQid && GENDER_MAP[genderQid]) genderMap.set(authorName, GENDER_MAP[genderQid]);
+              }
             } catch (e) { /* skip */ }
           }
           for (const book of needsCountry) {
-            const country = authorMap.get(book.author);
+            const country = countryMap.get(book.author);
             if (country) { await updateBookMeta(targetUid, book.id, { country }); fixed++; }
+          }
+          for (const book of needsGender) {
+            const gender = genderMap.get(book.author);
+            if (gender) { await updateBookMeta(targetUid, book.id, { authorGender: gender }); fixed++; }
           }
         }
 
         repairStatus.textContent = 'Merging duplicate lists…';
         await mergeListsByName(targetUid);
 
-        const total = mergedGroupsCount + unmatched.length + incomplete.length + needsCountry.length;
+        const total = mergedGroupsCount + unmatched.length + incomplete.length + needsGenreNumeric.length + needsCountry.length + needsGender.length;
         repairStatus.textContent = `Done — updated ${fixed} of ${total} book${total === 1 ? '' : 's'}.`;
         repairStatus.style.color = 'var(--accent)';
       } catch (err) {

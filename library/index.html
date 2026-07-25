@@ -246,12 +246,14 @@
 
       // Phase 2: fill gaps for already-matched book via slug query
       const gbid = updates.gbid || book.gbid;
-      if (gbid && !/^\d+$/.test(gbid) && (book.releaseYear == null || !book.totalPages || !book.author)) {
+
+      if (gbid && !/^\d+$/.test(gbid) && (book.releaseYear == null || !book.totalPages || !book.author || !book.genres?.length)) {
         try {
           const data = await hcPost(
-            `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){slug pages release_year contributions{author{name}}}}`,
+            `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){slug pages release_year contributions{author{name}} cached_tags}}`,
             { slug: gbid }
           );
+
           const hc = data?.data?.books?.[0];
           if (hc) {
             if (book.releaseYear == null && hc.release_year) updates.releaseYear = hc.release_year;
@@ -260,8 +262,27 @@
               const name = hc.contributions?.[0]?.author?.name;
               if (name) updates.author = name;
             }
+            if (!book.genres?.length) {
+              const genres = (hc.cached_tags?.Genre || []).map(t => t.tag).filter(Boolean);
+              if (genres.length) updates.genres = genres;
+            }
           }
         } catch (e) { console.warn('Repair: slug query failed', e); }
+      } else {
+
+      }
+
+      // Phase 2b: genre fetch for numeric Hardcover IDs
+      if (gbid && /^\d+$/.test(gbid) && !book.genres?.length) {
+        try {
+          const data = await hcPost(
+            `query($id:Int!){books(where:{id:{_eq:$id}},limit:1){cached_tags}}`,
+            { id: parseInt(gbid, 10) }
+          );
+
+          const genres = (data?.data?.books?.[0]?.cached_tags?.Genre || []).map(t => t.tag).filter(Boolean);
+          if (genres.length) updates.genres = genres;
+        } catch (e) { console.warn('Repair: numeric genre query failed', e); }
       }
 
       // Phase 2.5: re-normalize stored country
@@ -270,14 +291,17 @@
         updates.country = normalizeCountry(storedCountry);
       }
 
-      // Phase 3: country lookup — overrides first, then Wikidata
+      // Phase 3: country + gender lookup — overrides first, then Wikidata
       const authorForCountry = updates.author || book.author;
-      if (!book.country && !updates.country && authorForCountry) {
-        const overrides = await getOverrides();
-        const overrideKey = authorForCountry.toLowerCase().trim();
-        if (overrides[overrideKey]) {
-          updates.country = overrides[overrideKey];
-        } else {
+      const needCountry = !book.country && !updates.country;
+      const needGender  = !book.authorGender && !updates.authorGender;
+      if (authorForCountry && (needCountry || needGender)) {
+        if (needCountry) {
+          const overrides = await getOverrides();
+          const overrideKey = authorForCountry.toLowerCase().trim();
+          if (overrides[overrideKey]) updates.country = overrides[overrideKey];
+        }
+        if (needCountry && !updates.country || needGender) {
           try {
             const base = 'https://www.wikidata.org/w/api.php';
             const sr = await fetch(`${base}?action=wbsearchentities&search=${encodeURIComponent(authorForCountry)}&language=en&type=item&format=json&origin=*&limit=1`);
@@ -288,16 +312,31 @@
                 const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
                 if (er.ok) {
                   const ed = await er.json();
-                  const p27 = ed.entities?.[qid]?.claims?.P27 || [];
-                  const bestP27 = p27.find(c => c.rank === 'preferred') || p27.find(c => c.rank === 'normal') || p27[0];
-                  const countryQid = bestP27?.mainsnak?.datavalue?.value?.id;
-                  if (countryQid) {
-                    const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
-                    if (lr.ok) {
-                      const ld = await lr.json();
-                      const countryName = ld.entities?.[countryQid]?.labels?.en?.value;
-                      if (countryName) updates.country = normalizeCountry(countryName);
+                  const claims = ed.entities?.[qid]?.claims || {};
+
+                  if (needCountry && !updates.country) {
+                    const p27 = claims.P27 || [];
+                    const bestP27 = p27.find(c => c.rank === 'preferred') || p27.find(c => c.rank === 'normal') || p27[0];
+                    const countryQid = bestP27?.mainsnak?.datavalue?.value?.id;
+                    if (countryQid) {
+                      const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
+                      if (lr.ok) {
+                        const ld = await lr.json();
+                        const countryName = ld.entities?.[countryQid]?.labels?.en?.value;
+                        if (countryName) updates.country = normalizeCountry(countryName);
+                      }
                     }
+                  }
+
+                  if (needGender) {
+                    const GENDER_MAP = {
+                      Q6581072: 'Female', Q6581097: 'Male', Q1097630: 'Intersex',
+                      Q48270: 'Non-binary', Q2449503: 'Transgender female', Q1052281: 'Transgender male',
+                    };
+                    const p21 = claims.P21 || [];
+                    const bestP21 = p21.find(c => c.rank === 'preferred') || p21.find(c => c.rank === 'normal') || p21[0];
+                    const genderQid = bestP21?.mainsnak?.datavalue?.value?.id;
+                    if (genderQid && GENDER_MAP[genderQid]) updates.authorGender = GENDER_MAP[genderQid];
                   }
                 }
               }
@@ -540,6 +579,15 @@
     }
 
 
+    function addCoverEditHint(coverWrap) {
+      coverWrap.style.position = 'relative';
+      coverWrap.style.cursor   = 'pointer';
+      const hint = document.createElement('div');
+      hint.style.cssText = 'position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:center;padding-bottom:.3rem;pointer-events:none';
+      hint.innerHTML = `<span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#fff;background:rgba(0,0,0,0.45);border-radius:2px;padding:.15rem .35rem;line-height:1.4">edit cover</span>`;
+      coverWrap.appendChild(hint);
+    }
+
     async function openCoverPicker(book, wrapEl, coverCell) {
       const overlay = document.createElement('div');
       overlay.className = 'cover-picker-overlay';
@@ -563,6 +611,12 @@
 
       try {
         let editions = [];
+
+        // Kick off Google Books fetch in parallel with Hardcover
+        const gbQuery = encodeURIComponent(`${book.title}${book.author ? ' ' + book.author : ''}`);
+        const GB_KEY = 'AIzaSyCHP8T9d3zm7IDhmRchE_wk2-9vR4xs_3I';
+        const gbFetch = fetch(`https://www.googleapis.com/books/v1/volumes?q=${gbQuery}&maxResults=20&printType=books&key=${GB_KEY}`)
+          .then(r => r.json()).catch(() => null);
 
         // search by title to get multiple book IDs (catches different publisher entries)
         const searchData = await hcPost(
@@ -705,6 +759,35 @@
           item.addEventListener('click', () => { item.style.opacity = '0.5'; pickCover(url); });
           grid.appendChild(item);
         });
+
+        // Google Books covers
+        const seenUrls = new Set([currentUrl, ...filteredEditions.map(e => e.image.url)].filter(Boolean));
+        const gbData  = await gbFetch;
+        const gbItems = gbData?.items || [];
+        const gbCovers = [];
+        for (const item of gbItems) {
+          const links = item.volumeInfo?.imageLinks;
+          if (!links) continue;
+          let url = links.thumbnail || links.smallThumbnail;
+          if (!url) continue;
+          url = url.replace(/^http:/, 'https:').replace(/&edge=curl/, '').replace(/zoom=\d/, 'zoom=0');
+          if (seenUrls.has(url)) continue;
+          seenUrls.add(url);
+          gbCovers.push(url);
+        }
+        if (gbCovers.length) {
+          const sep = document.createElement('div');
+          sep.style.cssText = 'width:100%;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);padding:.5rem 0 .2rem';
+          sep.textContent = 'Google Books';
+          grid.appendChild(sep);
+          gbCovers.forEach(url => {
+            const item = document.createElement('div');
+            item.className = 'cover-picker-item';
+            item.innerHTML = `<img src="${esc(url)}" alt="" loading="lazy">`;
+            item.addEventListener('click', () => { item.style.opacity = '0.5'; pickCover(url); });
+            grid.appendChild(item);
+          });
+        }
       } catch (err) {
         console.error(err);
         grid.innerHTML = '<span style="font-size:.85rem;color:var(--text-muted)">Failed to load covers.</span>';
@@ -894,7 +977,7 @@
         if (type === 'select') {
           control = document.createElement('select');
           control.className = 'page-input';
-          control.style.cssText = 'flex:1;font-size:.8rem;text-align:left';
+          control.style.cssText = 'flex:1;font-size:.8rem;text-align:left;appearance:none;-webkit-appearance:none';
           const blank = document.createElement('option');
           blank.value = ''; blank.textContent = '—';
           control.appendChild(blank);
@@ -904,6 +987,13 @@
             if (v === (book[key] ?? '')) o.selected = true;
             control.appendChild(o);
           });
+        } else if (type === 'tags') {
+          control = document.createElement('input');
+          control.type = 'text';
+          control.value = (book[key] || []).join(', ');
+          control.className = 'page-input';
+          control.style.cssText = 'flex:1;font-size:.8rem;text-align:left';
+          control.placeholder = 'comma-separated';
         } else {
           control = document.createElement('input');
           control.type = type;
@@ -930,8 +1020,17 @@
         const updates = {};
         fieldDefs.forEach(({ key, type }) => {
           const raw = inputs[key].value.trim();
-          const val = type === 'number' ? (parseInt(raw) || null) : (raw || null);
-          if (val !== (book[key] ?? null)) updates[key] = val;
+          let val;
+          if (type === 'number') {
+            val = parseInt(raw) || null;
+          } else if (type === 'tags') {
+            val = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : null;
+          } else {
+            val = raw || null;
+          }
+          const existing = type === 'tags' ? (book[key] || null) : (book[key] ?? null);
+          const differs  = type === 'tags' ? JSON.stringify(val) !== JSON.stringify(existing) : val !== existing;
+          if (differs) updates[key] = val;
         });
         if (!Object.keys(updates).length) return;
         markDirty();
@@ -1075,6 +1174,7 @@
       const coverWrap = card.querySelector('.book-cover-wrap');
       const coverImg  = coverWrap.querySelector('.book-cover, .book-cover-img');
       if (coverImg) { coverImg.style.width = '72px'; coverImg.style.height = '108px'; }
+      addCoverEditHint(coverWrap);
       coverWrap.addEventListener('click', () => openCoverPicker(book, coverWrap, coverCell));
 
       const coverCol = document.createElement('div');
@@ -1298,10 +1398,12 @@
       });
 
       const detailsSection = addDetailsEditor(card, book, coverCell, [
-        { label: 'Title',        key: 'title',       type: 'text'   },
-        { label: 'Author',       key: 'author',      type: 'text'   },
-        { label: 'Country',      key: 'country',     type: 'text',   options: COUNTRIES },
-        { label: 'Release year', key: 'releaseYear', type: 'number' },
+        { label: 'Title',         key: 'title',        type: 'text'   },
+        { label: 'Author',        key: 'author',       type: 'text'   },
+        { label: 'Gender',        key: 'authorGender', type: 'select', options: ['Male', 'Female', 'Non-binary', 'Other'] },
+        { label: 'Country',       key: 'country',      type: 'text',   options: COUNTRIES },
+        { label: 'Release year',  key: 'releaseYear',  type: 'number' },
+        { label: 'Genres',        key: 'genres',       type: 'tags'   },
       ]);
       detailsSection.style.cssText = 'display:none;padding-top:.6rem;margin-top:.5rem;border-top:1px solid var(--border)';
       detailsSection.querySelectorAll('.page-input').forEach(el => el.style.background = 'var(--bg)');
@@ -1467,6 +1569,7 @@
       const coverWrap = card.querySelector('.book-cover-wrap');
       const coverImg  = coverWrap.querySelector('.book-cover, .book-cover-img');
       if (coverImg) { coverImg.style.width = '72px'; coverImg.style.height = '108px'; }
+      addCoverEditHint(coverWrap);
       coverWrap.addEventListener('click', () => openCoverPicker(book, coverWrap, coverCell));
 
       const coverCol = document.createElement('div');
@@ -1778,11 +1881,13 @@
       reviewTa.addEventListener('input',   debouncedSave);
 
       const detailsSection = addDetailsEditor(card, book, coverCell, [
-        { label: 'Title',        key: 'title',       type: 'text'   },
-        { label: 'Author',       key: 'author',      type: 'text'   },
-        { label: 'Country',      key: 'country',     type: 'text',   options: COUNTRIES },
-        { label: 'Release year', key: 'releaseYear', type: 'number' },
-        { label: 'Total pages',  key: 'totalPages',  type: 'number' },
+        { label: 'Title',         key: 'title',        type: 'text'   },
+        { label: 'Author',        key: 'author',       type: 'text'   },
+        { label: 'Gender',        key: 'authorGender', type: 'select', options: ['Male', 'Female', 'Non-binary', 'Other'] },
+        { label: 'Country',       key: 'country',      type: 'text',   options: COUNTRIES },
+        { label: 'Release year',  key: 'releaseYear',  type: 'number' },
+        { label: 'Total pages',   key: 'totalPages',   type: 'number' },
+        { label: 'Genres',        key: 'genres',       type: 'tags'   },
       ]);
       detailsSection.style.cssText = 'display:none;padding-top:.6rem;margin-top:.5rem;border-top:1px solid var(--border)';
       detailsSection.querySelectorAll('.page-input').forEach(el => el.style.background = 'var(--bg)');
