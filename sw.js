@@ -1,4 +1,4 @@
-const CACHE = 'paperbackd-v16';
+const CACHE = 'paperbackd-v17';
 
 // Firebase API hosts — never intercept these
 const PASS_THROUGH = [
@@ -85,18 +85,29 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Same-origin — stale-while-revalidate (instant from cache, updates in background)
   if (url.origin === self.location.origin) {
-    event.respondWith(
-      caches.open(CACHE).then(cache =>
-        cache.match(event.request).then(cached => {
-          const fresh = fetch(event.request).then(response => {
-            cache.put(event.request, response.clone());
-            return response;
-          }).catch(() => cached);
-          return cached || fresh;
-        })
-      )
-    );
+    if (event.request.mode === 'navigate') {
+      // HTML page navigations — network-first so updates are always visible immediately.
+      // Falls back to cache only when offline.
+      event.respondWith(
+        fetch(event.request).then(response => {
+          caches.open(CACHE).then(c => c.put(event.request, response.clone()));
+          return response;
+        }).catch(() => caches.match(event.request))
+      );
+    } else {
+      // JS/CSS/assets — stale-while-revalidate (instant from cache, updates in background)
+      event.respondWith(
+        caches.open(CACHE).then(cache =>
+          cache.match(event.request).then(cached => {
+            const fresh = fetch(event.request).then(response => {
+              cache.put(event.request, response.clone());
+              return response;
+            }).catch(() => cached);
+            return cached || fresh;
+          })
+        )
+      );
+    }
   }
 });

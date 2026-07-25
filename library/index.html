@@ -36,7 +36,16 @@
   </header>
 
   <main class="page-content">
-    <h1 class="page-title" id="page-title">library<span class="title-dot">.</span></h1>
+    <div class="page-title-row">
+      <h1 class="page-title" id="page-title">library<span class="title-dot">.</span></h1>
+      <div style="position:relative">
+        <button id="friends-btn" style="display:none" aria-haspopup="true" aria-expanded="false" title="Switch profile">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+          <svg class="chev" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div id="friends-menu" hidden role="menu"></div>
+      </div>
+    </div>
 
 
     <div id="library-filter-wrap" style="display:none;margin-bottom:.625rem">
@@ -132,7 +141,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides } from '../js/firebase.js';
+    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
@@ -306,6 +315,30 @@
     const viewUser = params.get('u')?.toLowerCase();
     const isOwn    = !viewUser;
     if (isOwn) document.getElementById('page-title').innerHTML = `<a href="../profile/" style="color:var(--accent);text-decoration:none">${esc(profile.username)}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>library<span class="title-dot">.</span>`;
+
+    (async () => {
+      const following = await getFollowing(profile.uid);
+      if (!following.length && isOwn) return;
+      const btn  = document.getElementById('friends-btn');
+      const menu = document.getElementById('friends-menu');
+      if (!isOwn) {
+        const a = document.createElement('a');
+        a.href = '../library/';
+        a.textContent = profile.username;
+        menu.appendChild(a);
+        if (following.length) { const d = document.createElement('div'); d.className = 'friends-divider'; menu.appendChild(d); }
+      }
+      for (const f of following) {
+        const a = document.createElement('a');
+        a.href = `../library/?u=${encodeURIComponent(f.username)}`;
+        a.textContent = f.username;
+        if (f.username === viewUser) a.classList.add('friends-active');
+        menu.appendChild(a);
+      }
+      btn.style.display = '';
+      btn.addEventListener('click', e => { e.stopPropagation(); const o = menu.hidden; menu.hidden = !o; btn.setAttribute('aria-expanded', String(o)); });
+      document.addEventListener('click', () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); });
+    })();
 
     const readingList  = document.getElementById('reading-list');
     const finishedList = document.getElementById('finished-list');

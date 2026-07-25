@@ -261,7 +261,22 @@
 
   <main class="page-content">
 
-    <h1 class="page-title" id="page-heading"></h1>
+    <div class="page-title-row">
+      <h1 class="page-title" id="page-heading"></h1>
+      <div style="position:relative">
+        <button id="friends-btn" style="display:none" aria-haspopup="true" aria-expanded="false" title="Switch profile">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+          </svg>
+          <svg class="chev" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+        <div id="friends-menu" hidden role="menu"></div>
+      </div>
+    </div>
 
     <div class="stats-tab-bar">
       <button class="stats-tab-btn active" id="tab-summary">Summary</button>
@@ -387,7 +402,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getProfileByUsername, getProfile, getFinishedBooks, db } from '../js/firebase.js';
+    import { getProfileByUsername, getProfile, getFinishedBooks, getFollowing, db } from '../js/firebase.js';
     import { doc, updateDoc, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const NOW  = new Date();
@@ -870,6 +885,45 @@
       ? `<a href="../profile/" style="color:var(--accent);text-decoration:none">${targetProfile.username}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>stats<span class="title-dot">.</span>`
       : `<a href="../profile/?u=${encodeURIComponent(targetProfile.username)}" style="color:var(--accent);text-decoration:none">${targetProfile.username}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>stats<span class="title-dot">.</span>`;
 
+    // Friends dropdown — load async so it doesn't block the main stats render
+    (async () => {
+      const following = await getFollowing(myProfile.uid);
+      if (!following.length && isOwn) return;
+      const btn  = document.getElementById('friends-btn');
+      const menu = document.getElementById('friends-menu');
+
+      if (!isOwn) {
+        const a = document.createElement('a');
+        a.href = '../stats/';
+        a.textContent = myProfile.username;
+        menu.appendChild(a);
+        if (following.length) {
+          const div = document.createElement('div');
+          div.className = 'friends-divider';
+          menu.appendChild(div);
+        }
+      }
+      for (const f of following) {
+        const a = document.createElement('a');
+        a.href = `../stats/?u=${encodeURIComponent(f.username)}`;
+        a.textContent = f.username;
+        if (f.username === targetProfile.username) a.classList.add('friends-active');
+        menu.appendChild(a);
+      }
+
+      btn.style.display = '';
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const opening = menu.hidden;
+        menu.hidden = !opening;
+        btn.setAttribute('aria-expanded', String(opening));
+      });
+      document.addEventListener('click', () => {
+        menu.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+      });
+    })();
+
     const books = await getFinishedBooks(targetProfile.uid);
 
     // ── Tab switching ──────────────────────────────────────────────────────────
@@ -939,30 +993,34 @@
         if (cont) continentCounts[cont]++;
       }
 
+      const pl = (n, s, p) => n === 1 ? s : p;
+      const fiveStars = rated.filter(b => b.rating === 5).length;
+      const halfStars = rated.filter(b => b.rating === 0.5).length;
+
       const sections = [
         { title: 'books', stats: [
-          { label: 'books read',         value: total.toLocaleString() },
-          { label: 'books read this year',  value: thisYear },
-          { label: 'books read this month', value: thisMonth },
-          { label: 'authors read',       value: uniqueAuthors || '–' },
-          { label: 'pages read',         value: totalPages ? totalPages.toLocaleString() : '–' },
-          { label: 'average pages',      value: avgPages != null ? avgPages.toLocaleString() : '–' },
+          { label: pl(total,         'book read',            'books read'),            value: total.toLocaleString() },
+          { label: pl(thisYear,      'book read this year',  'books read this year'),  value: thisYear },
+          { label: pl(thisMonth,     'book read this month', 'books read this month'), value: thisMonth },
+          { label: pl(uniqueAuthors, 'author read',          'authors read'),          value: uniqueAuthors || '–' },
+          { label: pl(totalPages,    'page read',            'pages read'),            value: totalPages ? totalPages.toLocaleString() : '–' },
+          { label: 'average pages',  value: avgPages != null ? avgPages.toLocaleString() : '–' },
         ]},
         { title: 'ratings', stats: [
-          { label: 'average rating', value: avgRating != null ? avgRating.toFixed(1) + ' ★' : '–' },
+          { label: 'average rating',    value: avgRating != null ? avgRating.toFixed(1) + ' ★' : '–' },
           { label: 'standard deviation', value: stdDev != null ? stdDev.toFixed(2) : '–' },
-          { label: '5 star reviews',   value: rated.filter(b => b.rating === 5).length },
-          { label: '1/2 star reviews', value: rated.filter(b => b.rating === 0.5).length },
+          { label: pl(fiveStars, '5 star review',   '5 star reviews'),   value: fiveStars },
+          { label: pl(halfStars, '1/2 star review', '1/2 star reviews'), value: halfStars },
         ]},
         { title: 'countries', stats: [
-          { label: 'countries',      value: uniqueCountries || '–' },
-          { label: 'languages',      value: uniqueLanguages || '–' },
-          { label: 'african books',        value: continentCounts.AF },
-          { label: 'asian books',          value: continentCounts.AS },
-          { label: 'european books',       value: continentCounts.EU },
-          { label: 'north american books', value: continentCounts.NA },
-          { label: 'oceanian books',       value: continentCounts.OC },
-          { label: 'south american books', value: continentCounts.SA },
+          { label: pl(uniqueCountries,    'country',             'countries'),             value: uniqueCountries || '–' },
+          { label: pl(uniqueLanguages,    'language',            'languages'),             value: uniqueLanguages || '–' },
+          { label: pl(continentCounts.AF, 'african book',        'african books'),         value: continentCounts.AF },
+          { label: pl(continentCounts.AS, 'asian book',          'asian books'),           value: continentCounts.AS },
+          { label: pl(continentCounts.EU, 'european book',       'european books'),        value: continentCounts.EU },
+          { label: pl(continentCounts.NA, 'north american book', 'north american books'),  value: continentCounts.NA },
+          { label: pl(continentCounts.OC, 'oceanian book',       'oceanian books'),        value: continentCounts.OC },
+          { label: pl(continentCounts.SA, 'south american book', 'south american books'),  value: continentCounts.SA },
         ]},
         { title: 'highlights', stats: (() => {
           const authorCounts = {};
