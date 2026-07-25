@@ -429,7 +429,9 @@
       northamerican:  'North American books',
       oceanian:       'Oceanian books',
       southamerican:  'South American books',
+      diversity:      'Female/NB %',
     };
+    const PCT_TYPES = new Set(['diversity']);
     const ISO_CONTINENT = {
       ng:'AF', za:'AF', eg:'AF', ke:'AF', gh:'AF', et:'AF', ma:'AF', tz:'AF', ug:'AF', zw:'AF', rw:'AF', ao:'AF',
       jp:'AS', cn:'AS', kr:'AS', tw:'AS', in:'AS', pk:'AS', bd:'AS', lk:'AS', vn:'AS', th:'AS', id:'AS', ph:'AS',
@@ -773,7 +775,7 @@
 
     // ── Ring SVG ───────────────────────────────────────────────────────────────
 
-    function buildRingCard(type, period, target, current, isOwn, { onSet, onRemove, color = 'var(--accent)' } = {}) {
+    function buildRingCard(type, period, target, current, isOwn, { onSet, onRemove, color = 'var(--accent)', suffix = '' } = {}) {
       const label = TARGET_TYPES[type] || type;
       const R = 44, CX = 55, CY = 55, SW = 9;
       const circ = 2 * Math.PI * R;
@@ -830,11 +832,11 @@
       center.className = 'target-ring-center';
       const num = document.createElement('div');
       num.className = 'target-ring-num';
-      num.textContent = current;
+      num.textContent = current + suffix;
       if (done) num.style.color = '#fff';
       const denom = document.createElement('div');
       denom.className = 'target-ring-denom';
-      denom.textContent = target > 0 ? `of ${target}` : 'no target';
+      denom.textContent = target > 0 ? `of ${target}${suffix}` : 'no target';
       if (done) denom.style.color = 'rgba(255,255,255,.75)';
       center.appendChild(num);
       center.appendChild(denom);
@@ -1003,6 +1005,23 @@
         if (cont) continentCounts[cont]++;
       }
 
+      const genderCounts = { Male: 0, Female: 0, 'Non-binary': 0, Other: 0 };
+      const seenGenderAuthors = new Set();
+      for (const b of books) {
+        if (!b.author || !b.authorGender) continue;
+        if (seenGenderAuthors.has(b.author)) continue;
+        seenGenderAuthors.add(b.author);
+        if (b.authorGender in genderCounts) genderCounts[b.authorGender]++;
+      }
+      const genderKnown = genderCounts.Male + genderCounts.Female + genderCounts['Non-binary'] + genderCounts.Other;
+      const genderRatio = genderKnown > 0
+        ? [
+            Math.round(genderCounts.Male        / genderKnown * 100),
+            Math.round(genderCounts.Female      / genderKnown * 100),
+            Math.round(genderCounts['Non-binary'] / genderKnown * 100),
+          ].join('/')
+        : '–';
+
       const pl = (n, s, p) => n === 1 ? s : p;
       const fiveStars = rated.filter(b => b.rating === 5).length;
       const halfStars = rated.filter(b => b.rating === 0.5).length;
@@ -1032,6 +1051,13 @@
           { label: pl(continentCounts.OC, 'oceanian book',       'oceanian books'),        value: continentCounts.OC },
           { label: pl(continentCounts.SA, 'south american book', 'south american books'),  value: continentCounts.SA },
         ]},
+        ...(genderKnown > 0 ? [{ title: 'gender', stats: [
+          { label: pl(genderCounts.Male,          'male author',        'male authors'),        value: genderCounts.Male },
+          { label: pl(genderCounts.Female,        'female author',      'female authors'),      value: genderCounts.Female },
+          { label: pl(genderCounts['Non-binary'], 'non-binary author',  'non-binary authors'),  value: genderCounts['Non-binary'] },
+          ...(genderCounts.Other > 0 ? [{ label: pl(genderCounts.Other, 'other', 'other'), value: genderCounts.Other }] : []),
+          { label: 'gender ratio (M/F/NB)', value: genderRatio },
+        ]}] : []),
         { title: 'highlights', stats: (() => {
           const authorCounts = {};
           for (const b of books) if (b.author) authorCounts[b.author] = (authorCounts[b.author] || 0) + 1;
@@ -1090,6 +1116,12 @@
       if (type === 'books')     return finished.length;
       if (type === 'languages') return new Set(finished.map(b => b.language).filter(Boolean)).size;
       if (type === 'countries') return new Set(finished.map(b => b.country).filter(Boolean)).size;
+      if (type === 'diversity') {
+        const withGender = finished.filter(b => b.authorGender);
+        if (!withGender.length) return 0;
+        const diverse = withGender.filter(b => b.authorGender === 'Female' || b.authorGender === 'Non-binary' || b.authorGender === 'Other');
+        return Math.round(diverse.length / withGender.length * 100);
+      }
       const contKey = CONTINENT_TYPE[type];
       if (contKey) return finished.filter(b => {
         const iso = b.country && COUNTRY_ISO[b.country.toLowerCase()];
@@ -1154,6 +1186,7 @@
             onSet:    v => saveTarget(type, period, v),
             onRemove: () => { showToast('Target removed'); saveTarget(type, period, 0); },
             color,
+            suffix: PCT_TYPES.has(type) ? '%' : '',
           }));
         }
         section.appendChild(sectionGrid);

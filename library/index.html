@@ -2099,8 +2099,10 @@
       [
         ['Title',        book.title],
         ['Author',       book.author],
+        ['Gender',       book.authorGender],
         ['Country',      book.country],
         ['Release year', book.releaseYear],
+        ['Genres',       book.genres?.length ? book.genres.join(', ') : null],
       ].forEach(([lbl, val]) => {
         if (!val) return;
         detailsSection.appendChild(staticMetaRow(lbl, String(val)));
@@ -2211,9 +2213,11 @@
       [
         ['Title',        book.title],
         ['Author',       book.author],
+        ['Gender',       book.authorGender],
         ['Country',      book.country],
         ['Release year', book.releaseYear],
         ['Total pages',  book.totalPages],
+        ['Genres',       book.genres?.length ? book.genres.join(', ') : null],
       ].forEach(([lbl, val]) => {
         if (!val) return;
         detailsSection.appendChild(staticLabelRow(lbl, String(val)));
