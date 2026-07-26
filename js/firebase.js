@@ -566,7 +566,15 @@ async function upsertActivityTimestamp(uid, type, date, { bookId, title, author,
     });
   }
   if (matching.length > 0) {
-    await Promise.all(matching.map(d => updateDoc(d.ref, { timestamp: date })));
+    await Promise.all(matching.map(d => {
+      const update = { timestamp: date, bookTitle: title || '', bookAuthor: author || '' };
+      if (gbid) update.gbid = gbid;
+      if (type === 'finished') {
+        update.rating    = rating ?? null;
+        update.hasReview = !!(review && review.trim());
+      }
+      return updateDoc(d.ref, update);
+    }));
   } else {
     const entry = {
       uid, username: username || '', type,
@@ -613,12 +621,15 @@ export async function updateBookMeta(uid, bookId, updates, { gbid, title } = {})
   await updateDoc(doc(db, 'users', uid, 'books', bookId), updates);
   const hasProgress = updates.currentPage !== undefined || updates.totalPages !== undefined;
   const hasCover    = updates.coverUrl !== undefined;
-  if (hasProgress || hasCover) {
-    const docs = await activityDocsForBook(uid, { bookId, gbid, title });
+  const hasMeta     = updates.title !== undefined || updates.author !== undefined;
+  if (hasProgress || hasCover || hasMeta) {
+    const docs = await activityDocsForBook(uid, { bookId, gbid, title: title || updates.title });
     await Promise.all(docs.map(d => {
       const isStarted = d.data().type === 'started';
       const update = {};
-      if (hasCover) update.coverUrl = updates.coverUrl;
+      if (hasCover)                                  update.coverUrl   = updates.coverUrl;
+      if (updates.title  !== undefined)              update.bookTitle  = updates.title  || '';
+      if (updates.author !== undefined)              update.bookAuthor = updates.author || '';
       if (hasProgress && isStarted) {
         if (updates.currentPage !== undefined) update.currentPage = updates.currentPage;
         if (updates.totalPages  !== undefined) update.totalPages  = updates.totalPages;
@@ -647,7 +658,17 @@ export function updateBookReads(uid, bookId, reads) {
       review: r.review || null,
     }))
     .sort((a, b) => (a.finishedAt?.seconds ?? 0) - (b.finishedAt?.seconds ?? 0));
-  return updateDoc(doc(db, 'users', uid, 'books', bookId), { reads: cleaned });
+  const mostRecent = cleaned.reduce((best, r) =>
+    (r.finishedAt?.seconds ?? 0) > (best?.finishedAt?.seconds ?? 0) ? r : best, cleaned[0] ?? null);
+  return updateDoc(doc(db, 'users', uid, 'books', bookId), {
+    reads:                cleaned,
+    rating:               mostRecent?.rating             ?? deleteField(),
+    review:               mostRecent?.review             || deleteField(),
+    finishedAt:           mostRecent?.finishedAt         ?? deleteField(),
+    finishedAtPrecision:  mostRecent?.finishedAtPrecision || deleteField(),
+    language:             mostRecent?.language           || deleteField(),
+    format:               mostRecent?.format             || deleteField(),
+  });
 }
 
 export function updateBookRating(uid, bookId, { rating, review }) {

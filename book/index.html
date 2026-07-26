@@ -252,7 +252,7 @@
           ${author ? `<div style="color:var(--text-muted);font-size:.875rem;margin-top:.2rem"><a href="../author/?slug=${encodeURIComponent(authorSlug)}" style="color:inherit;text-decoration:none">${esc(author)}</a></div>` : ''}
           ${pages  ? `<div style="color:var(--text-muted);font-size:.78rem;margin-top:.15rem">${pages} pages</div>` : ''}
           ${desc   ? `<div class="book-desc" style="font-size:.825rem;color:var(--text-muted);margin-top:.75rem;line-height:1.55">${esc(desc.slice(0, 300))}${desc.length > 300 ? '<span class="book-desc-more" style="cursor:pointer;color:var(--accent);white-space:nowrap">… more</span>' : ''}</div>` : ''}
-          ${myBook ? `<div style="margin-top:.625rem;font-size:.8rem;color:var(--accent);font-weight:500">${myBook.status === 'reading' ? (myBook.totalPages ? `You're reading this · page ${myBook.currentPage} of ${myBook.totalPages}` : `You're currently reading this`) : `You've finished this`}</div>${myBook.status === 'finished' ? renderStars(myBook.rating) : ''}${myBook.status === 'finished' && myBook.review ? `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(myBook.review.slice(0, 200))}${myBook.review.length > 200 ? '…' : ''}</div>` : ''}` : ''}
+          ${myBook ? `<div style="margin-top:.625rem;font-size:.8rem;color:var(--accent);font-weight:500">${myBook.status === 'reading' ? (myBook.totalPages ? `You're reading this · page ${myBook.currentPage} of ${myBook.totalPages}` : `You're currently reading this`) : `You've finished this`}</div>` : ''}
         </div>
       </div>`;
       detail.appendChild(card);
@@ -447,7 +447,8 @@
       const listUids = new Set(listStatuses.map(f => f.uid));
       const readingListOnly = listStatuses.filter(f => !friendStatuses.some(s => s.uid === f.uid));
 
-      if (friendStatuses.length || readingListOnly.length) {
+      const showOwnCard = myBook?.status === 'finished';
+      if (showOwnCard || friendStatuses.length || readingListOnly.length) {
         document.getElementById('friends-title').style.display = '';
         const list = document.getElementById('friends-list');
 
@@ -477,41 +478,28 @@
           return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
         };
 
-        for (const { username, avatarUrl, avatarBorderColor, book } of friendStatuses) {
-          if (book.status === 'reading') {
-            const status = book.totalPages
-              ? `Currently reading · page ${book.currentPage} of ${book.totalPages}`
-              : 'Currently reading';
-            list.appendChild(friendCard(
-              { username, avatarUrl, avatarBorderColor },
-              `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">${status}</div>`
-            ));
-            continue;
-          }
-
+        function renderReadCard({ username, avatarUrl, avatarBorderColor }, book) {
           const reads = (book.reads?.length > 0) ? [...book.reads] : [{
             finishedAt: book.finishedAt || null, finishedAtPrecision: book.finishedAtPrecision || null,
             rating: book.rating || null, review: book.review || null,
           }];
           reads.sort((a, b) => tsVal(b.finishedAt) - tsVal(a.finishedAt));
-
           const card = friendCard({ username, avatarUrl, avatarBorderColor }, '');
           const contentEl = card.querySelector('.friend-item > div');
-
           let selectedIdx = 0;
           const metaEl = document.createElement('div');
-
           function renderRead(idx) {
             const r = reads[idx];
+            const displayRating = r.rating ?? (idx === 0 ? book.rating : null);
+            const displayReview = r.review || (idx === 0 ? book.review : null);
             const dateStr = fmtDate(r.finishedAt, r.finishedAtPrecision);
             let html = `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">Finished${dateStr ? ` · ${dateStr}` : ''}</div>`;
-            if (r.rating) html += renderStars(r.rating);
-            if (r.review) html += `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(r.review.slice(0, 150))}${r.review.length > 150 ? '…' : ''}</div>`;
+            if (displayRating) html += renderStars(displayRating);
+            if (displayReview) html += `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;margin-top:.2rem;line-height:1.4">${esc(displayReview.slice(0, 150))}${displayReview.length > 150 ? '…' : ''}</div>`;
             metaEl.innerHTML = html;
           }
           renderRead(0);
           contentEl.appendChild(metaEl);
-
           if (reads.length > 1) {
             const switcherEl = document.createElement('div');
             switcherEl.style.cssText = 'display:flex;gap:.3rem;margin-top:.35rem;flex-wrap:wrap';
@@ -525,17 +513,37 @@
                 selectedIdx = i;
                 renderRead(i);
                 switcherEl.querySelectorAll('button').forEach((b, j) => {
-                  const sel = j === i;
-                  b.style.borderColor = sel ? 'var(--accent)' : 'var(--border)';
-                  b.style.color       = sel ? 'var(--accent)' : 'var(--text-muted)';
+                  b.style.borderColor = j === i ? 'var(--accent)' : 'var(--border)';
+                  b.style.color       = j === i ? 'var(--accent)' : 'var(--text-muted)';
                 });
               });
               switcherEl.appendChild(pill);
             });
             contentEl.appendChild(switcherEl);
           }
+          return card;
+        }
 
-          list.appendChild(card);
+        if (showOwnCard) {
+          list.appendChild(renderReadCard(
+            { username: profile.username, avatarUrl: profile.avatarUrl, avatarBorderColor: profile.avatarBorderColor },
+            myBook
+          ));
+        }
+
+        for (const { username, avatarUrl, avatarBorderColor, book } of friendStatuses) {
+          if (book.status === 'reading') {
+            const status = book.totalPages
+              ? `Currently reading · page ${book.currentPage} of ${book.totalPages}`
+              : 'Currently reading';
+            list.appendChild(friendCard(
+              { username, avatarUrl, avatarBorderColor },
+              `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">${status}</div>`
+            ));
+            continue;
+          }
+
+          list.appendChild(renderReadCard({ username, avatarUrl, avatarBorderColor }, book));
         }
 
         for (const { username, avatarUrl, avatarBorderColor, listNames } of readingListOnly) {

@@ -1080,9 +1080,24 @@
         }
       }
 
-      fieldDefs.forEach(({ key, type }) => {
-        inputs[key].addEventListener(type === 'select' ? 'change' : 'blur', doSaveBookMeta);
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.className = 'join-club-btn';
+      saveBtn.textContent = 'Save';
+      saveBtn.style.cssText = 'font-size:.78rem;padding:.35rem .75rem;margin-top:.5rem';
+      saveBtn.addEventListener('click', async () => {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving…';
+        try {
+          await doSaveBookMeta();
+          saveBtn.textContent = 'Saved ✓';
+          setTimeout(() => { if (saveBtn.isConnected) { saveBtn.textContent = 'Save'; saveBtn.disabled = false; } }, 1500);
+        } catch {
+          saveBtn.textContent = 'Failed';
+          saveBtn.disabled = false;
+        }
       });
+      section.appendChild(saveBtn);
 
       card.appendChild(section);
       return section;
@@ -1235,7 +1250,43 @@
         }
       });
 
-      card.querySelector('.book-started-date').replaceWith(makeDateEl('Started', book.addedAt, 'addedAt', book));
+      let startedPicker;
+      {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.4rem;margin-top:.35rem';
+        const lbl = document.createElement('span');
+        lbl.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:80px';
+        lbl.textContent = 'Started';
+        startedPicker = createPartialDatePicker(book.addedAt, book.addedAtPrecision ?? null);
+        startedPicker.style.display = 'none';
+        const textEl = document.createElement('span');
+        textEl.className = 'book-date-editable';
+        textEl.style.cssText = 'font-size:.8rem;color:var(--text)';
+        textEl.textContent = (book.addedAt && book.addedAtPrecision) ? formatDateTs(book.addedAt, book.addedAtPrecision) : '—';
+        function collapseStarted() {
+          const { date: d, precision: p } = startedPicker.getDate();
+          textEl.textContent = d ? formatDateTs({ toDate: () => d }, p) : '—';
+          startedPicker.style.display = 'none';
+          textEl.style.display = '';
+        }
+        textEl.addEventListener('click', () => {
+          textEl.style.display = 'none';
+          startedPicker.style.display = '';
+          startedPicker.querySelector('select')?.focus();
+          function onOutside(e) {
+            if (startedPicker.contains(e.target)) return;
+            collapseStarted();
+            document.removeEventListener('mousedown', onOutside);
+          }
+          document.addEventListener('mousedown', onOutside);
+        });
+        startedPicker.addEventListener('focusout', e => {
+          if (startedPicker.contains(e.relatedTarget)) return;
+          collapseStarted();
+        });
+        row.append(lbl, textEl, startedPicker);
+        card.querySelector('.book-started-date').replaceWith(row);
+      }
 
       // Inline Language / Format rows (click-to-edit, same style as finished card)
       const readingMeta = card.querySelector('.book-reading-meta');
@@ -1252,7 +1303,7 @@
         const ctrl = buildControl();
         ctrl.style.display = 'none';
         textEl.addEventListener('click', () => { textEl.style.display = 'none'; ctrl.style.display = ''; ctrl.focus?.(); });
-        ctrl.addEventListener('blur', () => { textEl.textContent = ctrl.value || '—'; ctrl.style.display = 'none'; textEl.style.display = ''; onSave(ctrl.value || null); });
+        ctrl.addEventListener('blur', () => { textEl.textContent = ctrl.value || '—'; ctrl.style.display = 'none'; textEl.style.display = ''; });
         row.append(lbl, textEl, ctrl);
         return row;
       }
@@ -1263,29 +1314,74 @@
       LANGUAGES.forEach(v => { const o = document.createElement('option'); o.value = v; langDl.appendChild(o); });
       card.appendChild(langDl);
 
+      let langCtrl, fmtCtrl;
       readingMeta.appendChild(textToggleRowR('Language', book.language || 'English', () => {
-        const inp = document.createElement('input');
-        inp.type = 'text'; inp.className = 'page-input';
-        inp.style.cssText = 'font-size:.8rem;width:auto';
-        inp.value = book.language || 'English';
-        inp.setAttribute('list', langDlId);
-        return inp;
-      }, val => { book.language = val; updateBookMeta(user.uid, book.id, { language: val }); }));
+        langCtrl = document.createElement('input');
+        langCtrl.type = 'text'; langCtrl.className = 'page-input';
+        langCtrl.style.cssText = 'font-size:.8rem;width:auto';
+        langCtrl.value = book.language || 'English';
+        langCtrl.setAttribute('list', langDlId);
+        return langCtrl;
+      }));
 
       readingMeta.appendChild(textToggleRowR('Format', book.format || '—', () => {
-        const sel = document.createElement('select');
-        sel.className = 'page-input';
-        sel.style.cssText = 'font-size:.8rem;width:auto';
+        fmtCtrl = document.createElement('select');
+        fmtCtrl.className = 'page-input';
+        fmtCtrl.style.cssText = 'font-size:.8rem;width:auto';
         ['', 'Physical', 'Digital', 'Audiobook'].forEach(v => {
           const o = document.createElement('option');
           o.value = v; o.textContent = v || '—';
           if (v === (book.format || '')) o.selected = true;
-          sel.appendChild(o);
+          fmtCtrl.appendChild(o);
         });
-        sel.addEventListener('change', () => sel.blur());
-        return sel;
-      }, val => { book.format = val; updateBookMeta(user.uid, book.id, { format: val }); }));
+        fmtCtrl.addEventListener('change', () => fmtCtrl.blur());
+        return fmtCtrl;
+      }));
 
+      const readSaveBtn = document.createElement('button');
+      readSaveBtn.type = 'button';
+      readSaveBtn.className = 'join-club-btn';
+      readSaveBtn.textContent = 'Save';
+      readSaveBtn.style.cssText = 'font-size:.78rem;padding:.35rem .75rem;margin-top:.5rem';
+      readSaveBtn.addEventListener('click', async () => {
+        readSaveBtn.disabled = true;
+        readSaveBtn.textContent = 'Saving…';
+        try {
+          const saves = [];
+
+          // Started date
+          const { date: newDate, precision: newPrec } = startedPicker.getDate();
+          const origText = (book.addedAt && book.addedAtPrecision) ? formatDateTs(book.addedAt, book.addedAtPrecision) : '—';
+          const newText  = newDate ? formatDateTs({ toDate: () => newDate }, newPrec) : '—';
+          if (newText !== origText) {
+            const bookInfo = { title: book.title, author: book.author, gbid: book.gbid,
+              rating: book.rating, review: book.review, username: profile.username, bookId: book.id };
+            if (newDate) {
+              saves.push(updateBookDates(user.uid, book.id, { addedAt: newDate, addedAtPrecision: newPrec }, bookInfo)
+                .then(() => { book.addedAt = { toDate: () => newDate }; book.addedAtPrecision = newPrec; }));
+            } else {
+              saves.push(clearBookDate(user.uid, book.id, 'addedAt')
+                .then(() => { book.addedAt = null; book.addedAtPrecision = null; }));
+            }
+          }
+
+          // Language / format
+          const lang = langCtrl.value.trim() || null;
+          const fmt  = fmtCtrl.value || null;
+          const metaUpdates = {};
+          if (lang !== (book.language || null)) metaUpdates.language = lang;
+          if (fmt  !== (book.format  || null)) metaUpdates.format   = fmt;
+          if (Object.keys(metaUpdates).length)
+            saves.push(updateBookMeta(user.uid, book.id, metaUpdates).then(() => Object.assign(book, metaUpdates)));
+
+          await Promise.all(saves);
+          readSaveBtn.textContent = 'Saved ✓';
+          setTimeout(() => { if (readSaveBtn.isConnected) { readSaveBtn.textContent = 'Save'; readSaveBtn.disabled = false; } }, 1500);
+        } catch {
+          readSaveBtn.textContent = 'Failed';
+          readSaveBtn.disabled = false;
+        }
+      });
       const controls = card.querySelector('.progress-controls');
       const curInput = controls.querySelector('.page-input');
       let totalPagesVal = book.totalPages || null;
@@ -1391,6 +1487,8 @@
         inp.addEventListener('blur', commitTotal);
         inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
       });
+
+      card.querySelector('.book-info').appendChild(readSaveBtn);
 
       trashBtn.addEventListener('click', async () => {
         if (!confirm(`Remove "${book.title}" from your library?`)) return;
@@ -1670,7 +1768,6 @@
             textEl.textContent = d ? formatDateTs({ toDate: () => d }, p) : '—';
             picker.style.display = 'none';
             textEl.style.display = '';
-            debouncedSave();
           }
 
           textEl.addEventListener('click', () => {
@@ -1786,6 +1883,31 @@
       reviewWrap.append(reviewText, reviewTa);
       ratingEditor.appendChild(reviewWrap);
 
+      const readSaveBtn = document.createElement('button');
+      readSaveBtn.type = 'button';
+      readSaveBtn.className = 'join-club-btn';
+      readSaveBtn.textContent = 'Save';
+      readSaveBtn.style.cssText = 'font-size:.78rem;padding:.35rem .75rem;margin-top:.5rem';
+      readSaveBtn.addEventListener('click', async () => {
+        readSaveBtn.disabled = true;
+        readSaveBtn.textContent = 'Saving…';
+        if (reviewTa.style.display !== 'none') {
+          setReviewDisplay(reviewTa.value.trim());
+          reviewTa.style.display = 'none';
+          reviewText.style.display = '';
+        }
+        try {
+          markReadsDirty();
+          await doSaveCurrentRead();
+          readSaveBtn.textContent = 'Saved ✓';
+          setTimeout(() => { if (readSaveBtn.isConnected) { readSaveBtn.textContent = 'Save'; readSaveBtn.disabled = false; } }, 1500);
+        } catch {
+          readSaveBtn.textContent = 'Failed';
+          readSaveBtn.disabled = false;
+        }
+      });
+      ratingEditor.appendChild(readSaveBtn);
+
       trashBtn.addEventListener('click', async () => {
         if (!confirm(`Remove "${book.title}" from your library?`)) return;
         await deleteBook(user.uid, book.id, { title: book.title, author: book.author });
@@ -1849,10 +1971,15 @@
               bookInfo
             );
           } catch (e) { console.error('Started activity sync failed:', e); }
-          book.rating     = mostRecent?.rating;
-          book.review     = mostRecent?.review;
-          book.finishedAt = mostRecent?.finishedAt;
+          book.rating              = mostRecent?.rating;
+          book.review              = mostRecent?.review;
+          book.finishedAt          = mostRecent?.finishedAt;
+          book.finishedAtPrecision = mostRecent?.finishedAtPrecision ?? null;
+          book.language            = mostRecent?.language ?? book.language;
+          book.format              = mostRecent?.format   ?? book.format;
+          const ratingDataset = book.rating != null ? String(book.rating) : '';
           if (coverCell) {
+            coverCell.dataset.rating = ratingDataset;
             let badge = coverCell.querySelector('.library-cover-rating');
             const displayRating = mostRecent?.rating;
             if (displayRating) {
@@ -1869,6 +1996,8 @@
               badge.remove();
             }
           }
+          const listRow = finishedList.querySelector(`[data-id="${book.id}"]`);
+          if (listRow) listRow.dataset.rating = ratingDataset;
           buildHistList();
         } finally {
           if (readsDirty) { readsDirty = false; markClean(); }
@@ -1878,15 +2007,7 @@
       let readsDirty = false;
       function markReadsDirty() { if (!readsDirty) { readsDirty = true; markDirty(); } }
 
-      let saveTimer;
-      function debouncedSave() { markReadsDirty(); clearTimeout(saveTimer); saveTimer = setTimeout(saveCurrentRead, 700); }
-
-      // Auto-save per-read fields
-      rangeEl.addEventListener('change',   debouncedSave);
-      rangeEl.addEventListener('focusout', debouncedSave);
-      starPicker.addEventListener('click',  () => { markReadsDirty(); saveCurrentRead(); });
-      reviewTa.addEventListener('blur',    () => { setReviewDisplay(reviewTa.value.trim()); reviewTa.style.display = 'none'; reviewText.style.display = ''; markReadsDirty(); saveCurrentRead(); });
-      reviewTa.addEventListener('input',   debouncedSave);
+      reviewTa.addEventListener('blur', () => { setReviewDisplay(reviewTa.value.trim()); reviewTa.style.display = 'none'; reviewText.style.display = ''; });
 
       const detailsSection = addDetailsEditor(card, book, coverCell, [
         { label: 'Title',         key: 'title',        type: 'text'   },
