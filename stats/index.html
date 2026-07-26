@@ -916,7 +916,7 @@
           menu.appendChild(div);
         }
       }
-      for (const f of following) {
+      for (const f of [...following].sort((a, b) => a.username.localeCompare(b.username))) {
         const a = document.createElement('a');
         a.href = `../stats/?u=${encodeURIComponent(f.username)}`;
         a.textContent = f.username;

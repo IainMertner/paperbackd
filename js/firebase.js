@@ -510,8 +510,10 @@ export async function finishBook(uid, bookId, { title, author, gbid, rating, rev
     review: review || null,
   };
   const bookUpdate = { status: 'finished', finishedAt: serverTimestamp(), finishedAtPrecision: 'day', reads: arrayUnion(newRead) };
-  if (rating != null) bookUpdate.rating = rating;
-  if (review)         bookUpdate.review = review;
+  if (rating != null) bookUpdate.rating   = rating;
+  if (review)         bookUpdate.review   = review;
+  if (format)         bookUpdate.format   = format;
+  if (language)       bookUpdate.language = language;
 
   const startedSnap = await getDocs(query(
     collection(db, 'activity'),

@@ -371,7 +371,7 @@
         menu.appendChild(a);
         if (following.length) { const d = document.createElement('div'); d.className = 'friends-divider'; menu.appendChild(d); }
       }
-      for (const f of following) {
+      for (const f of [...following].sort((a, b) => a.username.localeCompare(b.username))) {
         const a = document.createElement('a');
         a.href = `../library/?u=${encodeURIComponent(f.username)}`;
         a.textContent = f.username;
@@ -1779,6 +1779,7 @@
       const tsVal = ts => ts?.seconds ?? (ts?.toDate ? ts.toDate().getTime() / 1000 : 0);
       reads.sort((a, b) => tsVal(b.finishedAt) - tsVal(a.finishedAt));
       let selectedReadIdx = 0;
+      let saveTimer;
 
       // Per-read date pickers (replace static book-level date range)
       const rangeEl = card.querySelector('.book-date-range');
