@@ -141,7 +141,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing } from '../js/firebase.js';
+    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing, setBookPrivate } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
@@ -517,6 +517,12 @@
         pctEl.className = 'library-progress-pct';
         pctEl.textContent = pct + '%';
         cell.appendChild(pctEl);
+      }
+      if (book.private) {
+        const lockEl = document.createElement('div');
+        lockEl.className = 'library-cover-lock';
+        lockEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+        cell.appendChild(lockEl);
       }
       const info = document.createElement('div');
       info.className = 'library-cover-info';
@@ -1080,27 +1086,8 @@
         }
       }
 
-      const saveBtn = document.createElement('button');
-      saveBtn.type = 'button';
-      saveBtn.className = 'join-club-btn';
-      saveBtn.textContent = 'Save';
-      saveBtn.style.cssText = 'font-size:.78rem;padding:.35rem .75rem;margin-top:.5rem';
-      saveBtn.addEventListener('click', async () => {
-        saveBtn.disabled = true;
-        saveBtn.textContent = 'Saving…';
-        try {
-          await doSaveBookMeta();
-          saveBtn.textContent = 'Saved ✓';
-          setTimeout(() => { if (saveBtn.isConnected) { saveBtn.textContent = 'Save'; saveBtn.disabled = false; } }, 1500);
-        } catch {
-          saveBtn.textContent = 'Failed';
-          saveBtn.disabled = false;
-        }
-      });
-      section.appendChild(saveBtn);
-
       card.appendChild(section);
-      return section;
+      return { section, doSaveBookMeta };
     }
 
     let allLists = [];
@@ -1250,6 +1237,35 @@
         }
       });
 
+      const LOCK_SVG = priv => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" style="${priv ? 'opacity:.35' : ''}"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0${priv ? 'v4' : ''}"/></svg>`;
+      const privBtn = document.createElement('button');
+      privBtn.className = 'btn-remove-x btn-repair';
+      privBtn.style.cssText = 'margin:0';
+      privBtn.title = book.private ? 'Make public' : 'Make private';
+      privBtn.setAttribute('aria-label', book.private ? 'Make public' : 'Make private');
+      privBtn.innerHTML = LOCK_SVG(book.private);
+      privBtn.addEventListener('click', async () => {
+        const newPrivate = !book.private;
+        privBtn.disabled = true;
+        await setBookPrivate(user.uid, book.id, newPrivate);
+        book.private = newPrivate;
+        privBtn.disabled = false;
+        privBtn.title = newPrivate ? 'Make public' : 'Make private';
+        privBtn.setAttribute('aria-label', newPrivate ? 'Make public' : 'Make private');
+        privBtn.innerHTML = LOCK_SVG(newPrivate);
+        if (coverCell.classList.contains('library-cover-cell')) {
+          const lockEl = coverCell.querySelector('.library-cover-lock');
+          if (newPrivate && !lockEl) {
+            const el = document.createElement('div');
+            el.className = 'library-cover-lock';
+            el.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+            coverCell.appendChild(el);
+          } else if (!newPrivate && lockEl) {
+            lockEl.remove();
+          }
+        }
+      });
+
       let startedPicker;
       {
         const row = document.createElement('div');
@@ -1347,7 +1363,7 @@
         readSaveBtn.disabled = true;
         readSaveBtn.textContent = 'Saving…';
         try {
-          const saves = [];
+          const saves = [doSaveBookMeta()];
 
           // Started date
           const { date: newDate, precision: newPrec } = startedPicker.getDate();
@@ -1488,7 +1504,6 @@
         inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
       });
 
-      card.querySelector('.book-info').appendChild(readSaveBtn);
 
       trashBtn.addEventListener('click', async () => {
         if (!confirm(`Remove "${book.title}" from your library?`)) return;
@@ -1503,7 +1518,7 @@
         updateCounts();
       });
 
-      const detailsSection = addDetailsEditor(card, book, coverCell, [
+      const { section: detailsSection, doSaveBookMeta } = addDetailsEditor(card, book, coverCell, [
         { label: 'Title',         key: 'title',        type: 'text'   },
         { label: 'Author',        key: 'author',       type: 'text'   },
         { label: 'Gender',        key: 'authorGender', type: 'select', options: ['Male', 'Female', 'Non-binary', 'Other'] },
@@ -1527,7 +1542,7 @@
         detailsSection.style.display = open ? '' : 'none';
         bookInfoBtn.textContent = `Book info ${open ? '▴' : '▾'}`;
       });
-      bookInfoHeader.append(bookInfoBtn, buildListsPanel(book), repairBtn, trashBtn);
+      bookInfoHeader.append(bookInfoBtn, buildListsPanel(book), privBtn, repairBtn, trashBtn);
 
       bookInfoWrap.appendChild(bookInfoHeader);
       bookInfoWrap.appendChild(detailsSection);
@@ -1647,6 +1662,8 @@
         updateCounts();
       });
 
+      readSaveBtn.style.cssText = 'font-size:.78rem;padding:.35rem .75rem;margin-top:.75rem;width:100%';
+      card.appendChild(readSaveBtn);
       return card;
     }
 
@@ -1725,6 +1742,35 @@
           console.error(e);
           repairBtn.style.color = '#ef4444'; repairBtn.title = 'Failed';
           setTimeout(() => { repairBtn.style.color = ''; repairBtn.title = 'Repair this book'; repairBtn.disabled = false; }, 2000);
+        }
+      });
+
+      const LOCK_SVG_F = priv => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" style="${priv ? 'opacity:.35' : ''}"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0${priv ? 'v4' : ''}"/></svg>`;
+      const privBtn = document.createElement('button');
+      privBtn.className = 'btn-remove-x btn-repair';
+      privBtn.style.cssText = 'margin:0';
+      privBtn.title = book.private ? 'Make public' : 'Make private';
+      privBtn.setAttribute('aria-label', book.private ? 'Make public' : 'Make private');
+      privBtn.innerHTML = LOCK_SVG_F(book.private);
+      privBtn.addEventListener('click', async () => {
+        const newPrivate = !book.private;
+        privBtn.disabled = true;
+        await setBookPrivate(user.uid, book.id, newPrivate);
+        book.private = newPrivate;
+        privBtn.disabled = false;
+        privBtn.title = newPrivate ? 'Make public' : 'Make private';
+        privBtn.setAttribute('aria-label', newPrivate ? 'Make public' : 'Make private');
+        privBtn.innerHTML = LOCK_SVG_F(newPrivate);
+        if (coverCell.classList.contains('library-cover-cell')) {
+          const lockEl = coverCell.querySelector('.library-cover-lock');
+          if (newPrivate && !lockEl) {
+            const el = document.createElement('div');
+            el.className = 'library-cover-lock';
+            el.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+            coverCell.appendChild(el);
+          } else if (!newPrivate && lockEl) {
+            lockEl.remove();
+          }
         }
       });
 
@@ -1898,7 +1944,7 @@
         }
         try {
           markReadsDirty();
-          await doSaveCurrentRead();
+          await Promise.all([doSaveCurrentRead(), doSaveBookMeta()]);
           readSaveBtn.textContent = 'Saved ✓';
           setTimeout(() => { if (readSaveBtn.isConnected) { readSaveBtn.textContent = 'Save'; readSaveBtn.disabled = false; } }, 1500);
         } catch {
@@ -1906,7 +1952,6 @@
           readSaveBtn.disabled = false;
         }
       });
-      ratingEditor.appendChild(readSaveBtn);
 
       trashBtn.addEventListener('click', async () => {
         if (!confirm(`Remove "${book.title}" from your library?`)) return;
@@ -2009,7 +2054,7 @@
 
       reviewTa.addEventListener('blur', () => { setReviewDisplay(reviewTa.value.trim()); reviewTa.style.display = 'none'; reviewText.style.display = ''; });
 
-      const detailsSection = addDetailsEditor(card, book, coverCell, [
+      const { section: detailsSection, doSaveBookMeta } = addDetailsEditor(card, book, coverCell, [
         { label: 'Title',         key: 'title',        type: 'text'   },
         { label: 'Author',        key: 'author',       type: 'text'   },
         { label: 'Gender',        key: 'authorGender', type: 'select', options: ['Male', 'Female', 'Non-binary', 'Other'] },
@@ -2034,7 +2079,7 @@
         detailsSection.style.display = open ? '' : 'none';
         bookInfoBtn.textContent = `Book info ${open ? '▴' : '▾'}`;
       });
-      bookInfoHeader.append(bookInfoBtn, buildListsPanel(book), repairBtn, trashBtn);
+      bookInfoHeader.append(bookInfoBtn, buildListsPanel(book), privBtn, repairBtn, trashBtn);
 
       bookInfoWrap.appendChild(bookInfoHeader);
       bookInfoWrap.appendChild(detailsSection);
@@ -2150,6 +2195,8 @@
       }
 
       buildHistList();
+      readSaveBtn.style.cssText = 'font-size:.78rem;padding:.35rem .75rem;margin-top:.75rem;width:100%';
+      card.appendChild(readSaveBtn);
       return card;
     }
 
@@ -2645,7 +2692,7 @@
         const target = await getProfileByUsername(viewUser);
         if (target) {
           document.getElementById('page-title').innerHTML = `<a href="../profile/?u=${encodeURIComponent(target.username)}" style="color:var(--accent);text-decoration:none">${esc(target.username)}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>library<span class="title-dot">.</span>`;
-          const { reading, finished } = sortBooks(await getBooks(target.uid));
+          const { reading, finished } = sortBooks((await getBooks(target.uid)).filter(b => !b.private));
           allBooks = [...reading, ...finished];
           setTitles(reading, finished);
 
@@ -2915,9 +2962,10 @@
     }
 
     function resetForm() {
-      searchInput.value        = '';
-      suggestBox.innerHTML     = '';
-      suggestBox.style.display = 'none';
+      searchInput.value           = '';
+      suggestBox.innerHTML        = '';
+      suggestBox.style.display    = 'none';
+      selectedPreview.style.display = 'none';
       selectedBook = null;
       setAddEnabled(false);
       // Restore form to initial state in case we were in the "Already read" rating step
@@ -2932,7 +2980,15 @@
 
     function closeForm() { form.hidden = true; toggle.hidden = false; resetForm(); }
 
-    toggle.addEventListener('click', () => { form.hidden = false; toggle.hidden = true; searchInput.focus(); });
+    toggle.addEventListener('click', () => {
+      form.hidden = false; toggle.hidden = true;
+      const libraryQuery = document.getElementById('library-filter')?.value.trim();
+      if (libraryQuery) {
+        searchInput.value = libraryQuery;
+        searchInput.dispatchEvent(new Event('input'));
+      }
+      searchInput.focus();
+    });
     cancelBtn.addEventListener('click', closeForm);
 
     document.addEventListener('click', e => {
@@ -2941,8 +2997,43 @@
       }
     });
 
+    const selectedPreview = document.createElement('div');
+    selectedPreview.style.cssText = 'display:none;margin-top:.4rem;padding:.5rem .65rem;border:1px solid var(--accent);border-radius:var(--radius-sm);background:color-mix(in srgb,var(--accent) 7%,var(--bg-card))';
+    document.getElementById('book-search-wrap').appendChild(selectedPreview);
+
+    function showBookPreview({ title, author, cover, releaseYear, pages, gbid }) {
+      const coverHtml = cover
+        ? `<img src="${esc(cover)}" alt="" style="width:36px;height:54px;object-fit:cover;border-radius:2px;flex-shrink:0">`
+        : `<div style="width:36px;height:54px;background:var(--bg-alt);border-radius:2px;flex-shrink:0"></div>`;
+      const meta = [author, releaseYear, pages ? `${pages} pp.` : null].filter(Boolean).join(' · ');
+
+      const matches = gbid ? allBooks.filter(b => b.gbid === gbid) : [];
+      let libraryHtml = '';
+      if (matches.length) {
+        const reading  = matches.find(b => b.status === 'reading');
+        const finished = matches.filter(b => b.status === 'finished');
+        const dnf      = matches.find(b => b.status === 'dnf');
+        const parts = [];
+        if (reading) {
+          const prog = reading.totalPages ? ` · p. ${reading.currentPage} of ${reading.totalPages}` : '';
+          parts.push(`Currently reading${prog}`);
+        }
+        if (finished.length) {
+          const n = finished.reduce((sum, b) => sum + Math.max(b.reads?.length || 1, 1), 0);
+          parts.push(`Read ${n} time${n !== 1 ? 's' : ''}`);
+        }
+        if (dnf) parts.push('Did not finish');
+        if (parts.length)
+          libraryHtml = `<div style="font-size:.73rem;color:var(--accent);margin-top:.25rem;font-weight:600">${parts.join(' · ')}</div>`;
+      }
+
+      selectedPreview.innerHTML = `<div style="display:flex;align-items:center;gap:.65rem">${coverHtml}<div style="min-width:0"><div style="font-size:.875rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(title)}</div>${meta ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(meta)}</div>` : ''}${libraryHtml}</div></div>`;
+      selectedPreview.style.display = '';
+    }
+
     searchInput.addEventListener('input', () => {
       selectedBook = null;
+      selectedPreview.style.display = 'none';
       clearTimeout(searchTimer);
       const q = searchInput.value.trim();
       if (q.length < 3) { suggestBox.innerHTML = ''; suggestBox.style.display = 'none'; return; }
@@ -3106,39 +3197,68 @@
             searchInput.value        = title;
             suggestBox.innerHTML     = '';
             suggestBox.style.display = 'none';
+            showBookPreview(selectedBook);
             setAddEnabled(true);
-            // Background country fetch — overrides first, then Wikidata
-            if (author) {
-              const capturedBook = selectedBook;
-              capturedBook._countryFetch = (async () => {
-                try {
-                  const overrides   = await getOverrides();
-                  const overrideKey = author.toLowerCase().trim();
-                  if (overrides[overrideKey]) {
-                    capturedBook.country = overrides[overrideKey];
-                    return;
-                  }
-                  const base = 'https://www.wikidata.org/w/api.php';
-                  const sr = await fetch(`${base}?action=wbsearchentities&search=${encodeURIComponent(author)}&language=en&type=item&format=json&origin=*&limit=1`);
-                  if (!sr.ok) return;
-                  const sd = await sr.json();
-                  const qid = sd.search?.[0]?.id;
-                  if (!qid) return;
-                  const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
-                  if (!er.ok) return;
-                  const ed = await er.json();
-                  const p27 = ed.entities?.[qid]?.claims?.P27 || [];
-                  const bestP27 = p27.find(c => c.rank === 'preferred') || p27.find(c => c.rank === 'normal') || p27[0];
-                  const countryQid = bestP27?.mainsnak?.datavalue?.value?.id;
-                  if (!countryQid) return;
-                  const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
-                  if (!lr.ok) return;
-                  const ld = await lr.json();
-                  const countryName = ld.entities?.[countryQid]?.labels?.en?.value;
-                  if (countryName) capturedBook.country = normalizeCountry(countryName);
-                } catch { /* silently ignore */ }
-              })();
-            }
+            // Background meta fetch — genres (Hardcover) + country + gender (Wikidata)
+            const capturedBook = selectedBook;
+            capturedBook._countryFetch = (async () => {
+              await Promise.all([
+                // Genres from Hardcover
+                (async () => {
+                  if (!slug) return;
+                  try {
+                    const q = /^\d+$/.test(slug)
+                      ? `query($id:Int!){books(where:{id:{_eq:$id}},limit:1){cached_tags}}`
+                      : `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){cached_tags}}`;
+                    const vars = /^\d+$/.test(slug) ? { id: parseInt(slug, 10) } : { slug };
+                    const data = await hcPost(q, vars);
+                    const genres = (data?.data?.books?.[0]?.cached_tags?.Genre || []).map(t => t.tag).filter(Boolean);
+                    if (genres.length) capturedBook.genres = genres;
+                  } catch { /* ignore */ }
+                })(),
+                // Country + gender from Wikidata
+                (async () => {
+                  if (!author) return;
+                  try {
+                    const overrides = await getOverrides();
+                    const overrideKey = author.toLowerCase().trim();
+                    if (overrides[overrideKey]) capturedBook.country = overrides[overrideKey];
+                    if (capturedBook.country && capturedBook.authorGender) return;
+                    const base = 'https://www.wikidata.org/w/api.php';
+                    const sr = await fetch(`${base}?action=wbsearchentities&search=${encodeURIComponent(author)}&language=en&type=item&format=json&origin=*&limit=1`);
+                    if (!sr.ok) return;
+                    const sd = await sr.json();
+                    const qid = sd.search?.[0]?.id;
+                    if (!qid) return;
+                    const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
+                    if (!er.ok) return;
+                    const ed = await er.json();
+                    const claims = ed.entities?.[qid]?.claims || {};
+                    if (!capturedBook.country) {
+                      const p27 = claims.P27 || [];
+                      const bestP27 = p27.find(c => c.rank === 'preferred') || p27.find(c => c.rank === 'normal') || p27[0];
+                      const countryQid = bestP27?.mainsnak?.datavalue?.value?.id;
+                      if (countryQid) {
+                        const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
+                        if (lr.ok) {
+                          const ld = await lr.json();
+                          const countryName = ld.entities?.[countryQid]?.labels?.en?.value;
+                          if (countryName) capturedBook.country = normalizeCountry(countryName);
+                        }
+                      }
+                    }
+                    const GENDER_MAP = {
+                      Q6581072: 'Female', Q6581097: 'Male', Q1097630: 'Intersex',
+                      Q48270: 'Non-binary', Q2449503: 'Transgender female', Q1052281: 'Transgender male',
+                    };
+                    const p21 = claims.P21 || [];
+                    const bestP21 = p21.find(c => c.rank === 'preferred') || p21.find(c => c.rank === 'normal') || p21[0];
+                    const genderQid = bestP21?.mainsnak?.datavalue?.value?.id;
+                    if (genderQid && GENDER_MAP[genderQid]) capturedBook.authorGender = GENDER_MAP[genderQid];
+                  } catch { /* ignore */ }
+                })(),
+              ]);
+            })();
           }, 150);
         });
 
@@ -3164,10 +3284,10 @@
       if (selectedBook._countryFetch) {
         await Promise.race([selectedBook._countryFetch, new Promise(r => setTimeout(r, 5000))]);
       }
-      const { title, author, pages, gbid, cover, releaseYear, country } = selectedBook;
+      const { title, author, pages, gbid, cover, releaseYear, country, authorGender, genres } = selectedBook;
 
-      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, coverUrl: cover, releaseYear, country }, profile.username);
-      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, addedAt: { toDate: () => new Date() }, addedAtPrecision: 'day' };
+      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, coverUrl: cover, releaseYear, country, authorGender, genres }, profile.username);
+      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, authorGender, genres, addedAt: { toDate: () => new Date() }, addedAtPrecision: 'day' };
 
       allBooks.push(book);
       document.getElementById('reading-empty')?.remove();
@@ -3181,6 +3301,7 @@
         readingList.prepend(newCell);
       }
       updateCounts();
+      document.getElementById('library-filter')?.dispatchEvent(new Event('input'));
 
       saveBtn.disabled    = false;
       saveBtn.textContent = 'Start reading';
@@ -3238,7 +3359,7 @@
         if (selectedBook._countryFetch) {
           await Promise.race([selectedBook._countryFetch, new Promise(r => setTimeout(r, 5000))]);
         }
-        const country = selectedBook.country;
+        const { country, authorGender, genres } = selectedBook;
         const rating = picker.getValue();
         const review = ta.value.trim() || null;
         const { date: addedAt,    precision: startedPrec  } = startedPicker.getDate();
@@ -3269,9 +3390,10 @@
             finishedList.prepend(newCell);
           }
           updateCounts();
+          document.getElementById('library-filter')?.dispatchEvent(new Event('input'));
         } else {
           const id = await addFinishedBook(user.uid, {
-            title, author, totalPages: pages, gbid, coverUrl: cover, rating, review, releaseYear, country,
+            title, author, totalPages: pages, gbid, coverUrl: cover, rating, review, releaseYear, country, authorGender, genres,
             finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,
             addedAt,    addedAtPrecision:    addedAt    ? startedPrec  : undefined
           }, profile.username);
@@ -3282,7 +3404,7 @@
             addedAtPrecision:    addedAt    ? startedPrec  : null,
             finishedAt:          finishedAt ? { toDate: () => finishedAt } : null,
             finishedAtPrecision: finishedAt ? finishedPrec : null,
-            gbid, rating, review, releaseYear, country,
+            gbid, rating, review, releaseYear, country, authorGender, genres,
             reads: [{ startedAt: addedAt ? { toDate: () => addedAt } : null, startedAtPrecision: addedAt ? startedPrec : null, finishedAt: finishedAt ? { toDate: () => finishedAt } : { toDate: () => new Date() }, finishedAtPrecision: finishedAt ? finishedPrec : null, rating, review }],
           };
           allBooks.push(book);
@@ -3297,6 +3419,7 @@
             finishedList.prepend(newCell);
           }
           updateCounts();
+          document.getElementById('library-filter')?.dispatchEvent(new Event('input'));
         }
         closeForm();
       });

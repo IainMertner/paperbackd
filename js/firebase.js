@@ -411,7 +411,7 @@ export async function getRecentlyFinishedBooks(uid) {
     .sort((a, b) => (b.finishedAt?.seconds ?? 0) - (a.finishedAt?.seconds ?? 0));
 }
 
-export async function addFinishedBook(uid, { title, author, totalPages, gbid, coverUrl, rating, review, releaseYear, country, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
+export async function addFinishedBook(uid, { title, author, totalPages, gbid, coverUrl, rating, review, releaseYear, country, authorGender, genres, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
   const data = {
     title,
     author:      author || '',
@@ -430,6 +430,8 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, co
   if (review)         data.review         = review;
   if (releaseYear)    data.releaseYear    = releaseYear;
   if (country)        data.country        = country;
+  if (authorGender)   data.authorGender   = authorGender;
+  if (genres?.length) data.genres         = genres;
   data.reads = [{
     startedAt:           addedAt instanceof Date ? Timestamp.fromDate(addedAt) : (addedAt?.toDate ? Timestamp.fromDate(addedAt.toDate()) : null),
     startedAtPrecision:  addedAt ? (addedAtPrecision || null) : null,
@@ -457,7 +459,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, co
   return bookRef.id;
 }
 
-export async function addBook(uid, { title, author, totalPages, gbid, coverUrl, releaseYear, country }, username) {
+export async function addBook(uid, { title, author, totalPages, gbid, coverUrl, releaseYear, country, authorGender, genres }, username) {
   const bookData = {
     title,
     author:           author || '',
@@ -469,9 +471,11 @@ export async function addBook(uid, { title, author, totalPages, gbid, coverUrl, 
     addedAtPrecision: 'day',
     language:         'English'
   };
-  if (coverUrl)    bookData.coverUrl    = coverUrl;
-  if (releaseYear) bookData.releaseYear = releaseYear;
-  if (country)     bookData.country     = country;
+  if (coverUrl)              bookData.coverUrl     = coverUrl;
+  if (releaseYear)           bookData.releaseYear  = releaseYear;
+  if (country)               bookData.country      = country;
+  if (authorGender)          bookData.authorGender = authorGender;
+  if (genres?.length)        bookData.genres       = genres;
   const bookRef = await addDoc(collection(db, 'users', uid, 'books'), bookData);
   await addDoc(collection(db, 'activity'), {
     uid,
@@ -676,6 +680,17 @@ export function updateBookRating(uid, bookId, { rating, review }) {
     rating: rating != null ? rating : deleteField(),
     review: review       ? review : deleteField()
   });
+}
+
+export async function setBookPrivate(uid, bookId, isPrivate) {
+  await updateDoc(doc(db, 'users', uid, 'books', bookId), { private: isPrivate });
+  const snap = await getDocs(query(
+    collection(db, 'activity'),
+    where('uid', '==', uid),
+    where('bookId', '==', bookId)
+  ));
+  if (!snap.empty)
+    await Promise.all(snap.docs.map(d => updateDoc(d.ref, { private: isPrivate })));
 }
 
 export async function getBookByGbid(uid, gbid) {

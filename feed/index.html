@@ -781,6 +781,7 @@ if (event.type === 'finished') {
           if (e.type === 'followed' && e.targetUid === user.uid) return true;
           if (!activeUids.has(e.uid)) return false;
           if (e.type === 'followed' && e.uid === user.uid && !followingUids.includes(e.targetUid)) return false;
+          if (e.private) return false;
           return true;
         });
 

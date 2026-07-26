@@ -540,7 +540,9 @@
         const events = raw.filter(e => {
           if (seenIds.has(e.id)) return false;
           seenIds.add(e.id);
-          return e.uid === target.uid;
+          if (e.uid !== target.uid) return false;
+          if (e.private && e.uid !== user.uid) return false;
+          return true;
         });
 
         // Backfill coverUrl and progress data

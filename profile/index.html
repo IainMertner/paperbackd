@@ -899,7 +899,7 @@
           document.getElementById('activity-label').innerHTML = `<a href="../activity/?u=${encodeURIComponent(target.username)}" style="color:inherit;text-decoration:none">activity</a><span id="activity-summary" style="font-size:.65rem;color:color-mix(in srgb,var(--text-muted) 65%,var(--bg));margin-left:.5rem;padding-left:.5rem;border-left:2px solid var(--border)"></span>`;
           Promise.all([getReadingBooks(target.uid), getRecentlyFinishedBooks(target.uid)])
             .then(([reading, finished]) => {
-              renderActivity(reading, finished);
+              renderActivity(reading.filter(b => !b.private), finished.filter(b => !b.private));
               const t = target.targets || {};
               const total = Object.keys(t).length;
               if (total) {
