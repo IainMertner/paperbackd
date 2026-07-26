@@ -688,7 +688,7 @@
         ...readingBooks.filter(i => i.coverUrl).map(b => ({ ...b, isReading: true })),
         ...finishedBooks.filter(i => i.coverUrl)
       ].slice(0, 4);
-      const nReading  = items.filter(i => i.isReading).length;
+      const nReading  = readingBooks.filter(b => b.coverUrl).length;
       const nFinished = items.filter(i => !i.isReading).length;
       const parts = [];
       if (nReading)  parts.push(`${nReading} currently reading`);

@@ -191,6 +191,9 @@ a { color: inherit; }
   margin: 1.25rem 0 0.625rem;
 }
 .section-header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .625rem; }
+.section-collapsible { cursor: pointer; user-select: none; }
+.section-collapsible::after { content: '▾'; margin-left: .35em; display: inline-block; transition: transform .15s; transform: rotate(0deg); font-size: 1.1em; }
+.section-collapsible.collapsed::after { transform: rotate(-90deg); }
 .section-header .section-title { margin: 0; }
 .sort-options { display: flex; gap: .25rem; flex-wrap: wrap; }
 .sort-btn { font-size: .68rem; padding: .2rem .45rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer; white-space: nowrap; }

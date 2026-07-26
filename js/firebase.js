@@ -798,26 +798,12 @@ export async function deleteBook(uid, bookId, { title, author }) {
   ]);
 }
 
-export async function ensureDnfList(uid) {
-  const lists = await getLists(uid);
-  const existing = lists.find(l => l.isDnf);
-  if (existing) return existing.id;
-  const ref = await addDoc(collection(db, 'users', uid, 'lists'), {
-    name: 'Did not finish',
-    isDnf: true,
-    isDefault: false,
-    createdAt: new Date().toISOString(),
-    books: []
-  });
-  return ref.id;
+export async function dnfBook(uid, bookId) {
+  await updateDoc(doc(db, 'users', uid, 'books', bookId), { status: 'dnf' });
 }
 
-export async function dnfBook(uid, bookId, book) {
-  const dnfListId = await ensureDnfList(uid);
-  await Promise.all([
-    addBookToList(uid, dnfListId, book),
-    deleteBook(uid, bookId, { title: book.title })
-  ]);
+export async function undnfBook(uid, bookId) {
+  await updateDoc(doc(db, 'users', uid, 'books', bookId), { status: 'reading' });
 }
 
 export async function unfinishBook(uid, bookId, { title, author }) {

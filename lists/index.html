@@ -112,7 +112,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getProfileByUsername, getLists, ensureDefaultList, ensureDnfList, createList, deleteList, getFollowing } from '../js/firebase.js';
+    import { getProfileByUsername, getLists, ensureDefaultList, createList, deleteList, getFollowing } from '../js/firebase.js';
 
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -175,7 +175,6 @@
         if (isOwn) {
           const promises = [];
           if (!lists.find(l => l.isDefault)) promises.push(ensureDefaultList(ownerUid));
-          if (!lists.find(l => l.isDnf))     promises.push(ensureDnfList(ownerUid));
           if (promises.length) { await Promise.all(promises); lists = await getLists(ownerUid); }
         }
         renderLists(lists);
@@ -203,7 +202,7 @@
               </span>`;
             rowDiv.appendChild(a);
 
-            if (isOwn && !list.isDefault && !list.isDnf) {
+            if (isOwn && !list.isDefault) {
               const delBtn = document.createElement('button');
               delBtn.className = 'btn-danger';
               delBtn.dataset.id = list.id;

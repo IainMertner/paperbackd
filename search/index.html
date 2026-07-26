@@ -44,7 +44,7 @@
       <button id="tab-authors" class="search-tab-btn">Authors</button>
     </div>
     <div class="book-search-wrap" id="search-wrap" style="margin-bottom:.9rem">
-      <input type="search" id="search-input" class="join-club-input"
+      <input type="text" id="search-input" class="join-club-input"
         placeholder="Search everything…" autocomplete="off" spellcheck="false"
         style="width:100%;box-sizing:border-box;font-size:1rem;padding:.6rem .75rem">
     </div>
@@ -206,12 +206,33 @@
     if (_preQ) { input.value = _preQ; runSearch(_preQ); }
     else renderRecents();
 
+    const searchClearBtn = document.createElement('button');
+    searchClearBtn.type = 'button';
+    searchClearBtn.setAttribute('aria-label', 'Clear search');
+    searchClearBtn.style.cssText = 'display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);font-size:1.1rem;line-height:1;padding:2px 5px;cursor:pointer';
+    searchClearBtn.innerHTML = '&times;';
+    document.getElementById('search-wrap').appendChild(searchClearBtn);
+
+    function updateSearchClear() {
+      searchClearBtn.style.display = input.value ? '' : 'none';
+      input.style.paddingRight = input.value ? '28px' : '';
+    }
+
     input.addEventListener('input', () => {
       clearTimeout(timer);
+      updateSearchClear();
       const q = input.value.trim();
       if (!q) { renderRecents(); return; }
       timer = setTimeout(() => runSearch(q), 280);
     });
+
+    searchClearBtn.addEventListener('click', () => {
+      input.value = '';
+      input.dispatchEvent(new Event('input'));
+      input.focus();
+    });
+
+    if (input.value) updateSearchClear();
 
     function runSearch(q) {
       if (activeTab === 'all')           fetchAll(q);

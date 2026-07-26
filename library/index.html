@@ -50,7 +50,10 @@
 
     <div id="library-filter-wrap" style="display:none;margin-bottom:.625rem">
       <div style="display:flex;gap:.5rem;align-items:center">
-        <input type="text" id="library-filter" class="join-club-input" placeholder="Search library…" autocomplete="off" spellcheck="false" style="flex:1;min-width:0;box-sizing:border-box">
+        <div style="position:relative;flex:1;min-width:0">
+          <input type="text" id="library-filter" class="join-club-input" placeholder="Search library…" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box">
+          <button id="library-filter-clear" type="button" aria-label="Clear search" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);font-size:1.1rem;line-height:1;padding:2px 5px;cursor:pointer">&times;</button>
+        </div>
         <div style="position:relative;flex-shrink:0">
           <button id="filter-dropdown-btn" class="btn-update" style="padding:.35rem .6rem;font-size:.8rem">Filters</button>
           <div id="filter-dropdown" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:100;min-width:180px;padding:.5rem 0;max-height:80vh;overflow-y:auto"></div>
@@ -82,11 +85,11 @@
       </div>
     </div>
 
-    <p class="section-title" id="reading-title">Currently Reading</p>
+    <p class="section-title section-collapsible" id="reading-title">Currently Reading</p>
     <div id="reading-list" class="books-grid"></div>
 
     <div class="section-header" style="margin-top:1.5rem">
-      <p class="section-title" id="finished-title" style="margin:0">Finished</p>
+      <p class="section-title section-collapsible" id="finished-title" style="margin:0">Finished</p>
       <div id="finished-sort" class="sort-options" style="display:none">
         <button class="sort-btn" data-key="date"    data-default="desc" data-label="Date">Date</button>
         <button class="sort-btn" data-key="alpha"   data-default="asc"  data-label="A–Z">A–Z</button>
@@ -95,6 +98,11 @@
       </div>
     </div>
     <div id="finished-list" class="books-grid"></div>
+
+    <div id="dnf-section" style="display:none;margin-top:1.5rem">
+      <p class="section-title section-collapsible collapsed" id="dnf-title">Did Not Finish · 0</p>
+      <div id="dnf-list" class="books-grid" style="display:none"></div>
+    </div>
 
   </main>
 
@@ -141,7 +149,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing, setBookPrivate } from '../js/firebase.js';
+    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, undnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing, setBookPrivate } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
@@ -385,6 +393,27 @@
 
     const readingList  = document.getElementById('reading-list');
     const finishedList = document.getElementById('finished-list');
+    const dnfList      = document.getElementById('dnf-list');
+
+    let dnfExpanded = false;
+
+    document.getElementById('reading-title').addEventListener('click', () => {
+      const collapsed = document.getElementById('reading-title').classList.toggle('collapsed');
+      readingList.style.display = collapsed ? 'none' : '';
+    });
+
+    document.getElementById('finished-title').addEventListener('click', () => {
+      const collapsed = document.getElementById('finished-title').classList.toggle('collapsed');
+      finishedList.style.display = collapsed ? 'none' : '';
+      const sort = document.getElementById('finished-sort');
+      if (sort) sort.style.display = collapsed ? 'none' : '';
+    });
+
+    document.getElementById('dnf-title').addEventListener('click', () => {
+      dnfExpanded = !dnfExpanded;
+      document.getElementById('dnf-title').classList.toggle('collapsed', !dnfExpanded);
+      dnfList.style.display = dnfExpanded ? '' : 'none';
+    });
 
     function toAuthorSlug(name) {
       return (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -1653,12 +1682,21 @@
 
       dnfTab.addEventListener('click', async () => {
         if (!confirm(`Mark "${book.title}" as did not finish?`)) return;
-        await dnfBook(user.uid, book.id, book);
-        const idx = allBooks.findIndex(b => b.id === book.id);
-        if (idx !== -1) allBooks.splice(idx, 1);
+        await dnfBook(user.uid, book.id);
+        book.status = 'dnf';
         if (coverCell) coverCell.remove();
         closeModal();
         if (!readingList.querySelector('[data-title]')) showEmpty(readingList, 'reading-empty', 'Nothing in progress.');
+        document.getElementById('dnf-section').style.display = '';
+        if (viewMode === 'list') {
+          const row = makeBookListRow(book);
+          row.addEventListener('click', () => { let ov; const c = renderDnf(book, row, () => ov?.remove()); ov = createBookModal(c); });
+          dnfList.prepend(row);
+        } else {
+          const cell = makeBookCoverCell(book);
+          attachDnfCell(cell, book);
+          dnfList.prepend(cell);
+        }
         updateCounts();
       });
 
@@ -2495,13 +2533,158 @@
       return card;
     }
 
+    function attachDnfCell(cell, book) {
+      cell.addEventListener('click', () => {
+        let overlay;
+        const card = renderDnf(book, cell, () => overlay?.remove());
+        overlay = createBookModal(card);
+      });
+    }
+
+    function renderDnf(book, coverCell, closeModal) {
+      const card = document.createElement('div');
+      card.className  = 'card';
+      card.dataset.id = book.id;
+      const titleHtml = book.gbid
+        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
+        : `<span class="book-title">${esc(book.title)}</span>`;
+      card.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.75rem">
+          <div style="flex:1;min-width:0">
+            ${titleHtml}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
+          </div>
+        </div>
+        <div class="book-entry">
+          <div class="book-info">
+            <div class="dnf-meta"></div>
+          </div>
+          ${bookCoverHtml(book)}
+        </div>`;
+
+      const coverWrap = card.querySelector('.book-cover-wrap');
+      const coverImg  = coverWrap?.querySelector('.book-cover, .book-cover-img');
+      if (coverImg) { coverImg.style.width = '72px'; coverImg.style.height = '108px'; }
+
+      const meta = card.querySelector('.dnf-meta');
+      function metaRow(lbl, val) {
+        if (!val) return;
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.4rem';
+        const l = document.createElement('span');
+        l.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:80px';
+        l.textContent = lbl;
+        const v = document.createElement('span');
+        v.style.cssText = 'font-size:.8rem;color:var(--text)';
+        v.textContent = val;
+        row.append(l, v);
+        meta.appendChild(row);
+      }
+      metaRow('Started', book.addedAt ? formatDateTs(book.addedAt, book.addedAtPrecision || 'month') : null);
+      if (book.currentPage > 0)
+        metaRow('Stopped at', book.totalPages ? `page ${book.currentPage} of ${book.totalPages}` : `page ${book.currentPage}`);
+      metaRow('Language', book.language || null);
+      metaRow('Format',   book.format   || null);
+
+      const actions = document.createElement('div');
+      actions.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem';
+
+      const backBtn = document.createElement('button');
+      backBtn.className = 'btn-update';
+      backBtn.style.cssText = 'font-size:.82rem;padding:.35rem .75rem;border-radius:var(--radius-sm)';
+      backBtn.textContent = 'Resume reading';
+      backBtn.addEventListener('click', async () => {
+        await undnfBook(user.uid, book.id);
+        book.status = 'reading';
+        if (coverCell) coverCell.remove();
+        closeModal();
+        document.getElementById('reading-empty')?.remove();
+        if (viewMode === 'list') {
+          const row = makeBookListRow(book);
+          row.addEventListener('click', () => { let ov; const c = renderReading(book, row, () => ov?.remove()); ov = createBookModal(c); c.querySelector('.page-input:not(.page-total)')?.select(); });
+          readingList.prepend(row);
+        } else {
+          const cell = makeBookCoverCell(book);
+          attachReadingCell(cell, book);
+          readingList.prepend(cell);
+        }
+        updateCounts();
+      });
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-danger';
+      delBtn.style.cssText = 'font-size:.82rem;padding:.35rem .75rem';
+      delBtn.textContent = 'Delete';
+      delBtn.addEventListener('click', async () => {
+        if (!confirm(`Remove "${book.title}" from your library?`)) return;
+        await deleteBook(user.uid, book.id, { title: book.title, author: book.author });
+        const idx = allBooks.findIndex(b => b.id === book.id);
+        if (idx !== -1) allBooks.splice(idx, 1);
+        if (coverCell) coverCell.remove();
+        closeModal();
+        updateCounts();
+      });
+
+      actions.append(backBtn, delBtn);
+      card.appendChild(actions);
+      return card;
+    }
+
+    function renderDnfView(book) {
+      const card = document.createElement('div');
+      card.className  = 'card';
+      card.dataset.id = book.id;
+      const titleHtml = book.gbid
+        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
+        : `<span class="book-title">${esc(book.title)}</span>`;
+      card.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.75rem">
+          <div style="flex:1;min-width:0">
+            ${titleHtml}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
+          </div>
+        </div>
+        <div class="book-entry">
+          <div class="book-info"><div class="dnf-meta"></div></div>
+          ${bookCoverHtml(book)}
+        </div>`;
+
+      const coverWrap = card.querySelector('.book-cover-wrap');
+      const coverImg  = coverWrap?.querySelector('.book-cover, .book-cover-img');
+      if (coverImg) { coverImg.style.width = '72px'; coverImg.style.height = '108px'; }
+
+      const meta = card.querySelector('.dnf-meta');
+      function metaRow(lbl, val) {
+        if (!val) return;
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.4rem';
+        const l = document.createElement('span');
+        l.style.cssText = 'font-size:.72rem;color:var(--text-muted);min-width:80px';
+        l.textContent = lbl;
+        const v = document.createElement('span');
+        v.style.cssText = 'font-size:.8rem;color:var(--text)';
+        v.textContent = val;
+        row.append(l, v);
+        meta.appendChild(row);
+      }
+      metaRow('Started', book.addedAt ? formatDateTs(book.addedAt, book.addedAtPrecision || 'month') : null);
+      if (book.currentPage > 0)
+        metaRow('Stopped at', book.totalPages ? `page ${book.currentPage} of ${book.totalPages}` : `page ${book.currentPage}`);
+      metaRow('Language', book.language || null);
+      metaRow('Format',   book.format   || null);
+      return card;
+    }
+
     let allBooks = [];
 
     function updateCounts() {
       const rc = allBooks.filter(b => b.status === 'reading').length;
       const fc = allBooks.filter(b => b.status === 'finished').length;
+      const dc = allBooks.filter(b => b.status === 'dnf').length;
       document.getElementById('reading-title').textContent  = `Currently Reading · ${rc}`;
       document.getElementById('finished-title').textContent = `Finished · ${fc}`;
+      document.getElementById('dnf-title').textContent      = `Did Not Finish · ${dc}`;
+      document.getElementById('dnf-section').style.display  = dc > 0 ? '' : 'none';
     }
 
     function getReads(book) {
@@ -2532,12 +2715,17 @@
             const aTs = tsOf(a, 'finishedAt') || tsOf(a, 'addedAt');
             return bTs - aTs;
           });
-        return { reading, finished };
+        const dnf = books
+          .filter(b => b.status === 'dnf')
+          .sort((a, b) => tsOf(b, 'addedAt') - tsOf(a, 'addedAt'));
+        return { reading, finished, dnf };
       }
 
-      function setTitles(reading, finished) {
+      function setTitles(reading, finished, dnf = []) {
         document.getElementById('reading-title').textContent  = `Currently Reading · ${reading.length}`;
         document.getElementById('finished-title').textContent = `Finished · ${finished.length}`;
+        document.getElementById('dnf-title').textContent      = `Did Not Finish · ${dnf.length}`;
+        document.getElementById('dnf-section').style.display  = dnf.length > 0 ? '' : 'none';
       }
 
       function setupFinishedSort(finished, attachCell, listAttachFn) {
@@ -2637,13 +2825,14 @@
 
       let renderReadingFn    = () => {};
       let reRenderFinishedFn = () => {};
+      let renderDnfFn        = () => {};
 
       if (isOwn) {
         const [booksData, lists] = await Promise.all([
           getBooks(user.uid).then(sortBooks),
           getLists(user.uid).catch(() => [])
         ]);
-        const { reading, finished } = booksData;
+        const { reading, finished, dnf } = booksData;
         allLists = lists;
 
         // Migrate legacy "E-reader" → "Digital"
@@ -2661,8 +2850,8 @@
         });
         [...reading, ...finished].forEach(b => { b._listIds = (gbidToLists.get(b.gbid) || []).join(','); });
 
-        allBooks = [...reading, ...finished];
-        setTitles(reading, finished);
+        allBooks = [...reading, ...finished, ...dnf];
+        setTitles(reading, finished, dnf);
 
         renderReadingFn = () => {
           readingList.innerHTML = '';
@@ -2687,15 +2876,33 @@
           (cell, b) => attachFinishedCell(cell, b),
           (row,  b) => { row.addEventListener('click', () => { let ov; const c = renderFinished(b, row, () => ov?.remove()); ov = createBookModal(c); }); }
         );
+
+        renderDnfFn = () => {
+          dnfList.innerHTML = '';
+          dnfList.className = viewMode === 'list' ? 'books-list' : 'books-grid';
+          const liveDnf = allBooks.filter(b => b.status === 'dnf');
+          liveDnf.forEach(b => {
+            if (viewMode === 'list') {
+              const row = makeBookListRow(b);
+              row.addEventListener('click', () => { let ov; const c = renderDnf(b, row, () => ov?.remove()); ov = createBookModal(c); });
+              dnfList.appendChild(row);
+            } else {
+              const cell = makeBookCoverCell(b);
+              attachDnfCell(cell, b);
+              dnfList.appendChild(cell);
+            }
+          });
+        };
+        renderDnfFn();
       } else {
         document.getElementById('add-book-card').style.display = 'none';
 
         const target = await getProfileByUsername(viewUser);
         if (target) {
           document.getElementById('page-title').innerHTML = `<a href="../profile/?u=${encodeURIComponent(target.username)}" style="color:var(--accent);text-decoration:none">${esc(target.username)}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>library<span class="title-dot">.</span>`;
-          const { reading, finished } = sortBooks((await getBooks(target.uid)).filter(b => !b.private));
-          allBooks = [...reading, ...finished];
-          setTitles(reading, finished);
+          const { reading, finished, dnf } = sortBooks((await getBooks(target.uid)).filter(b => !b.private));
+          allBooks = [...reading, ...finished, ...dnf];
+          setTitles(reading, finished, dnf);
 
           renderReadingFn = () => {
             readingList.innerHTML = '';
@@ -2720,6 +2927,23 @@
             (cell, b) => cell.addEventListener('click', () => createBookModal(renderFinishedView(b))),
             (row,  b) => { row.addEventListener('click', () => createBookModal(renderFinishedView(b))); }
           );
+
+          renderDnfFn = () => {
+            dnfList.innerHTML = '';
+            dnfList.className = viewMode === 'list' ? 'books-list' : 'books-grid';
+            dnf.forEach(b => {
+              if (viewMode === 'list') {
+                const row = makeBookListRow(b);
+                row.addEventListener('click', () => createBookModal(renderDnfView(b)));
+                dnfList.appendChild(row);
+              } else {
+                const cell = makeBookCoverCell(b);
+                cell.addEventListener('click', () => createBookModal(renderDnfView(b)));
+                dnfList.appendChild(cell);
+              }
+            });
+          };
+          renderDnfFn();
         }
       }
       if (readingList.querySelector('[data-title]') || finishedList.querySelector('[data-title]')) {
@@ -2765,6 +2989,17 @@
           filterDropdownBtn.style.color = total ? 'var(--accent)' : '';
         }
         filterInput.addEventListener('input', applyFilter);
+
+        const filterClearBtn = document.getElementById('library-filter-clear');
+        filterInput.addEventListener('input', () => {
+          filterClearBtn.style.display = filterInput.value ? '' : 'none';
+          filterInput.style.paddingRight = filterInput.value ? '26px' : '';
+        });
+        filterClearBtn.addEventListener('click', () => {
+          filterInput.value = '';
+          filterInput.dispatchEvent(new Event('input'));
+          filterInput.focus();
+        });
 
         // Dropdown open/close
         const pageContent = document.querySelector('.page-content');
@@ -2825,46 +3060,47 @@
           filterDropdown.appendChild(section);
         }
 
-        const formats   = [...new Set(allBooks.map(b => b.format).filter(Boolean))].sort();
-        const languages = [...new Set(allBooks.map(b => b.language).filter(Boolean))].sort();
-        const countries = [...new Set(allBooks.map(b => b.country).filter(Boolean))].sort();
+        const cb = allBooks.filter(b => b.status !== 'dnf'); // countable books — DNF excluded from filter counts
+        const formats   = [...new Set(cb.map(b => b.format).filter(Boolean))].sort();
+        const languages = [...new Set(cb.map(b => b.language).filter(Boolean))].sort();
+        const countries = [...new Set(cb.map(b => b.country).filter(Boolean))].sort();
 
-        addSection('Format',   'format',   formats.map(v => ({ val: v.toLowerCase(), label: v, count: allBooks.filter(b => b.format === v).length })));
-        addSection('Language', 'language', languages.map(v => ({ val: v.toLowerCase(), label: v, count: allBooks.filter(b => b.language === v).length })));
+        addSection('Format',   'format',   formats.map(v => ({ val: v.toLowerCase(), label: v, count: cb.filter(b => b.format === v).length })));
+        addSection('Language', 'language', languages.map(v => ({ val: v.toLowerCase(), label: v, count: cb.filter(b => b.language === v).length })));
 
         const GENDER_ORDER = ['Male', 'Female', 'Non-binary', 'Other'];
-        const genders = GENDER_ORDER.filter(g => allBooks.some(b => b.authorGender === g));
-        addSection('Gender', 'gender', genders.map(g => ({ val: g.toLowerCase(), label: g, count: allBooks.filter(b => b.authorGender === g).length })), { sort: false });
+        const genders = GENDER_ORDER.filter(g => cb.some(b => b.authorGender === g));
+        addSection('Gender', 'gender', genders.map(g => ({ val: g.toLowerCase(), label: g, count: cb.filter(b => b.authorGender === g).length })), { sort: false });
 
-        const ratingVals = [...new Set(allBooks.map(b => b.rating).filter(r => r != null))].sort((a, b) => b - a);
+        const ratingVals = [...new Set(cb.map(b => b.rating).filter(r => r != null))].sort((a, b) => b - a);
         function ratingLabel(r) { return '★'.repeat(Math.floor(r)) + (r % 1 >= 0.5 ? '½' : ''); }
-        addSection('Rating', 'rating', ratingVals.map(r => ({ val: String(r), label: ratingLabel(r), count: allBooks.filter(b => b.rating === r).length })), { sort: false });
+        addSection('Rating', 'rating', ratingVals.map(r => ({ val: String(r), label: ratingLabel(r), count: cb.filter(b => b.rating === r).length })), { sort: false });
 
         if (isOwn && allLists.length) {
-          const libraryGbids = new Set(allBooks.map(b => b.gbid).filter(Boolean));
+          const libraryGbids = new Set(cb.map(b => b.gbid).filter(Boolean));
           const relevantLists = allLists.filter(l => (l.books || []).some(b => b.gbid && libraryGbids.has(b.gbid)));
           addSection('Lists', 'lists', relevantLists.map(l => ({ val: l.id, label: l.name, count: (l.books || []).filter(b => b.gbid && libraryGbids.has(b.gbid)).length })));
         }
 
         const completenessItems = [
-          { val: 'no-cover',    label: 'Missing cover',    count: allBooks.filter(b => !b.coverUrl).length },
-          { val: 'no-country',  label: 'Missing country',  count: allBooks.filter(b => !b.country).length },
-          { val: 'no-gender',   label: 'Missing gender',   count: allBooks.filter(b => !b.authorGender).length },
-          { val: 'no-genre',    label: 'Missing genre',    count: allBooks.filter(b => !b.genres?.length).length },
-          { val: 'no-year',     label: 'Missing year',     count: allBooks.filter(b => b.releaseYear == null).length },
-          { val: 'no-pages',    label: 'Missing pages',    count: allBooks.filter(b => !b.totalPages).length },
-          { val: 'no-language', label: 'Missing language', count: allBooks.filter(b => !b.language).length },
-          { val: 'no-format',   label: 'Missing format',   count: allBooks.filter(b => !b.format).length },
+          { val: 'no-cover',    label: 'Missing cover',    count: cb.filter(b => !b.coverUrl).length },
+          { val: 'no-country',  label: 'Missing country',  count: cb.filter(b => !b.country).length },
+          { val: 'no-gender',   label: 'Missing gender',   count: cb.filter(b => !b.authorGender).length },
+          { val: 'no-genre',    label: 'Missing genre',    count: cb.filter(b => !b.genres?.length).length },
+          { val: 'no-year',     label: 'Missing year',     count: cb.filter(b => b.releaseYear == null).length },
+          { val: 'no-pages',    label: 'Missing pages',    count: cb.filter(b => !b.totalPages).length },
+          { val: 'no-language', label: 'Missing language', count: cb.filter(b => !b.language).length },
+          { val: 'no-format',   label: 'Missing format',   count: cb.filter(b => !b.format).length },
         ].filter(i => i.count > 0);
         addSection('Completeness', 'completeness', completenessItems, { sort: false });
 
-        const countryEntries = countries.map(v => ({ val: v.toLowerCase(), label: v, count: allBooks.filter(b => b.country === v).length }));
-        const noCountryCount = allBooks.filter(b => !b.country).length;
+        const countryEntries = countries.map(v => ({ val: v.toLowerCase(), label: v, count: cb.filter(b => b.country === v).length }));
+        const noCountryCount = cb.filter(b => !b.country).length;
         if (noCountryCount > 0) countryEntries.push({ val: '', label: 'No country', count: noCountryCount });
         addSection('Country', 'country', countryEntries);
 
         const genreMap = {};
-        for (const b of allBooks) for (const g of (b.genres || [])) genreMap[g] = (genreMap[g] || 0) + 1;
+        for (const b of cb) for (const g of (b.genres || [])) genreMap[g] = (genreMap[g] || 0) + 1;
         const genreEntries = Object.entries(genreMap).map(([g, count]) => ({ val: g.toLowerCase(), label: g, count }));
         addSection('Genre', 'genre', genreEntries);
 
@@ -2930,6 +3166,7 @@
           updateToggleUI();
           renderReadingFn();
           reRenderFinishedFn?.();
+          renderDnfFn?.();
           applyFilter();
         });
         listBtn.addEventListener('click', () => {
@@ -2939,6 +3176,7 @@
           updateToggleUI();
           renderReadingFn();
           reRenderFinishedFn?.();
+          renderDnfFn?.();
           applyFilter();
         });
       }
@@ -2967,6 +3205,8 @@
       suggestBox.innerHTML        = '';
       suggestBox.style.display    = 'none';
       selectedPreview.style.display = 'none';
+      privateRow.style.display = 'none';
+      privateCheck.checked = false;
       selectedBook = null;
       setAddEnabled(false);
       // Restore form to initial state in case we were in the "Already read" rating step
@@ -3001,6 +3241,16 @@
     const selectedPreview = document.createElement('div');
     selectedPreview.style.cssText = 'display:none;margin-top:.4rem;padding:.5rem .65rem;border:1px solid var(--accent);border-radius:var(--radius-sm);background:color-mix(in srgb,var(--accent) 7%,var(--bg-card))';
     document.getElementById('book-search-wrap').appendChild(selectedPreview);
+
+    const privateRow = document.createElement('label');
+    privateRow.style.cssText = 'display:none;align-items:center;gap:.4rem;font-size:.82rem;color:var(--text-muted);cursor:pointer;margin-top:.45rem;user-select:none';
+    const privateCheck = document.createElement('input');
+    privateCheck.type = 'checkbox';
+    privateCheck.style.cssText = 'accent-color:var(--accent);width:14px;height:14px;cursor:pointer;flex-shrink:0;margin:0';
+    const privateLockSpan = document.createElement('span');
+    privateLockSpan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" style="display:block"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+    privateRow.append(privateCheck, privateLockSpan, document.createTextNode('Add as private'));
+    form.querySelector('.add-book-fields').appendChild(privateRow);
 
     function showBookPreview({ title, author, cover, releaseYear, pages, gbid }) {
       const coverHtml = cover
@@ -3199,6 +3449,7 @@
             suggestBox.innerHTML     = '';
             suggestBox.style.display = 'none';
             showBookPreview(selectedBook);
+            privateRow.style.display = 'flex';
             setAddEnabled(true);
             // Background meta fetch — genres (Hardcover) + country + gender (Wikidata)
             const capturedBook = selectedBook;
@@ -3288,7 +3539,9 @@
       const { title, author, pages, gbid, cover, releaseYear, country, authorGender, genres } = selectedBook;
 
       const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, coverUrl: cover, releaseYear, country, authorGender, genres }, profile.username);
-      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, authorGender, genres, addedAt: { toDate: () => new Date() }, addedAtPrecision: 'day' };
+      const isPrivate = privateCheck.checked;
+      if (isPrivate) await setBookPrivate(user.uid, id, true);
+      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, authorGender, genres, addedAt: { toDate: () => new Date() }, addedAtPrecision: 'day', private: isPrivate || undefined };
 
       allBooks.push(book);
       document.getElementById('reading-empty')?.remove();
@@ -3370,10 +3623,12 @@
         const existingFinished =
           (gbid   && allBooks.find(b => b.gbid  === gbid                             && b.status === 'finished')) ||
           (title  && allBooks.find(b => b.title?.toLowerCase() === title.toLowerCase() && b.status === 'finished'));
+        const addAsPrivate = privateCheck.checked;
         if (existingFinished) {
           const finishedAtDate = finishedAt || new Date();
           const finishedAtDatePrec = finishedAt ? finishedPrec : 'day';
           await finishBook(user.uid, existingFinished.id, { title: existingFinished.title, author: existingFinished.author, gbid: existingFinished.gbid, rating, review, coverUrl: existingFinished.coverUrl, startedAt: addedAt, startedAtPrecision: startedPrec, finishedAt: finishedAtDate, finishedAtPrecision: finishedAtDatePrec }, profile.username);
+          if (addAsPrivate) { await setBookPrivate(user.uid, existingFinished.id, true); existingFinished.private = true; }
           existingFinished.status = 'finished';
           existingFinished.rating = rating;
           existingFinished.review = review;
@@ -3398,8 +3653,9 @@
             finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,
             addedAt,    addedAtPrecision:    addedAt    ? startedPrec  : undefined
           }, profile.username);
+          if (addAsPrivate) await setBookPrivate(user.uid, id, true);
           const book = {
-            id, title, author, totalPages: pages, currentPage: pages, status: 'finished',
+            id, title, author, totalPages: pages, currentPage: pages, status: 'finished', private: addAsPrivate || undefined,
             coverUrl:            cover,
             addedAt:             addedAt    ? { toDate: () => addedAt }    : { toDate: () => new Date() },
             addedAtPrecision:    addedAt    ? startedPrec  : null,

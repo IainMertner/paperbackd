@@ -1214,7 +1214,7 @@
     }
 
     if (isOwn) {
-      let isPrivate = targetProfile.targetsPrivate !== false;
+      let isPrivate = targetProfile.targetsPrivate === true;
 
       const headerRow = document.createElement('div');
       headerRow.style.cssText = 'display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem';
@@ -1298,7 +1298,7 @@
       targetsContent.appendChild(sectionsEl);
       rebuildSections();
 
-    } else if (targetProfile.targetsPrivate !== false) {
+    } else if (targetProfile.targetsPrivate === true) {
       const msg = document.createElement('div');
       msg.style.cssText = 'text-align:center;padding:2.5rem 1rem;color:var(--text-muted)';
       msg.innerHTML = `
