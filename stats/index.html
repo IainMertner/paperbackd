@@ -429,9 +429,10 @@
       northamerican:  'North American books',
       oceanian:       'Oceanian books',
       southamerican:  'South American books',
-      diversity:      'Female/NB %',
+      female_pct:     'Female %',
+      nb_pct:         'Non-binary %',
     };
-    const PCT_TYPES = new Set(['diversity']);
+    const PCT_TYPES = new Set(['female_pct', 'nb_pct']);
     const ISO_CONTINENT = {
       ng:'AF', za:'AF', eg:'AF', ke:'AF', gh:'AF', et:'AF', ma:'AF', tz:'AF', ug:'AF', zw:'AF', rw:'AF', ao:'AF',
       jp:'AS', cn:'AS', kr:'AS', tw:'AS', in:'AS', pk:'AS', bd:'AS', lk:'AS', vn:'AS', th:'AS', id:'AS', ph:'AS',
@@ -471,7 +472,7 @@
 
     const PIE_COLOR_OTHER = '#6b7280';
 
-    const PIE_COLORS = ['#C4607A','#3A68B0','#B85C3A','#7A2E40','#C4832A','#6B7B3A','#3A7A72','#8A6040','#E0AC00','#B8963A','#3A6B4A','#7A8A5A','#8A7A6A','#6A6A8A'];
+    const PIE_COLORS = ['#C4607A','#3A68B0','#B85C3A','#8B2252','#C4832A','#6B7B3A','#3A7A72','#8A6040','#E0AC00','#B8963A','#3A6B4A','#7A8A5A','#8A7A6A','#6A6A8A'];
 
     const COUNTRY_ISO = {
       'united states': 'us', 'usa': 'us', 'us': 'us',
@@ -595,7 +596,7 @@
 
       const muted     = cssVar('--text-muted');
       const border    = cssVar('--border');
-      const accent    = cssVar('--palette-rose');
+      const accent    = cssVar('--palette-slate');
       const bgCard    = cssVar('--bg-card') || cssVar('--bg');
       const bgAlt     = cssVar('--bg-alt');
       const textColor = cssVar('--text');
@@ -966,6 +967,8 @@
 
     // ── Summary ────────────────────────────────────────────────────────────────
 
+    function toAuthorSlug(name) { return (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
+
     function buildSummary() {
       const panel = document.getElementById('panel-summary');
       panel.innerHTML = '';
@@ -1039,7 +1042,7 @@
           { label: 'average rating',    value: avgRating != null ? avgRating.toFixed(1) + ' ★' : '–' },
           { label: 'standard deviation', value: stdDev != null ? stdDev.toFixed(2) : '–' },
           { label: pl(fiveStars, '5 star review',   '5 star reviews'),   value: fiveStars },
-          { label: pl(halfStars, '1/2 star review', '1/2 star reviews'), value: halfStars },
+          { label: pl(halfStars, '½ star review', '½ star reviews'), value: halfStars },
         ]},
         { title: 'countries', stats: [
           { label: pl(uniqueCountries,    'country',             'countries'),             value: uniqueCountries || '–' },
@@ -1070,11 +1073,12 @@
           const longest  = withPages.length ? withPages.reduce((a, b) => b.totalPages > a.totalPages ? b : a) : null;
           const shortest = withPages.length ? withPages.reduce((a, b) => b.totalPages < a.totalPages ? b : a) : null;
 
+          const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
           return [
-            { label: 'most read author',  value: topAuthor  ? topAuthor[0]  : '–' },
-            { label: 'most read country', value: topCountry ? topCountry[0] : '–' },
-            { label: 'longest book',      value: longest    ? longest.title  : '–' },
-            { label: 'shortest book',     value: shortest   ? shortest.title : '–' },
+            { label: `most read author (${topAuthor  ? `${topAuthor[1]} ${pl(topAuthor[1], 'book', 'books')}` : '–'})`,  value: topAuthor  ? topAuthor[0]  : '–', href: topAuthor  ? `../author/?slug=${toAuthorSlug(topAuthor[0])}&name=${encodeURIComponent(topAuthor[0])}`  : null },
+            { label: `most read country (${topCountry ? `${topCountry[1]} ${pl(topCountry[1], 'book', 'books')}` : '–'})`, value: topCountry ? topCountry[0] : '–', href: topCountry ? `../library/?country=${encodeURIComponent(topCountry[0].toLowerCase())}${u}` : null },
+            { label: `longest book (${longest  ? `${longest.totalPages.toLocaleString()} pages`  : '–'})`,  value: longest  ? longest.title  : '–', href: longest  && longest.gbid  ? `../book/?gbid=${encodeURIComponent(longest.gbid)}`            : null },
+            { label: `shortest book (${shortest ? `${shortest.totalPages.toLocaleString()} pages` : '–'})`, value: shortest ? shortest.title : '–', href: shortest && shortest.gbid ? `../book/?gbid=${encodeURIComponent(shortest.gbid)}`           : null },
           ];
         })() },
       ];
@@ -1090,7 +1094,10 @@
         for (const s of section.stats) {
           const row = document.createElement('div');
           row.className = 'summary-row';
-          row.innerHTML = `<span class="summary-row-value">${s.value}</span><span class="summary-row-label">${s.label}</span>`;
+          const valHtml = s.href
+            ? `<a href="${s.href}" class="summary-row-value" style="color:inherit;text-decoration:none">${s.value}</a>`
+            : `<span class="summary-row-value">${s.value}</span>`;
+          row.innerHTML = `${valHtml}<span class="summary-row-label">${s.label}</span>`;
           grid.appendChild(row);
         }
         panel.appendChild(grid);
@@ -1116,11 +1123,17 @@
       if (type === 'books')     return finished.length;
       if (type === 'languages') return new Set(finished.map(b => b.language).filter(Boolean)).size;
       if (type === 'countries') return new Set(finished.map(b => b.country).filter(Boolean)).size;
-      if (type === 'diversity') {
-        const withGender = finished.filter(b => b.authorGender);
-        if (!withGender.length) return 0;
-        const diverse = withGender.filter(b => b.authorGender === 'Female' || b.authorGender === 'Non-binary' || b.authorGender === 'Other');
-        return Math.round(diverse.length / withGender.length * 100);
+      if (type === 'female_pct' || type === 'nb_pct') {
+        const seen = new Map();
+        for (const b of finished) {
+          if (!b.author || !b.authorGender) continue;
+          if (!seen.has(b.author)) seen.set(b.author, b.authorGender);
+        }
+        if (!seen.size) return 0;
+        const match = type === 'female_pct' ? 'Female' : 'Non-binary';
+        let count = 0;
+        for (const g of seen.values()) if (g === match) count++;
+        return Math.round(count / seen.size * 100);
       }
       const contKey = CONTINENT_TYPE[type];
       if (contKey) return finished.filter(b => {
@@ -1913,7 +1926,7 @@
     }
 
     // Horizontal bar chart for author-style lists. entries = [{label, value}]
-    function drawHBar(canvasEl, entries, { color } = {}) {
+    function drawHBar(canvasEl, entries, { color, onBarClick } = {}) {
       const dpr   = window.devicePixelRatio || 1;
       const W_CSS = canvasEl.parentElement.clientWidth || 300;
       const N     = entries.length;
@@ -1939,35 +1952,55 @@
       const maxVal = Math.max(...entries.map(e => e.value), 1);
       const barArea = W_CSS - labelCol - 36;
 
-      ctx.clearRect(0, 0, W_CSS, H_CSS);
+      function render(hovered = -1) {
+        ctx.clearRect(0, 0, W_CSS, H_CSS);
+        for (let i = 0; i < N; i++) {
+          const { label, value } = entries[i];
+          const y    = 12 + i * ROW_H;
+          const barW = (value / maxVal) * barArea;
+          const barH = ROW_H * 0.55;
+          const barY = y + (ROW_H - barH) / 2;
 
-      for (let i = 0; i < N; i++) {
-        const { label, value } = entries[i];
-        const y    = 12 + i * ROW_H;
-        const barW = (value / maxVal) * barArea;
-        const barH = ROW_H * 0.55;
-        const barY = y + (ROW_H - barH) / 2;
+          ctx.fillStyle = i === hovered ? text : text;
+          ctx.globalAlpha = i === hovered ? 1 : 1;
+          ctx.font = `${i === hovered ? 600 : 400} ${labelFontSize}px -apple-system, sans-serif`;
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(label, labelCol - 6, y + ROW_H / 2);
 
-        // Label
-        ctx.fillStyle = text;
-        ctx.font = `${labelFontSize}px -apple-system, sans-serif`;
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(label, labelCol - 6, y + ROW_H / 2);
+          ctx.globalAlpha = i === hovered ? 1 : 0.82;
+          ctx.fillStyle = accent;
+          if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(labelCol, barY, barW, barH, 3); ctx.fill(); }
+          else { ctx.fillRect(labelCol, barY, barW, barH); }
+          ctx.globalAlpha = 1;
 
-        // Bar
-        ctx.globalAlpha = 0.82;
-        ctx.fillStyle = accent;
-        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(labelCol, barY, barW, barH, 3); ctx.fill(); }
-        else { ctx.fillRect(labelCol, barY, barW, barH); }
-        ctx.globalAlpha = 1;
+          ctx.fillStyle = muted;
+          ctx.font = `bold ${labelFontSize}px -apple-system, sans-serif`;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(value, labelCol + barW + 6, y + ROW_H / 2);
+        }
+      }
 
-        // Count
-        ctx.fillStyle = muted;
-        ctx.font = `bold ${labelFontSize}px -apple-system, sans-serif`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(value, labelCol + barW + 6, y + ROW_H / 2);
+      render();
+
+      if (onBarClick) {
+        function rowAt(clientY) {
+          const rect = canvasEl.getBoundingClientRect();
+          const my   = clientY - rect.top;
+          const i    = Math.floor((my - 12) / ROW_H);
+          return (i >= 0 && i < N) ? i : -1;
+        }
+        canvasEl.addEventListener('mousemove', e => {
+          const i = rowAt(e.clientY);
+          canvasEl.style.cursor = i >= 0 ? 'pointer' : '';
+          render(i);
+        });
+        canvasEl.addEventListener('mouseleave', () => { canvasEl.style.cursor = ''; render(); });
+        canvasEl.addEventListener('click', e => {
+          const i = rowAt(e.clientY);
+          if (i >= 0) onBarClick(entries[i].label);
+        });
       }
     }
 
@@ -2077,6 +2110,8 @@
     }
 
     async function drawCharts() {
+      const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
+
       // Rating distribution
       const ratingCounts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; // 0.5 → 5.0 in 0.5 steps
       const rated = books.filter(b => b.rating != null && b.rating >= 0.5 && b.rating <= 5);
@@ -2086,7 +2121,6 @@
       }
       const ratingsCanvas = document.getElementById('chart-ratings');
       if (rated.length > 0) {
-        const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
         drawRatingBar(ratingsCanvas, ratingCounts, { onBarClick: r => { location.href = `../library/?rating=${r}${u}`; } });
         const avg = (rated.reduce((s, b) => s + b.rating, 0) / rated.length).toFixed(1);
         document.getElementById('chart-ratings-summary').textContent = `${rated.length} rated · avg ${avg} ★`;
@@ -2164,7 +2198,6 @@
       }
 
       if (ptsPages.length >= 2) {
-        const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
         const reg = drawScatter(pagesCanvas, ptsPages, { xLabel: 'Pages', yMin: 0, yMax: 5, logX: true, onPointClick: t => { location.href = `../library/?q=${encodeURIComponent(t)}${u}`; } });
         if (reg) {
           const p = reg.pValue, up = reg.m > 0;
@@ -2184,7 +2217,6 @@
       }
 
       if (ptsAge.length >= 2) {
-        const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
         const reg = drawScatter(ageCanvas, ptsAge, { xLabel: 'Book age (years)', yMin: 0, yMax: 5, logX: true, onPointClick: t => { location.href = `../library/?q=${encodeURIComponent(t)}${u}`; } });
         if (reg) {
           const p = reg.pValue, up = reg.m > 0;
@@ -2213,7 +2245,7 @@
         const years = Object.keys(yearCounts).map(Number).sort((a, b) => a - b);
         const byYearCanvas = document.getElementById('chart-byyear');
         if (years.length >= 2) {
-          drawVBar(byYearCanvas, years.map(String), years.map(y => yearCounts[y]));
+          drawVBar(byYearCanvas, years.map(String), years.map(y => yearCounts[y]), { color: cssVar('--palette-teal') });
         } else {
           byYearCanvas.style.display = 'none';
           document.getElementById('chart-byyear-empty').style.display = '';
@@ -2230,7 +2262,7 @@
         }
         const byMonthCanvas = document.getElementById('chart-bymonth');
         if (monthCounts.some(c => c > 0)) {
-          drawVBar(byMonthCanvas, MONTHS, monthCounts);
+          drawVBar(byMonthCanvas, MONTHS, monthCounts, { color: cssVar('--palette-teal') });
         } else {
           byMonthCanvas.style.display = 'none';
           document.getElementById('chart-bymonth-empty').style.display = '';
@@ -2248,7 +2280,7 @@
           .map(([label, value]) => ({ label, value }));
         const authorsCanvas = document.getElementById('chart-authors');
         if (top.length >= 2) {
-          drawHBar(authorsCanvas, top);
+          drawHBar(authorsCanvas, top, { color: cssVar('--palette-amber') });
         } else {
           authorsCanvas.style.display = 'none';
           document.getElementById('chart-authors-empty').style.display = '';
@@ -2270,7 +2302,7 @@
           .map(g => ({ label: g, value: genderCounts[g] }));
         const genderCanvas = document.getElementById('chart-gender');
         if (entries.length >= 1) {
-          drawHBar(genderCanvas, entries);
+          drawHBar(genderCanvas, entries, { color: cssVar('--palette-olive'), onBarClick: g => { location.href = `../library/?gender=${encodeURIComponent(g.toLowerCase())}${u}`; } });
         } else {
           genderCanvas.style.display = 'none';
           document.getElementById('chart-gender-empty').style.display = '';
@@ -2287,7 +2319,7 @@
           .map(([label, value]) => ({ label, value }));
         const genresCanvas = document.getElementById('chart-genres');
         if (top.length >= 1) {
-          drawHBar(genresCanvas, top);
+          drawHBar(genresCanvas, top, { color: cssVar('--palette-burgundy'), onBarClick: g => { location.href = `../library/?genre=${encodeURIComponent(g.toLowerCase())}${u}`; } });
         } else {
           genresCanvas.style.display = 'none';
           document.getElementById('chart-genres-empty').style.display = '';

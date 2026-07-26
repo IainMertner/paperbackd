@@ -38,13 +38,14 @@
   <main class="page-content">
     <h1 class="page-title">search<span class="title-dot">.</span></h1>
     <div style="display:flex;gap:.5rem;margin-bottom:.65rem">
-      <button id="tab-books"   class="search-tab-btn active">Books</button>
-      <button id="tab-authors" class="search-tab-btn">Authors</button>
+      <button id="tab-all"     class="search-tab-btn active">All</button>
       <button id="tab-users"   class="search-tab-btn">Users</button>
+      <button id="tab-books"   class="search-tab-btn">Books</button>
+      <button id="tab-authors" class="search-tab-btn">Authors</button>
     </div>
     <div class="book-search-wrap" id="search-wrap" style="margin-bottom:.9rem">
       <input type="search" id="search-input" class="join-club-input"
-        placeholder="Search for a book…" autocomplete="off" spellcheck="false"
+        placeholder="Search everything…" autocomplete="off" spellcheck="false"
         style="width:100%;box-sizing:border-box;font-size:1rem;padding:.6rem .75rem">
     </div>
     <div id="search-results"></div>
@@ -101,11 +102,12 @@
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
     const input      = document.getElementById('search-input');
     const results    = document.getElementById('search-results');
+    const tabAll     = document.getElementById('tab-all');
     const tabBooks   = document.getElementById('tab-books');
     const tabAuthors = document.getElementById('tab-authors');
     const tabUsers   = document.getElementById('tab-users');
     let timer;
-    let activeTab = 'books';
+    let activeTab = 'all';
 
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -155,14 +157,29 @@
           <div class="search-result-title" style="font-size:.9rem">${esc(item.label)}</div>
           ${item.sublabel ? `<div class="search-result-meta">${esc(item.sublabel)}</div>` : ''}
         </div>`;
+        const xBtn = document.createElement('button');
+        xBtn.type = 'button';
+        xBtn.innerHTML = '&times;';
+        xBtn.setAttribute('aria-label', 'Remove from recently viewed');
+        xBtn.style.cssText = 'background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:1.1rem;line-height:1;padding:.2rem .3rem;flex-shrink:0;opacity:.5;transition:opacity .15s;margin-left:auto';
+        xBtn.addEventListener('mouseenter', () => xBtn.style.opacity = '1');
+        xBtn.addEventListener('mouseleave', () => xBtn.style.opacity = '.5');
+        xBtn.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          localStorage.setItem(RECENTS_KEY, JSON.stringify(getRecents().filter(r => r.href !== item.href)));
+          renderRecents();
+        });
+        a.appendChild(xBtn);
         results.appendChild(a);
       });
     }
 
     const tabDefs = [
+      { id: 'all',     btn: tabAll,     placeholder: 'Search everything…' },
+      { id: 'users',   btn: tabUsers,   placeholder: 'Search for a user…' },
       { id: 'books',   btn: tabBooks,   placeholder: 'Search for a book…' },
       { id: 'authors', btn: tabAuthors, placeholder: 'Search for an author…' },
-      { id: 'users',   btn: tabUsers,   placeholder: 'Search for a user…' },
     ];
 
     function setTab(tab) {
@@ -176,9 +193,18 @@
       if (q) runSearch(q); else renderRecents();
     }
 
+    tabAll.addEventListener('click',     () => setTab('all'));
     tabBooks.addEventListener('click',   () => setTab('books'));
     tabAuthors.addEventListener('click', () => setTab('authors'));
     tabUsers.addEventListener('click',   () => setTab('users'));
+
+    // Pre-fill from ?q= / ?tab= URL params (e.g. navigating here from book/author pages)
+    const _sp = new URLSearchParams(location.search);
+    const _preTab = _sp.get('tab');
+    const _preQ   = _sp.get('q');
+    if (_preTab && tabDefs.find(t => t.id === _preTab)) setTab(_preTab);
+    if (_preQ) { input.value = _preQ; runSearch(_preQ); }
+    else renderRecents();
 
     input.addEventListener('input', () => {
       clearTimeout(timer);
@@ -188,9 +214,43 @@
     });
 
     function runSearch(q) {
-      if (activeTab === 'books')        fetchBooks(q);
-      else if (activeTab === 'authors') fetchAuthors(q);
-      else                              fetchUsers(q);
+      if (activeTab === 'all')           fetchAll(q);
+      else if (activeTab === 'books')    fetchBooks(q);
+      else if (activeTab === 'authors')  fetchAuthors(q);
+      else                               fetchUsers(q);
+    }
+
+    function sectionHeader(label) {
+      const el = document.createElement('div');
+      el.style.cssText = 'font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:.5rem .75rem .2rem';
+      el.textContent = label;
+      return el;
+    }
+
+    async function fetchAll(q) {
+      results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">Searching…</p>';
+      const [br, ar, ur] = await Promise.allSettled([
+        (async () => {
+          const res = await fetch(HARDCOVER_PROXY, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ query:`query($q:String!){search(query:$q,query_type:"Book",per_page:8){results}}`, variables:{q} }) });
+          return ((await res.json())?.data?.search?.results?.hits || []).map(h => h.document);
+        })(),
+        (async () => {
+          const res = await fetch(HARDCOVER_PROXY, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ query:`query($q:String!){search(query:$q,query_type:"Author",per_page:8){results}}`, variables:{q} }) });
+          return ((await res.json())?.data?.search?.results?.hits || []).map(h => h.document);
+        })(),
+        searchUsers(q, user.uid),
+      ]);
+      const books   = br.status === 'fulfilled' ? br.value : [];
+      const authors = ar.status === 'fulfilled' ? ar.value : [];
+      const users   = ur.status === 'fulfilled' ? ur.value : [];
+      if (!books.length && !authors.length && !users.length) {
+        results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">No results found.</p>';
+        return;
+      }
+      results.innerHTML = '';
+      if (users.length)   { results.appendChild(sectionHeader('Users'));   renderUsers(users, { append: true }); }
+      if (books.length)   { results.appendChild(sectionHeader('Books'));   renderBooks(books, { append: true }); }
+      if (authors.length) { results.appendChild(sectionHeader('Authors')); renderAuthors(authors, { append: true }); }
     }
 
     function showToast(msg) {
@@ -242,25 +302,26 @@
       }
     }
 
-    function renderAuthors(docs) {
+    function renderAuthors(docs, { append = false } = {}) {
       if (!docs.length) {
-        results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">No results found.</p>';
+        if (!append) results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">No results found.</p>';
         return;
       }
-      results.innerHTML = '';
+      if (!append) results.innerHTML = '';
       docs.forEach(doc => {
-        const slug  = doc.slug || String(doc.id);
-        const name  = doc.name || '';
-        const image = doc.image?.url || '';
+        const slug       = doc.slug || String(doc.id);
+        const name       = doc.name || '';
+        const image      = doc.image?.url || '';
+        const booksCount = doc.books_count ?? doc.default_books_count ?? null;
         const a = document.createElement('a');
         a.href = `../author/?slug=${encodeURIComponent(slug)}`;
         a.className = 'search-result-row';
         a.innerHTML = image
           ? `<img class="search-result-cover" src="${esc(image)}" alt="" style="border-radius:50%;object-fit:cover">`
           : `<div class="search-result-cover search-result-cover-placeholder" style="border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem">${esc((name[0] || '?').toUpperCase())}</div>`;
-        a.innerHTML += `<div class="search-result-info"><div class="search-result-title">${esc(name)}</div></div>`;
+        a.innerHTML += `<div class="search-result-info"><div class="search-result-title">${esc(name)}</div>${booksCount != null ? `<div class="search-result-meta">${booksCount} book${booksCount === 1 ? '' : 's'}</div>` : ''}</div>`;
         a.addEventListener('click', () => saveRecent({
-          type: 'author', label: name, sublabel: '', coverUrl: image,
+          type: 'author', label: name, sublabel: booksCount != null ? `${booksCount} book${booksCount === 1 ? '' : 's'}` : '', coverUrl: image,
           href: a.href, initial: (name[0] || '?').toUpperCase(), isRound: true, borderColor: '',
         }));
         results.appendChild(a);
@@ -277,12 +338,12 @@
       }
     }
 
-    function renderBooks(docs) {
+    function renderBooks(docs, { append = false } = {}) {
       if (!docs.length) {
-        results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">No results found.</p>';
+        if (!append) results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">No results found.</p>';
         return;
       }
-      results.innerHTML = '';
+      if (!append) results.innerHTML = '';
       docs.forEach(doc => {
         const slug   = doc.slug || String(doc.id);
         const title  = doc.title || '';
@@ -310,12 +371,12 @@
       });
     }
 
-    function renderUsers(users) {
+    function renderUsers(users, { append = false } = {}) {
       if (!users.length) {
-        results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">No users found.</p>';
+        if (!append) results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">No users found.</p>';
         return;
       }
-      results.innerHTML = '';
+      if (!append) results.innerHTML = '';
       users.forEach(u => {
         const a = document.createElement('a');
         a.href = `../profile/?u=${encodeURIComponent(u.username)}`;
@@ -326,9 +387,10 @@
         const avatarInner = u.avatarUrl
           ? `<img src="${esc(u.avatarUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
           : esc(initial);
+        const showName = u.displayName && u.displayName.toLowerCase() !== u.username.toLowerCase();
         a.innerHTML = `<div class="friend-avatar" style="flex-shrink:0;${borderStyle}">${avatarInner}</div>
           <div class="search-result-info">
-            <div class="search-result-title" style="font-size:.9rem">${esc(u.username)}</div>
+            <div class="search-result-title" style="font-size:.9rem">${esc(u.username)}${showName ? ` <span class="network-row-handle">${esc(u.displayName)}</span>` : ''}</div>
           </div>`;
         a.addEventListener('click', () => saveRecent({
           type: 'user', label: u.username, sublabel: '', coverUrl: u.avatarUrl || '',

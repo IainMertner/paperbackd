@@ -36,6 +36,7 @@
   </header>
 
   <main class="page-content">
+    <div id="search-widget" style="margin-bottom:.9rem;position:relative;z-index:10"></div>
     <div id="book-detail"></div>
     <p class="section-title" id="friends-title" style="display:none">Friends</p>
     <div id="friends-list"></div>
@@ -85,12 +86,14 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { getFollowing, getBookByGbid, getFriendBookStatus, getFriendListStatus, addBook, addFinishedBook, getLists, ensureDefaultList, addBookToList, removeBookFromList } from '../js/firebase.js';
+    import { initSearchWidget } from '../js/search-widget.js';
 
     const params = new URLSearchParams(location.search);
     const gbid   = params.get('gbid');
     if (!gbid) location.replace('../library/');
 
     const { user, profile } = await requireAuth();
+    initSearchWidget(document.getElementById('search-widget'), { user });
 
 
     function esc(s) {
@@ -186,6 +189,7 @@
       const nonLatin = letters.filter(c => c > 'ɏ').length;
       return nonLatin / letters.length < 0.15;
     }
+
 
     try {
       const [hcRes, following, myBook] = await Promise.all([
@@ -419,10 +423,18 @@
           });
         });
       } else {
-        const listsCard = document.createElement('div');
-        listsCard.className = 'card';
-        listsCard.appendChild(setupListsButton());
-        detail.appendChild(listsCard);
+        const actionsCard = document.createElement('div');
+        actionsCard.className = 'card';
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap;align-items:center';
+        const libLink = document.createElement('a');
+        libLink.className = 'join-club-btn';
+        libLink.href = `../library/?book=${encodeURIComponent(gbid)}`;
+        libLink.textContent = 'View in library';
+        libLink.style.cssText = 'font-size:.85rem;padding:.45rem .9rem;text-decoration:none';
+        btnRow.append(libLink, setupListsButton());
+        actionsCard.appendChild(btnRow);
+        detail.appendChild(actionsCard);
       }
 
 

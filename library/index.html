@@ -1058,7 +1058,7 @@
             const titleEl  = el.querySelector('.book-title');
             const authorEl = el.querySelector('.book-author');
             if (titleEl  && updates.title  != null) titleEl.textContent  = updates.title;
-            if (authorEl && 'author' in updates) { authorEl.textContent = updates.author || ''; if (authorEl.tagName === 'A') authorEl.href = `../author/?slug=${toAuthorSlug(updates.author || '')}`; }
+            if (authorEl && 'author' in updates) { authorEl.textContent = updates.author || ''; if (authorEl.tagName === 'A') authorEl.href = `../author/?slug=${toAuthorSlug(updates.author || '')}&name=${encodeURIComponent(updates.author || '')}`; }
           }
         });
         if (updates.title) {
@@ -1072,7 +1072,7 @@
         }
         if (Object.prototype.hasOwnProperty.call(updates, 'author')) {
           const authorEl = card.querySelector('.book-author');
-          if (authorEl) { authorEl.textContent = updates.author || ''; if (authorEl.tagName === 'A') authorEl.href = `../author/?slug=${toAuthorSlug(updates.author || '')}`; }
+          if (authorEl) { authorEl.textContent = updates.author || ''; if (authorEl.tagName === 'A') authorEl.href = `../author/?slug=${toAuthorSlug(updates.author || '')}&name=${encodeURIComponent(updates.author || '')}`; }
           if (coverCell) coverCell.dataset.author = (updates.author || '').toLowerCase();
         }
         } finally {
@@ -1164,7 +1164,7 @@
         <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
           <div style="flex:1;min-width:0">
             ${titleHtml}
-            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
           </div>
         </div>
         <div class="book-entry">
@@ -1209,7 +1209,7 @@
             await updateBookMeta(user.uid, book.id, updates, { gbid: book.gbid, title: book.title });
             Object.assign(book, updates);
             if (updates.title) { const el = card.querySelector('.book-title'); if (el) el.textContent = updates.title; }
-            if ('author' in updates) { const el = card.querySelector('.book-author'); if (el) { el.textContent = updates.author || ''; if (el.tagName === 'A') el.href = `../author/?slug=${toAuthorSlug(updates.author || '')}`; } }
+            if ('author' in updates) { const el = card.querySelector('.book-author'); if (el) { el.textContent = updates.author || ''; if (el.tagName === 'A') el.href = `../author/?slug=${toAuthorSlug(updates.author || '')}&name=${encodeURIComponent(updates.author || '')}`; } }
             if (updates.coverUrl) { const img = coverWrap.querySelector('img'); if (img) img.src = updates.coverUrl; }
             if (updates.totalPages) { totalPagesVal = updates.totalPages; const disp = card.querySelector('.page-total-display'); if (disp) disp.textContent = updates.totalPages; saveProgress(); }
             card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
@@ -1563,7 +1563,7 @@
         <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
           <div style="flex:1;min-width:0">
             ${titleHtml}
-            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
           </div>
         </div>
         <div class="book-entry">
@@ -1604,7 +1604,7 @@
             await updateBookMeta(user.uid, book.id, updates, { gbid: book.gbid, title: book.title });
             Object.assign(book, updates);
             if (updates.title) { const el = card.querySelector('.book-title'); if (el) el.textContent = updates.title; }
-            if ('author' in updates) { const el = card.querySelector('.book-author'); if (el) { el.textContent = updates.author || ''; if (el.tagName === 'A') el.href = `../author/?slug=${toAuthorSlug(updates.author || '')}`; } }
+            if ('author' in updates) { const el = card.querySelector('.book-author'); if (el) { el.textContent = updates.author || ''; if (el.tagName === 'A') el.href = `../author/?slug=${toAuthorSlug(updates.author || '')}&name=${encodeURIComponent(updates.author || '')}`; } }
             if (updates.coverUrl) { const img = coverWrap.querySelector('img'); if (img) img.src = updates.coverUrl; }
             if (updates.totalPages) { const inp = card.querySelector('.page-total'); if (inp) { inp.value = updates.totalPages; inp.dispatchEvent(new Event('input')); } }
             card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
@@ -2044,7 +2044,7 @@
         <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
           <div style="flex:1;min-width:0">
             ${titleHtml}
-            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
           </div>
         </div>
         <div class="book-entry">
@@ -2136,7 +2136,7 @@
         <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
           <div style="flex:1;min-width:0">
             ${titleHtml}
-            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
           </div>
         </div>
         <div class="book-entry">
@@ -2701,6 +2701,24 @@
 
         if (!filterDropdown.children.length) filterDropdownBtn.style.display = 'none';
 
+        const preGender = params.get('gender');
+        if (preGender) {
+          activeFilters.gender.add(preGender);
+          const cb = [...filterDropdown.querySelectorAll('input[type=checkbox]')]
+            .find(el => el.dataset.val === preGender);
+          if (cb) cb.checked = true;
+          applyFilter();
+        }
+
+        const preGenre = params.get('genre');
+        if (preGenre) {
+          activeFilters.genre.add(preGenre);
+          const cb = [...filterDropdown.querySelectorAll('input[type=checkbox]')]
+            .find(el => el.dataset.val === preGenre);
+          if (cb) cb.checked = true;
+          applyFilter();
+        }
+
         const preCountry = params.get('country');
         if (preCountry) {
           activeFilters.country.add(preCountry);
@@ -2722,6 +2740,12 @@
         if (preQ) {
           filterInput.value = preQ;
           applyFilter();
+        }
+
+        const preBook = params.get('book');
+        if (preBook) {
+          const el = document.querySelector(`[data-gbid="${CSS.escape(preBook)}"]`);
+          if (el) el.click();
         }
 
         function updateToggleUI() {

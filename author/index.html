@@ -36,7 +36,7 @@
   </header>
 
   <main class="page-content">
-
+    <div id="search-widget" style="margin-bottom:.9rem;position:relative;z-index:10"></div>
     <div id="author-detail"></div>
   </main>
 
@@ -83,12 +83,15 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
+    import { initSearchWidget } from '../js/search-widget.js';
 
-    const params = new URLSearchParams(location.search);
-    const slug   = params.get('slug');
+    const params    = new URLSearchParams(location.search);
+    const slug      = params.get('slug');
+    const nameParam = params.get('name');
     if (!slug) location.replace('../search/');
 
-    await requireAuth();
+    const { user } = await requireAuth();
+    initSearchWidget(document.getElementById('search-widget'), { user });
 
 
     function esc(s) {
@@ -146,6 +149,22 @@
       const author = authorData?.data?.authors?.[0];
       const books  = booksData?.data?.books || [];
 
+      if (!author && nameParam) {
+        try {
+          const nr = await fetch(HARDCOVER_PROXY, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: `query($q:String!){search(query:$q,query_type:"Author",per_page:1){results}}`,
+              variables: { q: nameParam }
+            })
+          });
+          const nd = nr.ok ? await nr.json() : {};
+          const correctSlug = nd?.data?.search?.results?.hits?.[0]?.document?.slug;
+          if (correctSlug && correctSlug !== slug) {
+            location.replace(`../author/?slug=${encodeURIComponent(correctSlug)}`);
+          }
+        } catch (e) { /* fall through to not-found */ }
+      }
       if (!author) {
         detail.innerHTML = '<p style="color:var(--text-muted)">Author not found.</p>';
       } else {

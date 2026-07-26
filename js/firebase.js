@@ -1,4 +1,4 @@
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+﻿import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   getAuth,
   createUserWithEmailAndPassword,
@@ -984,14 +984,17 @@ export async function removeActivityEvent(uid, activityId, gbid, dateField, book
 
 export async function searchUsers(q, currentUid, pageSize = 10) {
   const lower = q.toLowerCase();
-  const snap = await getDocs(query(
-    collection(db, 'users'),
-    where('username', '>=', lower),
-    where('username', '<=', lower + ''),
-    limit(pageSize)
-  ));
-  return snap.docs
-    .map(d => ({ uid: d.id, ...d.data() }));
+  const end = lower + '';
+  const col = collection(db, 'users');
+  const [byUsername, byDisplayName] = await Promise.all([
+    getDocs(query(col, where('username',    '>=', lower), where('username',    '<=', end), limit(pageSize))),
+    getDocs(query(col, where('displayName', '>=', lower), where('displayName', '<=', end), limit(pageSize))),
+  ]);
+  const seen = new Map();
+  for (const snap of [byUsername, byDisplayName])
+    for (const d of snap.docs)
+      if (!seen.has(d.id)) seen.set(d.id, { uid: d.id, ...d.data() });
+  return [...seen.values()];
 }
 
 export async function getFeed(currentUid, followingUids, cursor = null, pageSize = 20) {
