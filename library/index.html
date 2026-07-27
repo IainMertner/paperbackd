@@ -204,8 +204,8 @@
           else                          s += '<span class="star-char">★</span>';
         }
         rightHtml = `<span style="flex-shrink:0;margin-left:.5rem;display:inline-flex;gap:.05rem;line-height:1">${s}</span>`;
-      } else if (book.status === 'reading' && book.totalPages) {
-        const pct = Math.round((book.currentPage / book.totalPages) * 100);
+      } else if (book.status === 'reading' && (book.totalPages || (book.format === 'Audiobook' && book.progressPct > 0))) {
+        const pct = book.format === 'Audiobook' ? book.progressPct : Math.round((book.currentPage / book.totalPages) * 100);
         rightHtml = `<span style="flex-shrink:0;margin-left:.5rem;font-size:.75rem;color:var(--text-muted)">${pct}%</span>`;
       }
       el.innerHTML = `<div style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:.875rem;font-weight:600">${esc(book.title)}${author}</div>${rightHtml}`;
@@ -533,8 +533,8 @@
         ph.textContent = '📖';
         cell.appendChild(ph);
       }
-      if (book.status === 'reading' && book.totalPages) {
-        const pct = Math.round((book.currentPage / book.totalPages) * 100);
+      if (book.status === 'reading' && (book.totalPages || (book.format === 'Audiobook' && book.progressPct > 0))) {
+        const pct = book.format === 'Audiobook' ? book.progressPct : Math.round((book.currentPage / book.totalPages) * 100);
         const strip = document.createElement('div');
         strip.className = 'library-progress-strip';
         const fill = document.createElement('div');
@@ -853,43 +853,35 @@
 
     function createPartialDatePicker(ts, precision) {
       const d = ts?.toDate?.() ?? null;
-      const initYear  = d ? d.getFullYear() : null;
-      const initMonth = (d && precision !== 'year') ? d.getMonth() + 1 : null;
-      const initDay   = (d && precision !== 'year' && precision !== 'month') ? d.getDate() : null;
+      const initYear  = d ? d.getFullYear() : '';
+      const initMonth = (d && precision !== 'year') ? d.getMonth() + 1 : '';
+      const initDay   = (d && precision !== 'year' && precision !== 'month') ? d.getDate() : '';
 
       const wrap = document.createElement('div');
       wrap.className = 'date-picker-partial';
 
-      const daySel = document.createElement('select');
-      daySel.className = 'date-day-select';
-      daySel.innerHTML = '<option value="">Day</option>' +
-        Array.from({length: 31}, (_, i) => i + 1)
-          .map(n => `<option value="${n}"${initDay === n ? ' selected' : ''}>${n}</option>`)
-          .join('');
-
-      const monthSel = document.createElement('select');
-      monthSel.className = 'date-month-select';
-      monthSel.innerHTML = '<option value="">Month</option>' +
-        ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-          .map((m, i) => `<option value="${i+1}"${initMonth === i+1 ? ' selected' : ''}>${m}</option>`)
-          .join('');
-
-      const currentYear = new Date().getFullYear();
-      const yearSel = document.createElement('select');
-      yearSel.className = 'date-year-select';
-      let yearOpts = '<option value="">Year</option>';
-      for (let y = currentYear + 1; y >= 1900; y--) {
-        yearOpts += `<option value="${y}"${initYear === y ? ' selected' : ''}>${y}</option>`;
+      function makeNumInput(placeholder, min, max, value) {
+        const inp = document.createElement('input');
+        inp.type = 'number';
+        inp.placeholder = placeholder;
+        inp.min = min;
+        inp.max = max;
+        inp.inputMode = 'numeric';
+        if (value !== '') inp.value = value;
+        return inp;
       }
-      yearSel.innerHTML = yearOpts;
 
-      wrap.append(daySel, monthSel, yearSel);
+      const dayIn   = makeNumInput('DD',   '1',    '31',   initDay);
+      const monthIn = makeNumInput('MM',   '1',    '12',   initMonth);
+      const yearIn  = makeNumInput('YYYY', '1900', '2099', initYear);
+
+      wrap.append(dayIn, monthIn, yearIn);
 
       wrap.getDate = () => {
-        const year = parseInt(yearSel.value);
+        const year = parseInt(yearIn.value);
         if (!year) return { date: null, precision: null };
-        const month = parseInt(monthSel.value) || 0;
-        const day   = parseInt(daySel.value)  || 0;
+        const month = parseInt(monthIn.value) || 0;
+        const day   = parseInt(dayIn.value) || 0;
         if (!month) return { date: new Date(year, 0, 1, 12, 0, 0), precision: 'year' };
         if (!day)   return { date: new Date(year, month - 1, 1, 12, 0, 0), precision: 'month' };
         return { date: new Date(year, month - 1, Math.min(day, 31), 12, 0, 0), precision: 'day' };
@@ -922,7 +914,7 @@
       clearDateBtn.style.cssText = 'font-size:.72rem;color:var(--text-muted);background:none;border:none;cursor:pointer;font-family:inherit;padding:0 .1rem;flex-shrink:0';
       clearDateBtn.addEventListener('mousedown', e => {
         e.preventDefault();
-        picker.querySelectorAll('select').forEach(s => s.value = '');
+        picker.querySelectorAll('input[type="number"]').forEach(i => i.value = '');
         collapse();
       });
       picker.appendChild(clearDateBtn);
@@ -974,8 +966,10 @@
           if (picker.contains(e.target)) return;
           collapse();
           document.removeEventListener('mousedown', onOutside);
+          document.removeEventListener('touchstart', onOutside);
         }
         document.addEventListener('mousedown', onOutside);
+        document.addEventListener('touchstart', onOutside, { passive: true });
       });
 
       picker.addEventListener('focusout', e => {
@@ -1041,7 +1035,7 @@
           control.value = book[key] ?? (key === 'language' ? 'English' : '');
           control.className = 'page-input';
           control.style.cssText = 'flex:1;font-size:.8rem;text-align:left';
-          if (type === 'number') control.min = '0';
+          if (type === 'number' && key !== 'releaseYear') control.min = '0';
           if (options) {
             const dlId = `dl-${book.id}-${key}`;
             control.setAttribute('list', dlId);
@@ -1360,6 +1354,9 @@
       card.appendChild(langDl);
 
       let langCtrl, fmtCtrl;
+      let audioMode = book.format === 'Audiobook';
+      let onFormatChange = () => {};
+
       readingMeta.appendChild(textToggleRowR('Language', book.language || 'English', () => {
         langCtrl = document.createElement('input');
         langCtrl.type = 'text'; langCtrl.className = 'page-input';
@@ -1379,7 +1376,7 @@
           if (v === (book.format || '')) o.selected = true;
           fmtCtrl.appendChild(o);
         });
-        fmtCtrl.addEventListener('change', () => fmtCtrl.blur());
+        fmtCtrl.addEventListener('change', () => { onFormatChange(fmtCtrl.value); fmtCtrl.blur(); });
         return fmtCtrl;
       }));
 
@@ -1440,7 +1437,8 @@
       pgUp.type = 'button'; pgUp.className = 'date-num-btn'; pgUp.textContent = '▲';
       pgUp.addEventListener('click', () => {
         const v = parseInt(curInput.value) || 0;
-        curInput.value = totalPagesVal ? Math.min(v + 1, totalPagesVal) : v + 1;
+        const max = audioMode ? 100 : totalPagesVal;
+        curInput.value = max ? Math.min(v + 1, max) : v + 1;
         curInput.dispatchEvent(new Event('input'));
       });
       const pgDown = document.createElement('button');
@@ -1458,16 +1456,25 @@
       async function saveProgress() {
         clearTimeout(pgSaveTimer);
         try {
-          const cur     = Math.max(0, parseInt(curInput.value) || 0);
-          const total   = totalPagesVal;
-          const clamped = total ? Math.min(cur, total) : cur;
-          curInput.value = clamped;
-          const updates = { currentPage: clamped };
-          if (total !== book.totalPages) updates.totalPages = total;
-          await updateBookMeta(user.uid, book.id, updates, { gbid: book.gbid, title: book.title });
-          book.currentPage = clamped;
-          if (total != null) book.totalPages = total;
-          if (coverCell && total) {
+          let pct;
+          if (audioMode) {
+            pct = Math.max(0, Math.min(100, parseInt(curInput.value) || 0));
+            curInput.value = pct;
+            await updateBookMeta(user.uid, book.id, { progressPct: pct }, { gbid: book.gbid, title: book.title });
+            book.progressPct = pct;
+          } else {
+            const cur     = Math.max(0, parseInt(curInput.value) || 0);
+            const total   = totalPagesVal;
+            const clamped = total ? Math.min(cur, total) : cur;
+            curInput.value = clamped;
+            const updates = { currentPage: clamped };
+            if (total !== book.totalPages) updates.totalPages = total;
+            await updateBookMeta(user.uid, book.id, updates, { gbid: book.gbid, title: book.title });
+            book.currentPage = clamped;
+            if (total != null) book.totalPages = total;
+            pct = total ? Math.round((clamped / total) * 100) : null;
+          }
+          if (coverCell && pct != null) {
             let strip = coverCell.querySelector('.library-progress-strip');
             if (!strip) {
               strip = document.createElement('div');
@@ -1477,7 +1484,6 @@
               strip.appendChild(fill);
               coverCell.insertBefore(strip, coverCell.querySelector('.library-cover-info'));
             }
-            const pct = Math.round((clamped / total) * 100);
             coverCell.querySelector('.library-progress-fill').style.width = pct + '%';
             let pctEl = coverCell.querySelector('.library-progress-pct');
             if (!pctEl) { pctEl = document.createElement('div'); pctEl.className = 'library-progress-pct'; coverCell.appendChild(pctEl); }
@@ -1487,6 +1493,15 @@
           if (pgDirty) { pgDirty = false; markClean(); }
         }
       }
+
+      function setAudioMode(isAudio) {
+        audioMode = isAudio;
+        pageSep.textContent = isAudio ? '%' : '/';
+        totalDisplay.style.display = isAudio ? 'none' : '';
+        curInput.value = isAudio ? (book.progressPct || 0) : (book.currentPage || 0);
+        curInput.setAttribute('aria-label', isAudio ? 'Progress %' : 'Current page');
+      }
+      onFormatChange = fmt => setAudioMode(fmt === 'Audiobook');
 
       curInput.addEventListener('input', () => {
         clearTimeout(pgSaveTimer);
@@ -1500,6 +1515,7 @@
         saveProgress();
       });
 
+      const pageSep = controls.querySelector('.page-sep');
       const totalDisplay = controls.querySelector('.page-total-display');
       totalDisplay.addEventListener('click', () => {
         const inp = document.createElement('input');
@@ -1533,6 +1549,7 @@
         inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
       });
 
+      setAudioMode(audioMode);
 
       trashBtn.addEventListener('click', async () => {
         if (!confirm(`Remove "${book.title}" from your library?`)) return;
@@ -2581,8 +2598,11 @@
         meta.appendChild(row);
       }
       metaRow('Started', book.addedAt ? formatDateTs(book.addedAt, book.addedAtPrecision || 'month') : null);
-      if (book.currentPage > 0)
+      if (book.format === 'Audiobook') {
+        if (book.progressPct > 0) metaRow('Stopped at', `${book.progressPct}%`);
+      } else if (book.currentPage > 0) {
         metaRow('Stopped at', book.totalPages ? `page ${book.currentPage} of ${book.totalPages}` : `page ${book.currentPage}`);
+      }
       metaRow('Language', book.language || null);
       metaRow('Format',   book.format   || null);
 
@@ -2668,8 +2688,11 @@
         meta.appendChild(row);
       }
       metaRow('Started', book.addedAt ? formatDateTs(book.addedAt, book.addedAtPrecision || 'month') : null);
-      if (book.currentPage > 0)
+      if (book.format === 'Audiobook') {
+        if (book.progressPct > 0) metaRow('Stopped at', `${book.progressPct}%`);
+      } else if (book.currentPage > 0) {
         metaRow('Stopped at', book.totalPages ? `page ${book.currentPage} of ${book.totalPages}` : `page ${book.currentPage}`);
+      }
       metaRow('Language', book.language || null);
       metaRow('Format',   book.format   || null);
       return card;

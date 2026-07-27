@@ -686,7 +686,7 @@
       Promise.all(
         following.map(f =>
           getReadingBooks(f.uid)
-            .then(books => ({ reader: f, books: books.filter(b => b.coverUrl) }))
+            .then(books => ({ reader: f, books: books.filter(b => b.coverUrl && !b.private) }))
             .catch(() => ({ reader: f, books: [] }))
         )
       ).then(rows => {

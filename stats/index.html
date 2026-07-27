@@ -1073,12 +1073,18 @@
           const longest  = withPages.length ? withPages.reduce((a, b) => b.totalPages > a.totalPages ? b : a) : null;
           const shortest = withPages.length ? withPages.reduce((a, b) => b.totalPages < a.totalPages ? b : a) : null;
 
+          const withYear = books.filter(b => b.releaseYear != null);
+          const oldest = withYear.length ? withYear.reduce((a, b) => b.releaseYear < a.releaseYear ? b : a) : null;
+          const newest = withYear.length ? withYear.reduce((a, b) => b.releaseYear > a.releaseYear ? b : a) : null;
+
           const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
           return [
             { label: `most read author (${topAuthor  ? `${topAuthor[1]} ${pl(topAuthor[1], 'book', 'books')}` : '–'})`,  value: topAuthor  ? topAuthor[0]  : '–', href: topAuthor  ? `../author/?slug=${toAuthorSlug(topAuthor[0])}&name=${encodeURIComponent(topAuthor[0])}`  : null },
             { label: `most read country (${topCountry ? `${topCountry[1]} ${pl(topCountry[1], 'book', 'books')}` : '–'})`, value: topCountry ? topCountry[0] : '–', href: topCountry ? `../library/?country=${encodeURIComponent(topCountry[0].toLowerCase())}${u}` : null },
             { label: `longest book (${longest  ? `${longest.totalPages.toLocaleString()} pages`  : '–'})`,  value: longest  ? longest.title  : '–', href: longest  && longest.gbid  ? `../book/?gbid=${encodeURIComponent(longest.gbid)}`            : null },
             { label: `shortest book (${shortest ? `${shortest.totalPages.toLocaleString()} pages` : '–'})`, value: shortest ? shortest.title : '–', href: shortest && shortest.gbid ? `../book/?gbid=${encodeURIComponent(shortest.gbid)}`           : null },
+            { label: `oldest book (${oldest ? (oldest.releaseYear < 0 ? `${Math.abs(oldest.releaseYear)} BCE` : `${oldest.releaseYear} CE`) : '–'})`, value: oldest ? oldest.title : '–', href: oldest && oldest.gbid ? `../book/?gbid=${encodeURIComponent(oldest.gbid)}` : null },
+            { label: `newest book (${newest ? (newest.releaseYear < 0 ? `${Math.abs(newest.releaseYear)} BCE` : `${newest.releaseYear} CE`) : '–'})`, value: newest ? newest.title : '–', href: newest && newest.gbid ? `../book/?gbid=${encodeURIComponent(newest.gbid)}` : null },
           ];
         })() },
       ];

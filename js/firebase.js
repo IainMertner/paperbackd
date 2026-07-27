@@ -685,14 +685,13 @@ export function updateBookRating(uid, bookId, { rating, review }) {
 }
 
 export async function setBookPrivate(uid, bookId, isPrivate) {
-  await updateDoc(doc(db, 'users', uid, 'books', bookId), { private: isPrivate });
-  const snap = await getDocs(query(
-    collection(db, 'activity'),
-    where('uid', '==', uid),
-    where('bookId', '==', bookId)
-  ));
-  if (!snap.empty)
-    await Promise.all(snap.docs.map(d => updateDoc(d.ref, { private: isPrivate })));
+  const bookRef = doc(db, 'users', uid, 'books', bookId);
+  const bookSnap = await getDoc(bookRef);
+  await updateDoc(bookRef, { private: isPrivate });
+  const bookData = bookSnap.data() || {};
+  const docs = await activityDocsForBook(uid, { bookId, gbid: bookData.gbid, title: bookData.title, author: bookData.author });
+  if (docs.length)
+    await Promise.all(docs.map(d => updateDoc(d.ref, { private: isPrivate })));
 }
 
 export async function getBookByGbid(uid, gbid) {
@@ -1055,7 +1054,7 @@ export async function getFeed(currentUid, followingUids, cursor = null, pageSize
   const page = allDocs.slice(0, pageSize);
 
   return {
-    events: page.map(d => ({ id: d.id, ...d.data() })),
+    events: page.map(d => ({ id: d.id, ...d.data() })).filter(ev => !ev.private),
     lastDoc: page.length === pageSize ? page[page.length - 1] : null,
   };
 }

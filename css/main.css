@@ -601,14 +601,20 @@ a { color: inherit; }
   text-decoration-color: var(--border);
 }
 
-/* Custom partial date picker (month + year) */
-.date-picker-partial { display: flex; align-items: center; gap: .3rem; }
+/* Custom partial date picker */
+.date-picker-partial { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
 
-.date-day-select, .date-month-select, .date-year-select {
+.date-picker-partial input[type="number"] {
   background: var(--bg-alt); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: .15rem .2rem;
+  border-radius: var(--radius-sm); padding: .15rem .3rem;
   color: inherit; font-size: .78rem; font-family: inherit;
+  -moz-appearance: textfield; text-align: center;
 }
+.date-picker-partial input[type="number"]::-webkit-outer-spin-button,
+.date-picker-partial input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.date-picker-partial input[placeholder="DD"]   { width: 2.6em; }
+.date-picker-partial input[placeholder="MM"]   { width: 2.6em; }
+.date-picker-partial input[placeholder="YYYY"] { width: 3.8em; }
 
 .date-num-wrap { display: flex; align-items: stretch; }
 .date-num-btns { display: flex; flex-direction: column; }

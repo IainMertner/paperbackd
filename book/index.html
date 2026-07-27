@@ -154,28 +154,24 @@
     function createPartialDatePicker() {
       const wrap = document.createElement('div');
       wrap.className = 'date-picker-partial';
-      const daySel = document.createElement('select');
-      daySel.className = 'date-day-select';
-      daySel.innerHTML = '<option value="">Day</option>' +
-        Array.from({length: 31}, (_, i) => i + 1)
-          .map(n => `<option value="${n}">${n}</option>`).join('');
-      const monthSel = document.createElement('select');
-      monthSel.className = 'date-month-select';
-      monthSel.innerHTML = '<option value="">Month</option>' +
-        ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-          .map((m,i) => `<option value="${i+1}">${m}</option>`).join('');
-      const currentYear = new Date().getFullYear();
-      const yearSel = document.createElement('select');
-      yearSel.className = 'date-year-select';
-      let yearOpts = '<option value="">Year</option>';
-      for (let y = currentYear + 1; y >= 1900; y--) yearOpts += `<option value="${y}">${y}</option>`;
-      yearSel.innerHTML = yearOpts;
-      wrap.append(daySel, monthSel, yearSel);
+      function makeNumInput(placeholder, min, max) {
+        const inp = document.createElement('input');
+        inp.type = 'number';
+        inp.placeholder = placeholder;
+        inp.min = min;
+        inp.max = max;
+        inp.inputMode = 'numeric';
+        return inp;
+      }
+      const dayIn   = makeNumInput('DD',   '1',    '31');
+      const monthIn = makeNumInput('MM',   '1',    '12');
+      const yearIn  = makeNumInput('YYYY', '1900', '2099');
+      wrap.append(dayIn, monthIn, yearIn);
       wrap.getDate = () => {
-        const year = parseInt(yearSel.value);
+        const year = parseInt(yearIn.value);
         if (!year) return { date: null, precision: null };
-        const month = parseInt(monthSel.value) || 0;
-        const day   = parseInt(daySel.value)   || 0;
+        const month = parseInt(monthIn.value) || 0;
+        const day   = parseInt(dayIn.value)   || 0;
         if (!month) return { date: new Date(year, 0, 1, 12, 0, 0), precision: 'year' };
         if (!day)   return { date: new Date(year, month-1, 1, 12, 0, 0), precision: 'month' };
         return { date: new Date(year, month-1, Math.min(day,31), 12, 0, 0), precision: 'day' };
