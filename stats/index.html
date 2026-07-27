@@ -421,6 +421,7 @@
 
     const TARGET_TYPES = {
       books:          'Books read',
+      pages:          'Pages read',
       languages:      'Languages',
       countries:      'Countries',
       african:        'African books',
@@ -432,7 +433,11 @@
       female_pct:     'Female %',
       nb_pct:         'Non-binary %',
     };
-    const PCT_TYPES = new Set(['female_pct', 'nb_pct']);
+    const PCT_TYPES     = new Set(['female_pct', 'nb_pct']);
+    const COMPACT_TYPES = new Set(['pages']);
+    function fmtTargetNum(n) {
+      return n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+    }
     const ISO_CONTINENT = {
       ng:'AF', za:'AF', eg:'AF', ke:'AF', gh:'AF', et:'AF', ma:'AF', tz:'AF', ug:'AF', zw:'AF', rw:'AF', ao:'AF',
       jp:'AS', cn:'AS', kr:'AS', tw:'AS', in:'AS', pk:'AS', bd:'AS', lk:'AS', vn:'AS', th:'AS', id:'AS', ph:'AS',
@@ -776,7 +781,7 @@
 
     // ── Ring SVG ───────────────────────────────────────────────────────────────
 
-    function buildRingCard(type, period, target, current, isOwn, { onSet, onRemove, color = 'var(--accent)', suffix = '' } = {}) {
+    function buildRingCard(type, period, target, current, isOwn, { onSet, onRemove, color = 'var(--accent)', suffix = '', formatVal } = {}) {
       const label = TARGET_TYPES[type] || type;
       const R = 44, CX = 55, CY = 55, SW = 9;
       const circ = 2 * Math.PI * R;
@@ -833,11 +838,11 @@
       center.className = 'target-ring-center';
       const num = document.createElement('div');
       num.className = 'target-ring-num';
-      num.textContent = current + suffix;
+      num.textContent = (formatVal ? formatVal(current) : current) + suffix;
       if (done) num.style.color = '#fff';
       const denom = document.createElement('div');
       denom.className = 'target-ring-denom';
-      denom.textContent = target > 0 ? `of ${target}${suffix}` : 'no target';
+      denom.textContent = target > 0 ? `of ${formatVal ? formatVal(target) : target}${suffix}` : 'no target';
       if (done) denom.style.color = 'rgba(255,255,255,.75)';
       center.appendChild(num);
       center.appendChild(denom);
@@ -938,6 +943,7 @@
     })();
 
     const books = await getFinishedBooks(targetProfile.uid);
+    const publicBooks = books.filter(b => !b.private);
 
     // ── Tab switching ──────────────────────────────────────────────────────────
 
@@ -1063,17 +1069,18 @@
         ]}] : []),
         { title: 'highlights', stats: (() => {
           const authorCounts = {};
-          for (const b of books) if (b.author) authorCounts[b.author] = (authorCounts[b.author] || 0) + 1;
+          for (const b of publicBooks) if (b.author) authorCounts[b.author] = (authorCounts[b.author] || 0) + 1;
           const topAuthor = Object.entries(authorCounts).sort((a, b) => b[1] - a[1])[0];
 
           const countryCounts = {};
-          for (const b of books) if (b.country) countryCounts[b.country] = (countryCounts[b.country] || 0) + 1;
+          for (const b of publicBooks) if (b.country) countryCounts[b.country] = (countryCounts[b.country] || 0) + 1;
           const topCountry = Object.entries(countryCounts).sort((a, b) => b[1] - a[1])[0];
 
-          const longest  = withPages.length ? withPages.reduce((a, b) => b.totalPages > a.totalPages ? b : a) : null;
-          const shortest = withPages.length ? withPages.reduce((a, b) => b.totalPages < a.totalPages ? b : a) : null;
+          const pubWithPages = publicBooks.filter(b => b.totalPages > 0);
+          const longest  = pubWithPages.length ? pubWithPages.reduce((a, b) => b.totalPages > a.totalPages ? b : a) : null;
+          const shortest = pubWithPages.length ? pubWithPages.reduce((a, b) => b.totalPages < a.totalPages ? b : a) : null;
 
-          const withYear = books.filter(b => b.releaseYear != null);
+          const withYear = publicBooks.filter(b => b.releaseYear != null);
           const oldest = withYear.length ? withYear.reduce((a, b) => b.releaseYear < a.releaseYear ? b : a) : null;
           const newest = withYear.length ? withYear.reduce((a, b) => b.releaseYear > a.releaseYear ? b : a) : null;
 
@@ -1127,6 +1134,7 @@
         return true;
       });
       if (type === 'books')     return finished.length;
+      if (type === 'pages')     return finished.reduce((s, b) => s + (b.totalPages || 0), 0);
       if (type === 'languages') return new Set(finished.map(b => b.language).filter(Boolean)).size;
       if (type === 'countries') return new Set(finished.map(b => b.country).filter(Boolean)).size;
       if (type === 'female_pct' || type === 'nb_pct') {
@@ -1205,7 +1213,8 @@
             onSet:    v => saveTarget(type, period, v),
             onRemove: () => { showToast('Target removed'); saveTarget(type, period, 0); },
             color,
-            suffix: PCT_TYPES.has(type) ? '%' : '',
+            suffix:    PCT_TYPES.has(type)     ? '%'          : '',
+            formatVal: COMPACT_TYPES.has(type) ? fmtTargetNum : undefined,
           }));
         }
         section.appendChild(sectionGrid);
@@ -2120,7 +2129,7 @@
 
       // Rating distribution
       const ratingCounts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; // 0.5 → 5.0 in 0.5 steps
-      const rated = books.filter(b => b.rating != null && b.rating >= 0.5 && b.rating <= 5);
+      const rated = publicBooks.filter(b => b.rating != null && b.rating >= 0.5 && b.rating <= 5);
       for (const b of rated) {
         const idx = Math.round(b.rating * 2) - 1; // 0.5→0, 1→1, 1.5→2, ..., 5→9
         if (idx >= 0 && idx < 10) ratingCounts[idx]++;
@@ -2135,7 +2144,7 @@
         document.getElementById('chart-ratings-empty').style.display = '';
       }
 
-      const finished = books.filter(b => b.rating != null);
+      const finished = publicBooks.filter(b => b.rating != null);
 
       const ptsPages = finished
         .filter(b => b.totalPages > 0)
