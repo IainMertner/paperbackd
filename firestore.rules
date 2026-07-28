@@ -64,6 +64,11 @@ service cloud.firestore {
       );
     }
 
+    // Hardcover metadata cache — readable and writable by any signed-in user.
+    match /hc_cache/{key} {
+      allow read, write: if request.auth != null;
+    }
+
     // Username index — publicly readable so signup can check availability
     // before the account exists, and so add-friend lookups work.
     // Writable only at account creation, deletable only by the username owner.

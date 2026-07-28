@@ -1134,6 +1134,21 @@ export async function toggleReaction(activityId, emoji, uid, add) {
   });
 }
 
+// ── Hardcover metadata cache ──────────────────────────────────────────────────
+const HC_CACHE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+export async function getHcCache(key) {
+  const snap = await getDoc(doc(db, 'hc_cache', key));
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  if (Date.now() - (data.cachedAt?.toMillis?.() || 0) > HC_CACHE_TTL_MS) return null;
+  return data;
+}
+
+export function setHcCache(key, data) {
+  return setDoc(doc(db, 'hc_cache', key), { ...data, cachedAt: serverTimestamp() });
+}
+
 export async function toggleAnnouncementReaction(announcementId, emoji, uid, add) {
   await updateDoc(doc(db, 'announcements', announcementId), {
     [`reactions.${emoji}`]: add ? arrayUnion(uid) : arrayRemove(uid)
