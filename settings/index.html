@@ -532,12 +532,22 @@
     function cleanTitle(t)  { return (t || '').replace(/\s*\([^)]*#\s*\d+[^)]*\)/g, '').trim(); }
     function cleanAuthor(a) { return (a || '').replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim(); }
 
+    const STUDY_GUIDE_RE = /\b(sparknotes?|cliffsnotes?|shmoop|study guide|bookrags|novelguide|gradesaver|litcharts?|supersummary|a-level notes?)\b/i;
+
     async function searchHardcover(q) {
       const data = await hcQuery(
-        `query($q:String!){search(query:$q,query_type:"Book",per_page:3){results}}`, { q }
+        `query($q:String!){search(query:$q,query_type:"Book",per_page:5){results}}`, { q }
       );
-      const doc = data?.data?.search?.results?.hits?.[0]?.document;
-      return doc?.slug ? doc : null;
+      const hits = data?.data?.search?.results?.hits || [];
+      for (const hit of hits) {
+        const doc = hit?.document;
+        if (!doc?.slug) continue;
+        const titleStr  = doc.title || '';
+        const authorStr = Array.isArray(doc.author_names) ? doc.author_names.join(' ') : (doc.author_names || '');
+        if (STUDY_GUIDE_RE.test(titleStr) || STUDY_GUIDE_RE.test(authorStr)) continue;
+        return doc;
+      }
+      return null;
     }
 
     // Batch-resolve Goodreads IDs and ISBNs in a single query each, then do

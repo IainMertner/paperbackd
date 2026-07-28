@@ -54,6 +54,23 @@
     </div>
 
     <div class="settings-group">
+      <div class="settings-group-label">Remap book (global)</div>
+      <div class="settings-list">
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.75rem;padding:.875rem 1rem">
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Replace every user's wrong-matched book (e.g. a study guide) with the correct one. Enter Hardcover slugs.</p>
+          <div style="display:flex;gap:.5rem;width:100%;flex-wrap:wrap">
+            <input type="text" id="remap-from" class="join-club-input" placeholder="Wrong slug (Book A)" autocomplete="off" spellcheck="false" style="flex:1;min-width:10rem">
+            <input type="text" id="remap-to"   class="join-club-input" placeholder="Correct slug (Book B)" autocomplete="off" spellcheck="false" style="flex:1;min-width:10rem">
+            <button class="btn-update" id="remap-preview-btn" type="button">Preview</button>
+          </div>
+          <div id="remap-preview" style="display:none;font-size:.85rem;color:var(--text-muted)"></div>
+          <button class="btn-update" id="remap-apply-btn" type="button" style="display:none">Apply</button>
+          <div id="remap-status" style="display:none;font-size:.85rem"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
       <div class="settings-group-label">Admin console</div>
       <div class="settings-list">
 
@@ -178,8 +195,8 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { ROOT, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, setThemeColorForAllUsers } from '../js/firebase.js';
-    import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { ROOT, db, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, setThemeColorForAllUsers } from '../js/firebase.js';
+    import { deleteField, collection, getDocs, query as fsQuery, where, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -895,6 +912,119 @@
       const [result] = await enrichBatch([book]);
       return result;
     }
+
+    // ── Remap book (global) ───────────────────────────────────────────────────
+    const remapFromInput  = document.getElementById('remap-from');
+    const remapToInput    = document.getElementById('remap-to');
+    const remapPreviewBtn = document.getElementById('remap-preview-btn');
+    const remapPreviewEl  = document.getElementById('remap-preview');
+    const remapApplyBtn   = document.getElementById('remap-apply-btn');
+    const remapStatus     = document.getElementById('remap-status');
+
+    let remapHits       = [];
+    let remapTargetMeta = {};
+
+    remapPreviewBtn.addEventListener('click', async () => {
+      const fromSlug = remapFromInput.value.trim();
+      const toSlug   = remapToInput.value.trim();
+      remapPreviewEl.style.display = 'none';
+      remapApplyBtn.style.display  = 'none';
+      remapStatus.style.display    = 'none';
+      remapHits = [];
+      if (!fromSlug || !toSlug) {
+        remapStatus.textContent = 'Enter both slugs.';
+        remapStatus.style.color = 'var(--danger,#d44)';
+        remapStatus.style.display = '';
+        return;
+      }
+      if (fromSlug === toSlug) {
+        remapStatus.textContent = 'From and To slugs are the same.';
+        remapStatus.style.color = 'var(--danger,#d44)';
+        remapStatus.style.display = '';
+        return;
+      }
+      remapPreviewBtn.disabled = true;
+      remapPreviewEl.textContent = 'Searching…';
+      remapPreviewEl.style.display = '';
+      try {
+        const hcData = await hcQuery(
+          `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){slug title pages release_year image{url} contributions{author{name}}}}`,
+          { slug: toSlug }
+        );
+        const hcBook = hcData?.data?.books?.[0];
+        if (!hcBook) {
+          remapPreviewEl.textContent = `No Hardcover book found for slug "${toSlug}".`;
+          return;
+        }
+        remapTargetMeta = {
+          gbid:        toSlug,
+          coverUrl:    hcBook.image?.url || '',
+          totalPages:  hcBook.pages || 0,
+          releaseYear: hcBook.release_year || null,
+        };
+        const targetTitle  = hcBook.title || toSlug;
+        const targetAuthor = hcBook.contributions?.[0]?.author?.name || '';
+
+        const usersSnap = await getDocs(collection(db, 'users'));
+        remapPreviewEl.textContent = `Checking ${usersSnap.docs.length} users…`;
+        let userCount = 0;
+        for (const userDoc of usersSnap.docs) {
+          const booksSnap = await getDocs(fsQuery(collection(db, 'users', userDoc.id, 'books'), where('gbid', '==', fromSlug)));
+          if (!booksSnap.empty) {
+            userCount++;
+            for (const bookDoc of booksSnap.docs) remapHits.push(bookDoc.ref);
+          }
+        }
+
+        if (!remapHits.length) {
+          remapPreviewEl.textContent = `No books found with slug "${fromSlug}".`;
+        } else {
+          remapPreviewEl.textContent = `Found ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} across ${userCount} user${userCount === 1 ? '' : 's'} → "${targetTitle}"${targetAuthor ? ` by ${targetAuthor}` : ''}.`;
+          remapApplyBtn.textContent = `Apply to ${remapHits.length} book${remapHits.length === 1 ? '' : 's'}`;
+          remapApplyBtn.style.display = '';
+        }
+      } catch (err) {
+        console.error(err);
+        remapPreviewEl.textContent = 'Preview failed. Check the console.';
+      } finally {
+        remapPreviewBtn.disabled = false;
+      }
+    });
+
+    remapApplyBtn.addEventListener('click', async () => {
+      if (!remapHits.length) return;
+      if (!confirm(`Remap ${remapHits.length} book${remapHits.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+      remapApplyBtn.disabled = true;
+      remapPreviewBtn.disabled = true;
+      remapStatus.style.display = '';
+      remapStatus.style.color = 'var(--text-muted)';
+      try {
+        let done = 0;
+        for (const ref of remapHits) {
+          remapStatus.textContent = `Updating ${done + 1}/${remapHits.length}…`;
+          const updates = { gbid: remapTargetMeta.gbid };
+          if (remapTargetMeta.coverUrl)       updates.coverUrl    = remapTargetMeta.coverUrl;
+          if (remapTargetMeta.totalPages > 0) updates.totalPages  = remapTargetMeta.totalPages;
+          if (remapTargetMeta.releaseYear)    updates.releaseYear = remapTargetMeta.releaseYear;
+          await updateDoc(ref, updates);
+          done++;
+        }
+        remapStatus.textContent = `Done — remapped ${done} book${done === 1 ? '' : 's'}. Run "Repair activity" on affected users to sync activity docs.`;
+        remapStatus.style.color = 'var(--accent)';
+        remapHits = [];
+        remapApplyBtn.style.display = 'none';
+      } catch (err) {
+        console.error(err);
+        remapStatus.textContent = 'Apply failed. Check the console.';
+        remapStatus.style.color = 'var(--danger,#d44)';
+      } finally {
+        remapApplyBtn.disabled = false;
+        remapPreviewBtn.disabled = false;
+      }
+    });
+
+    remapFromInput.addEventListener('keydown', e => { if (e.key === 'Enter') remapToInput.focus(); });
+    remapToInput.addEventListener('keydown',   e => { if (e.key === 'Enter') remapPreviewBtn.click(); });
   </script>
   <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
 </body>
