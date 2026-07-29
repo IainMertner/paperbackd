@@ -919,7 +919,7 @@
           getBookCount(target.uid).then(n => {
             document.getElementById('stat-books').textContent = `${n} book${n === 1 ? '' : 's'}`;
           });
-          getListCount(target.uid).then(n => {
+          getListCount(target.uid, user.uid).then(n => {
             document.getElementById('lists-count').textContent = `${n} list${n === 1 ? '' : 's'}`;
           });
 

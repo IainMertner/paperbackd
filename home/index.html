@@ -670,7 +670,11 @@
     getFeed(user.uid, followingUids, null, 30)
       .then(({ events }) => {
         if (!events.length) {
-          feedPreviewEl.innerHTML = '<p class="home-empty">Follow some readers to see their updates.</p>';
+          feedPreviewEl.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:.4rem;padding:2rem 1rem;text-align:center">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="28" height="28" style="color:var(--text-muted);opacity:.4;margin-bottom:.1rem"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><line x1="8.7" y1="10.7" x2="15.3" y2="7.3"/><line x1="8.7" y1="13.3" x2="15.3" y2="16.7"/></svg>
+            <p class="home-empty" style="margin:0">Follow some readers to see their updates.</p>
+            <a href="../network/" style="font-size:.8125rem;color:var(--accent);text-decoration:none">Find readers to follow →</a>
+          </div>`;
           return;
         }
         aggregateFollows(events).forEach(ev => feedPreviewEl.appendChild(renderFeedItem(ev)));
@@ -681,7 +685,11 @@
     // — Currently reading —————————————————————————————————————————
     const readingNowEl = document.getElementById('reading-now');
     if (!following.length) {
-      readingNowEl.innerHTML = '<p class="home-empty">Follow readers to see what they\'re reading.</p>';
+      readingNowEl.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:.4rem;padding:1.5rem 1rem;text-align:center">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="28" height="28" style="color:var(--text-muted);opacity:.4;margin-bottom:.1rem"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+        <p class="home-empty" style="margin:0">Follow readers to see what they're reading.</p>
+        <a href="../network/" style="font-size:.8125rem;color:var(--accent);text-decoration:none">Find readers to follow →</a>
+      </div>`;
     } else {
       Promise.all(
         following.map(f =>

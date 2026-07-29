@@ -141,7 +141,7 @@
         `<a href="${listsHref}" style="color:var(--accent);text-decoration:none">${ownerUsername}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>lists<span class="title-dot">.</span>`;
 
       const [lists, libBooks] = await Promise.all([
-        getLists(ownerUid),
+        getLists(ownerUid, user.uid),
         getBooks(ownerUid),
       ]);
       const libraryCovers = {};
@@ -150,7 +150,9 @@
       const list  = lists.find(l => l.id === listId);
 
       if (!list) {
-        document.getElementById('list-books').innerHTML = '<p style="color:var(--text-muted)">List not found.</p>';
+        document.getElementById('list-books').innerHTML = isOwn
+          ? '<p style="color:var(--text-muted)">List not found.</p>'
+          : '<p style="color:var(--text-muted)">This list is private or doesn\'t exist.</p>';
         document.body.classList.remove('auth-loading');
         return;
       }

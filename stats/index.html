@@ -981,9 +981,9 @@
 
       const total = books.length;
       if (!total) {
-        const empty = document.createElement('p');
-        empty.style.cssText = 'color:var(--text-muted);text-align:center;padding:2rem';
-        empty.textContent = 'No books read yet.';
+        const empty = document.createElement('div');
+        empty.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:.4rem;padding:2.5rem 1rem;text-align:center';
+        empty.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="30" height="30" style="color:var(--text-muted);opacity:.4;margin-bottom:.1rem"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><p style="margin:0;font-size:.875rem;color:var(--text-muted)">No books read yet.</p>${isOwn ? '<a href="../library/" style="font-size:.8125rem;color:var(--accent);text-decoration:none">Add books to your library →</a>' : ''}`;
         panel.appendChild(empty);
         return;
       }

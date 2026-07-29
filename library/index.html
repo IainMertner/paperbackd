@@ -422,12 +422,17 @@
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
-    function showEmpty(container, id, msg) {
-      const p = document.createElement('p');
-      p.id = id;
-      p.style.cssText = 'color:var(--text-muted);font-size:.875rem;margin-bottom:.625rem';
-      p.textContent = msg;
-      container.appendChild(p);
+    function showEmpty(container, id, msg, cta = null) {
+      const el = document.createElement(cta ? 'div' : 'p');
+      el.id = id;
+      if (cta) {
+        el.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:.4rem;padding:2.5rem 1rem;text-align:center';
+        el.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="30" height="30" style="color:var(--text-muted);opacity:.4;margin-bottom:.1rem"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg><p style="margin:0;font-size:.875rem;color:var(--text-muted)">${msg}</p><a href="${cta.href}" style="font-size:.8125rem;color:var(--accent);text-decoration:none">${cta.label}</a>`;
+      } else {
+        el.style.cssText = 'color:var(--text-muted);font-size:.875rem;margin-bottom:.625rem';
+        el.textContent = msg;
+      }
+      container.appendChild(el);
     }
 
     function renderStars(rating) {
@@ -2879,7 +2884,7 @@
         renderReadingFn = () => {
           readingList.innerHTML = '';
           readingList.className = viewMode === 'list' ? 'books-list' : 'books-grid';
-          if (!reading.length) { showEmpty(readingList, 'reading-empty', 'Nothing in progress.'); return; }
+          if (!reading.length) { showEmpty(readingList, 'reading-empty', 'Nothing in progress.', allBooks.length === 0 ? { href: '../settings/', label: 'Import your library →' } : null); return; }
           reading.forEach(b => {
             if (viewMode === 'list') {
               const row = makeBookListRow(b);

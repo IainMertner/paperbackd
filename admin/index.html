@@ -71,6 +71,19 @@
     </div>
 
     <div class="settings-group">
+      <div class="settings-group-label">Archive old activity (global)</div>
+      <div class="settings-list">
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.75rem;padding:.875rem 1rem">
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Delete activity events older than 90 days for all users. The feed only shows recent activity, so this has no visible effect.</p>
+          <button class="btn-update" id="archive-activity-preview-btn" type="button">Preview</button>
+          <div id="archive-activity-preview" style="display:none;font-size:.85rem;color:var(--text-muted)"></div>
+          <button class="btn-update" id="archive-activity-run-btn" type="button" style="display:none">Delete</button>
+          <div id="archive-activity-status" style="display:none;font-size:.85rem"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
       <div class="settings-group-label">Admin console</div>
       <div class="settings-list">
 
@@ -196,7 +209,7 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { ROOT, db, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, setThemeColorForAllUsers } from '../js/firebase.js';
-    import { deleteField, collection, getDocs, query as fsQuery, where, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { deleteField, collection, doc, getDocs, query as fsQuery, where, updateDoc, Timestamp, limit, getCountFromServer, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor } from '../js/hardcover.js';
 
     let currentUser = null;
@@ -833,6 +846,79 @@
       }
     });
 
+
+    // ── Archive old activity (global) ────────────────────────────────────────
+    const ARCHIVE_CUTOFF_DAYS = 90;
+
+    document.getElementById('archive-activity-preview-btn').addEventListener('click', async () => {
+      const previewBtn = document.getElementById('archive-activity-preview-btn');
+      const previewEl  = document.getElementById('archive-activity-preview');
+      const runBtn     = document.getElementById('archive-activity-run-btn');
+      const statusEl   = document.getElementById('archive-activity-status');
+      previewEl.style.display  = 'none';
+      runBtn.style.display     = 'none';
+      statusEl.style.display   = 'none';
+      previewBtn.disabled = true;
+      previewEl.textContent = 'Counting…';
+      previewEl.style.display = '';
+      try {
+        const cutoff = Timestamp.fromDate(new Date(Date.now() - ARCHIVE_CUTOFF_DAYS * 24 * 60 * 60 * 1000));
+        const snap   = await getCountFromServer(fsQuery(collection(db, 'activity'), where('timestamp', '<', cutoff)));
+        const count  = snap.data().count;
+        if (count === 0) {
+          previewEl.textContent = 'No activity older than 90 days found.';
+        } else {
+          previewEl.textContent = `Found ${count.toLocaleString()} event${count === 1 ? '' : 's'} older than 90 days.`;
+          runBtn.textContent    = `Delete ${count.toLocaleString()} events`;
+          runBtn.style.display  = '';
+        }
+      } catch (err) {
+        console.error(err);
+        previewEl.textContent = 'Count failed. Check the console.';
+      } finally {
+        previewBtn.disabled = false;
+      }
+    });
+
+    document.getElementById('archive-activity-run-btn').addEventListener('click', async () => {
+      const previewBtn = document.getElementById('archive-activity-preview-btn');
+      const runBtn     = document.getElementById('archive-activity-run-btn');
+      const statusEl   = document.getElementById('archive-activity-status');
+      if (!confirm('Move all activity older than 90 days to activity_archive for all users?')) return;
+      previewBtn.disabled = true;
+      runBtn.disabled     = true;
+      statusEl.style.display = '';
+      statusEl.style.color   = 'var(--text-muted)';
+      statusEl.textContent   = 'Archiving…';
+      try {
+        const cutoff = Timestamp.fromDate(new Date(Date.now() - ARCHIVE_CUTOFF_DAYS * 24 * 60 * 60 * 1000));
+        let archived = 0;
+        // Each doc needs 1 set + 1 delete = 2 batch ops; limit 250 docs to stay within 500-op batch cap.
+        while (true) {
+          const snap = await getDocs(fsQuery(collection(db, 'activity'), where('timestamp', '<', cutoff), limit(250)));
+          if (snap.empty) break;
+          const batch = writeBatch(db);
+          snap.docs.forEach(d => {
+            batch.set(doc(db, 'activity_archive', d.id), d.data());
+            batch.delete(d.ref);
+          });
+          await batch.commit();
+          archived += snap.docs.length;
+          statusEl.textContent = `Archived ${archived.toLocaleString()} so far…`;
+        }
+        statusEl.textContent = `Done — archived ${archived.toLocaleString()} event${archived === 1 ? '' : 's'}.`;
+        statusEl.style.color = 'var(--accent)';
+        document.getElementById('archive-activity-preview').style.display = 'none';
+        runBtn.style.display = 'none';
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = 'Archive failed. Check the console.';
+        statusEl.style.color = 'var(--danger,#d44)';
+      } finally {
+        previewBtn.disabled = false;
+        runBtn.disabled     = false;
+      }
+    });
 
     // ── Remap book (global) ───────────────────────────────────────────────────
     const remapFromInput  = document.getElementById('remap-from');

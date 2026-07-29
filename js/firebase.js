@@ -814,13 +814,21 @@ export async function unfinishBook(uid, bookId, { title, author }) {
 
 // ── Lists ─────────────────────────────────────────────────────────────────────
 
-export async function getListCount(uid) {
-  const snap = await getCountFromServer(collection(db, 'users', uid, 'lists'));
+export async function getListCount(uid, viewerUid) {
+  const col = collection(db, 'users', uid, 'lists');
+  const q = viewerUid !== uid ? query(col, where('private', '!=', true)) : col;
+  const snap = await getCountFromServer(q);
   return snap.data().count;
 }
 
-export async function getLists(uid) {
-  const snap = await getDocs(collection(db, 'users', uid, 'lists'));
+export async function setListPrivate(uid, listId, isPrivate) {
+  return updateDoc(doc(db, 'users', uid, 'lists', listId), { private: isPrivate });
+}
+
+export async function getLists(uid, viewerUid) {
+  const col = collection(db, 'users', uid, 'lists');
+  const q = viewerUid !== undefined && viewerUid !== uid ? query(col, where('private', '!=', true)) : col;
+  const snap = await getDocs(q);
   const lists = snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => {
