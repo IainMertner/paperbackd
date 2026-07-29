@@ -27,7 +27,7 @@ service cloud.firestore {
 
       // Lists subcollection — private lists visible to owner only.
       match /lists/{listId} {
-        allow read:  if request.auth != null && (request.auth.uid == uid || !resource.data.get('private', false));
+        allow read:  if request.auth != null && (request.auth.uid == uid || resource.data.private != true);
         allow write: if request.auth.uid == uid || isAdmin();
       }
     }

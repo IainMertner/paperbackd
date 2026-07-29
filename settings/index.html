@@ -482,7 +482,7 @@
         await importBooks(currentUser.uid, enriched, (saved, tot) => {
           importStatus.textContent = `Saving to library - ${saved}/${tot} done…`;
         });
-        importStatus.textContent = `All done! Imported ${total} books (${matched} matched with Hardcover).`;
+        importStatus.innerHTML = `All done! Imported ${total} books (${matched} matched with Hardcover). <span style="color:var(--text-muted)">Run <strong>Repair library</strong> below to fill in missing covers and metadata.</span>`;
         importStatus.style.color = 'var(--accent)';
         importPreview.style.display = 'none';
         resetImport();
