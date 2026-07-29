@@ -285,6 +285,7 @@
     </div>
 
     <!-- Summary panel -->
+    <div id="compare-btn-wrap"></div>
     <div id="panel-summary"></div>
 
     <!-- General stats panel -->
@@ -942,7 +943,10 @@
       });
     })();
 
-    const books = await getFinishedBooks(targetProfile.uid);
+    const [books, myBooks] = await Promise.all([
+      getFinishedBooks(targetProfile.uid),
+      isOwn ? Promise.resolve(null) : getFinishedBooks(user.uid),
+    ]);
     const publicBooks = books.filter(b => !b.private);
 
     // ── Tab switching ──────────────────────────────────────────────────────────
@@ -975,6 +979,45 @@
 
     function toAuthorSlug(name) { return (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 
+    function calcStats(bks) {
+      const total = bks.length;
+      const rated = bks.filter(b => b.rating != null && b.rating >= 0.5);
+      const avgRating = rated.length ? rated.reduce((s, b) => s + b.rating, 0) / rated.length : null;
+      const stdDev = avgRating != null && rated.length >= 2
+        ? Math.sqrt(rated.reduce((s, b) => s + Math.pow(b.rating - avgRating, 2), 0) / rated.length) : null;
+      const withPages = bks.filter(b => b.totalPages > 0);
+      const totalPages = withPages.reduce((s, b) => s + b.totalPages, 0);
+      const avgPages = withPages.length ? Math.round(totalPages / withPages.length) : null;
+      const uniqueAuthors   = new Set(bks.map(b => b.author).filter(Boolean)).size;
+      const uniqueCountries = new Set(bks.map(b => b.country).filter(Boolean)).size;
+      const uniqueLanguages = new Set(bks.map(b => b.language).filter(Boolean)).size;
+      const now = new Date();
+      const thisYear  = bks.filter(b => { const d = b.finishedAt?.toDate?.() ?? null; return d && d.getFullYear() === now.getFullYear(); }).length;
+      const thisMonth = bks.filter(b => { const d = b.finishedAt?.toDate?.() ?? null; return d && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); }).length;
+      const continentCounts = { AF: 0, AS: 0, EU: 0, NA: 0, OC: 0, SA: 0 };
+      for (const b of bks) {
+        if (!b.country) continue;
+        const iso = COUNTRY_ISO[b.country.toLowerCase()];
+        const cont = iso && ISO_CONTINENT[iso];
+        if (cont) continentCounts[cont]++;
+      }
+      const genderCounts = { Male: 0, Female: 0, 'Non-binary': 0, Other: 0 };
+      const seenGenderAuthors = new Set();
+      for (const b of bks) {
+        if (!b.author || !b.authorGender) continue;
+        if (seenGenderAuthors.has(b.author)) continue;
+        seenGenderAuthors.add(b.author);
+        if (b.authorGender in genderCounts) genderCounts[b.authorGender]++;
+      }
+      const genderKnown = genderCounts.Male + genderCounts.Female + genderCounts['Non-binary'] + genderCounts.Other;
+      const genderRatio = genderKnown > 0
+        ? [Math.round(genderCounts.Male / genderKnown * 100), Math.round(genderCounts.Female / genderKnown * 100), Math.round(genderCounts['Non-binary'] / genderKnown * 100)].join('/')
+        : '–';
+      const fiveStars = rated.filter(b => b.rating === 5).length;
+      const halfStars = rated.filter(b => b.rating === 0.5).length;
+      return { total, avgRating, stdDev, totalPages, avgPages, uniqueAuthors, uniqueCountries, uniqueLanguages, thisYear, thisMonth, continentCounts, genderCounts, genderKnown, genderRatio, fiveStars, halfStars };
+    }
+
     function buildSummary() {
       const panel = document.getElementById('panel-summary');
       panel.innerHTML = '';
@@ -987,6 +1030,11 @@
         panel.appendChild(empty);
         return;
       }
+
+      const me = (compareMode && myBooks) ? calcStats(myBooks) : null;
+      const cv = (theirs, mine) => me
+        ? `${theirs}<span style="color:#c84f4f;font-weight:400"> // ${mine}</span>`
+        : String(theirs);
 
       const rated = books.filter(b => b.rating != null && b.rating >= 0.5);
       const avgRating = rated.length ? rated.reduce((s, b) => s + b.rating, 0) / rated.length : null;
@@ -1037,37 +1085,37 @@
 
       const sections = [
         { title: 'books', stats: [
-          { label: pl(total,         'book read',            'books read'),            value: total.toLocaleString() },
-          { label: pl(thisYear,      'book read this year',  'books read this year'),  value: thisYear },
-          { label: pl(thisMonth,     'book read this month', 'books read this month'), value: thisMonth },
-          { label: pl(uniqueAuthors, 'author read',          'authors read'),          value: uniqueAuthors || '–' },
-          { label: pl(totalPages,    'page read',            'pages read'),            value: totalPages ? totalPages.toLocaleString() : '–' },
-          { label: 'average pages',  value: avgPages != null ? avgPages.toLocaleString() : '–' },
+          { label: pl(total,         'book read',            'books read'),            value: cv(total.toLocaleString(),                              me ? me.total.toLocaleString() : '') },
+          { label: pl(thisYear,      'book read this year',  'books read this year'),  value: cv(thisYear,                                            me ? me.thisYear : '') },
+          { label: pl(thisMonth,     'book read this month', 'books read this month'), value: cv(thisMonth,                                           me ? me.thisMonth : '') },
+          { label: pl(uniqueAuthors, 'author read',          'authors read'),          value: cv(uniqueAuthors || '–',                                me ? me.uniqueAuthors || '–' : '') },
+          { label: pl(totalPages,    'page read',            'pages read'),            value: cv(totalPages ? totalPages.toLocaleString() : '–',      me ? (me.totalPages ? me.totalPages.toLocaleString() : '–') : '') },
+          { label: 'average pages',  value: cv(avgPages != null ? avgPages.toLocaleString() : '–',                                                   me ? (me.avgPages != null ? me.avgPages.toLocaleString() : '–') : '') },
         ]},
         { title: 'ratings', stats: [
-          { label: 'average rating',    value: avgRating != null ? avgRating.toFixed(1) + ' ★' : '–' },
-          { label: 'standard deviation', value: stdDev != null ? stdDev.toFixed(2) : '–' },
-          { label: pl(fiveStars, '5 star review',   '5 star reviews'),   value: fiveStars },
-          { label: pl(halfStars, '½ star review', '½ star reviews'), value: halfStars },
+          { label: 'average rating',     value: cv(avgRating != null ? avgRating.toFixed(1) + ' ★' : '–',  me ? (me.avgRating != null ? me.avgRating.toFixed(1) + ' ★' : '–') : '') },
+          { label: 'standard deviation', value: cv(stdDev != null ? stdDev.toFixed(2) : '–',               me ? (me.stdDev != null ? me.stdDev.toFixed(2) : '–') : '') },
+          { label: pl(fiveStars, '5 star review', '5 star reviews'), value: cv(fiveStars, me ? me.fiveStars : '') },
+          { label: pl(halfStars, '½ star review', '½ star reviews'), value: cv(halfStars, me ? me.halfStars : '') },
         ]},
         { title: 'countries', stats: [
-          { label: pl(uniqueCountries,    'country',             'countries'),             value: uniqueCountries || '–' },
-          { label: pl(uniqueLanguages,    'language',            'languages'),             value: uniqueLanguages || '–' },
-          { label: pl(continentCounts.AF, 'african book',        'african books'),         value: continentCounts.AF },
-          { label: pl(continentCounts.AS, 'asian book',          'asian books'),           value: continentCounts.AS },
-          { label: pl(continentCounts.EU, 'european book',       'european books'),        value: continentCounts.EU },
-          { label: pl(continentCounts.NA, 'north american book', 'north american books'),  value: continentCounts.NA },
-          { label: pl(continentCounts.OC, 'oceanian book',       'oceanian books'),        value: continentCounts.OC },
-          { label: pl(continentCounts.SA, 'south american book', 'south american books'),  value: continentCounts.SA },
+          { label: pl(uniqueCountries,    'country',             'countries'),            value: cv(uniqueCountries || '–',    me ? me.uniqueCountries || '–' : '') },
+          { label: pl(uniqueLanguages,    'language',            'languages'),            value: cv(uniqueLanguages || '–',    me ? me.uniqueLanguages || '–' : '') },
+          { label: pl(continentCounts.AF, 'african book',        'african books'),        value: cv(continentCounts.AF,        me ? me.continentCounts.AF : '') },
+          { label: pl(continentCounts.AS, 'asian book',          'asian books'),          value: cv(continentCounts.AS,        me ? me.continentCounts.AS : '') },
+          { label: pl(continentCounts.EU, 'european book',       'european books'),       value: cv(continentCounts.EU,        me ? me.continentCounts.EU : '') },
+          { label: pl(continentCounts.NA, 'north american book', 'north american books'), value: cv(continentCounts.NA,        me ? me.continentCounts.NA : '') },
+          { label: pl(continentCounts.OC, 'oceanian book',       'oceanian books'),       value: cv(continentCounts.OC,        me ? me.continentCounts.OC : '') },
+          { label: pl(continentCounts.SA, 'south american book', 'south american books'), value: cv(continentCounts.SA,        me ? me.continentCounts.SA : '') },
         ]},
-        ...(genderKnown > 0 ? [{ title: 'gender', stats: [
-          { label: pl(genderCounts.Male,          'male author',        'male authors'),        value: genderCounts.Male },
-          { label: pl(genderCounts.Female,        'female author',      'female authors'),      value: genderCounts.Female },
-          { label: pl(genderCounts['Non-binary'], 'non-binary author',  'non-binary authors'),  value: genderCounts['Non-binary'] },
-          ...(genderCounts.Other > 0 ? [{ label: pl(genderCounts.Other, 'other', 'other'), value: genderCounts.Other }] : []),
-          { label: 'gender ratio (M/F/NB)', value: genderRatio },
+        ...((genderKnown > 0 || (me && me.genderKnown > 0)) ? [{ title: 'gender', stats: [
+          { label: pl(genderCounts.Male,          'male author',       'male authors'),       value: cv(genderCounts.Male,          me ? me.genderCounts.Male : '') },
+          { label: pl(genderCounts.Female,        'female author',     'female authors'),     value: cv(genderCounts.Female,        me ? me.genderCounts.Female : '') },
+          { label: pl(genderCounts['Non-binary'], 'non-binary author', 'non-binary authors'), value: cv(genderCounts['Non-binary'], me ? me.genderCounts['Non-binary'] : '') },
+          ...(genderCounts.Other > 0 || (me && me.genderCounts.Other > 0) ? [{ label: pl(genderCounts.Other, 'other', 'other'), value: cv(genderCounts.Other, me ? me.genderCounts.Other : '') }] : []),
+          { label: 'gender ratio (M/F/NB)', value: cv(genderRatio, me ? me.genderRatio : '') },
         ]}] : []),
-        { title: 'highlights', stats: (() => {
+        ...(!me ? [{ title: 'highlights', stats: (() => {
           const authorCounts = {};
           for (const b of publicBooks) if (b.author) authorCounts[b.author] = (authorCounts[b.author] || 0) + 1;
           const topAuthor = Object.entries(authorCounts).sort((a, b) => b[1] - a[1])[0];
@@ -1088,12 +1136,12 @@
           return [
             { label: `most read author (${topAuthor  ? `${topAuthor[1]} ${pl(topAuthor[1], 'book', 'books')}` : '–'})`,  value: topAuthor  ? topAuthor[0]  : '–', href: topAuthor  ? `../author/?slug=${toAuthorSlug(topAuthor[0])}&name=${encodeURIComponent(topAuthor[0])}`  : null },
             { label: `most read country (${topCountry ? `${topCountry[1]} ${pl(topCountry[1], 'book', 'books')}` : '–'})`, value: topCountry ? topCountry[0] : '–', href: topCountry ? `../library/?country=${encodeURIComponent(topCountry[0].toLowerCase())}${u}` : null },
-            { label: `longest book (${longest  ? `${longest.totalPages.toLocaleString()} pages`  : '–'})`,  value: longest  ? longest.title  : '–', href: longest  && longest.gbid  ? `../book/?gbid=${encodeURIComponent(longest.gbid)}`            : null },
-            { label: `shortest book (${shortest ? `${shortest.totalPages.toLocaleString()} pages` : '–'})`, value: shortest ? shortest.title : '–', href: shortest && shortest.gbid ? `../book/?gbid=${encodeURIComponent(shortest.gbid)}`           : null },
+            { label: `longest book (${longest  ? `${longest.totalPages.toLocaleString()} pages`  : '–'})`,  value: longest  ? longest.title  : '–', href: longest  && longest.gbid  ? `../book/?gbid=${encodeURIComponent(longest.gbid)}`  : null },
+            { label: `shortest book (${shortest ? `${shortest.totalPages.toLocaleString()} pages` : '–'})`, value: shortest ? shortest.title : '–', href: shortest && shortest.gbid ? `../book/?gbid=${encodeURIComponent(shortest.gbid)}` : null },
             { label: `oldest book (${oldest ? (oldest.releaseYear < 0 ? `${Math.abs(oldest.releaseYear)} BCE` : `${oldest.releaseYear} CE`) : '–'})`, value: oldest ? oldest.title : '–', href: oldest && oldest.gbid ? `../book/?gbid=${encodeURIComponent(oldest.gbid)}` : null },
             { label: `newest book (${newest ? (newest.releaseYear < 0 ? `${Math.abs(newest.releaseYear)} BCE` : `${newest.releaseYear} CE`) : '–'})`, value: newest ? newest.title : '–', href: newest && newest.gbid ? `../book/?gbid=${encodeURIComponent(newest.gbid)}` : null },
           ];
-        })() },
+        })() }] : []),
       ];
 
       for (const section of sections) {
@@ -1117,7 +1165,33 @@
       }
     }
 
+    let compareMode = false;
     buildSummary();
+
+    if (!isOwn && myBooks) {
+      const wrapRow = document.createElement('div');
+      wrapRow.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:.75rem;margin-bottom:.5rem';
+
+      const legend = document.createElement('span');
+      legend.style.cssText = 'font-size:.875rem;color:var(--text-muted);display:none;margin-right:auto';
+      legend.innerHTML = `<strong>${targetProfile.username}</strong> <span style="color:#c84f4f">// ${myProfile.username}</span>`;
+
+      const compareBtn = document.createElement('button');
+      compareBtn.title = 'Compare with me';
+      compareBtn.style.cssText = 'display:flex;align-items:center;gap:.25rem;background:none;border:none;cursor:pointer;color:var(--text-muted);font-family:inherit;padding:.2rem 0;flex-shrink:0;transition:color .15s';
+      compareBtn.innerHTML = `<svg viewBox="0 0 42 24" width="35" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="7" r="4"/><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="30" cy="7" r="4"/><path d="M38 21v-2a4 4 0 00-4-4H26a4 4 0 00-4 4v2"/><line x1="14.5" y1="22" x2="17" y2="2" stroke="var(--bg)" stroke-width="6"/><line x1="20" y1="22" x2="22.5" y2="2" stroke="var(--bg)" stroke-width="6"/><line x1="14.5" y1="22" x2="17" y2="2"/><line x1="20" y1="22" x2="22.5" y2="2"/></svg>`;
+
+      compareBtn.addEventListener('click', () => {
+        compareMode = !compareMode;
+        compareBtn.style.color = compareMode ? '#c84f4f' : '';
+        legend.style.display = compareMode ? '' : 'none';
+        buildSummary();
+      });
+
+      wrapRow.appendChild(legend);
+      wrapRow.appendChild(compareBtn);
+      document.getElementById('compare-btn-wrap').appendChild(wrapRow);
+    }
 
     // ── Targets ────────────────────────────────────────────────────────────────
 
