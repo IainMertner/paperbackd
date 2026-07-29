@@ -1022,6 +1022,22 @@
       const panel = document.getElementById('panel-summary');
       panel.innerHTML = '';
 
+      if (!isOwn && myBooks) {
+        const wrapRow = document.createElement('div');
+        wrapRow.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:.75rem;margin-bottom:.5rem';
+        const legend = document.createElement('span');
+        legend.style.cssText = 'font-size:.875rem;color:var(--text-muted);margin-right:auto' + (compareMode ? '' : ';display:none');
+        legend.innerHTML = `<strong>${targetProfile.username}</strong> <span style="color:#c84f4f">// ${myProfile.username}</span>`;
+        const compareBtn = document.createElement('button');
+        compareBtn.title = 'Compare with me';
+        compareBtn.style.cssText = 'display:flex;align-items:center;gap:.25rem;background:none;border:none;cursor:pointer;font-family:inherit;padding:.2rem 0;flex-shrink:0;transition:color .15s;color:' + (compareMode ? '#c84f4f' : 'var(--text-muted)');
+        compareBtn.innerHTML = `<svg viewBox="0 0 42 24" width="35" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="7" r="4"/><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="30" cy="7" r="4"/><path d="M38 21v-2a4 4 0 00-4-4H26a4 4 0 00-4 4v2"/><line x1="14.5" y1="22" x2="17" y2="2" stroke="var(--bg)" stroke-width="6"/><line x1="20" y1="22" x2="22.5" y2="2" stroke="var(--bg)" stroke-width="6"/><line x1="14.5" y1="22" x2="17" y2="2"/><line x1="20" y1="22" x2="22.5" y2="2"/></svg>`;
+        compareBtn.addEventListener('click', () => { compareMode = !compareMode; buildSummary(); });
+        wrapRow.appendChild(legend);
+        wrapRow.appendChild(compareBtn);
+        panel.appendChild(wrapRow);
+      }
+
       const total = books.length;
       if (!total) {
         const empty = document.createElement('div');
@@ -1167,31 +1183,6 @@
 
     let compareMode = false;
     buildSummary();
-
-    if (!isOwn && myBooks) {
-      const wrapRow = document.createElement('div');
-      wrapRow.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:.75rem;margin-bottom:.5rem';
-
-      const legend = document.createElement('span');
-      legend.style.cssText = 'font-size:.875rem;color:var(--text-muted);display:none;margin-right:auto';
-      legend.innerHTML = `<strong>${targetProfile.username}</strong> <span style="color:#c84f4f">// ${myProfile.username}</span>`;
-
-      const compareBtn = document.createElement('button');
-      compareBtn.title = 'Compare with me';
-      compareBtn.style.cssText = 'display:flex;align-items:center;gap:.25rem;background:none;border:none;cursor:pointer;color:var(--text-muted);font-family:inherit;padding:.2rem 0;flex-shrink:0;transition:color .15s';
-      compareBtn.innerHTML = `<svg viewBox="0 0 42 24" width="35" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="7" r="4"/><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="30" cy="7" r="4"/><path d="M38 21v-2a4 4 0 00-4-4H26a4 4 0 00-4 4v2"/><line x1="14.5" y1="22" x2="17" y2="2" stroke="var(--bg)" stroke-width="6"/><line x1="20" y1="22" x2="22.5" y2="2" stroke="var(--bg)" stroke-width="6"/><line x1="14.5" y1="22" x2="17" y2="2"/><line x1="20" y1="22" x2="22.5" y2="2"/></svg>`;
-
-      compareBtn.addEventListener('click', () => {
-        compareMode = !compareMode;
-        compareBtn.style.color = compareMode ? '#c84f4f' : '';
-        legend.style.display = compareMode ? '' : 'none';
-        buildSummary();
-      });
-
-      wrapRow.appendChild(legend);
-      wrapRow.appendChild(compareBtn);
-      document.getElementById('compare-btn-wrap').appendChild(wrapRow);
-    }
 
     // ── Targets ────────────────────────────────────────────────────────────────
 

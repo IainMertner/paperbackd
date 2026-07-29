@@ -1,4 +1,5 @@
 import { getHcCache, setHcCache } from './firebase.js';
+import { cleanTitle, cleanAuthor } from './utils.js';
 
 export const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -33,10 +34,7 @@ export function applyHardcoverBook(book, hc) {
   return result;
 }
 
-// Goodreads exports titles like "The Name of the Wind (The Kingkiller Chronicle, #1)"
-// and authors like "Sanderson, Brandon" - clean both before searching.
-export function cleanTitle(t)  { return (t || '').replace(/\s*\([^)]*#\s*\d+[^)]*\)/g, '').trim(); }
-export function cleanAuthor(a) { return (a || '').replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim(); }
+export { cleanTitle, cleanAuthor };
 
 const STUDY_GUIDE_RE = /\b(sparknotes?|cliffsnotes?|shmoop|study guide|bookrags|novelguide|gradesaver|litcharts?|supersummary|a-level notes?)\b/i;
 
