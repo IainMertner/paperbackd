@@ -352,7 +352,7 @@
         <div class="chart-empty" id="chart-authors-empty" style="display:none">Not enough data.</div>
       </div>
       <div class="card chart-card" id="chart-gender-card">
-        <div class="chart-title">Author gender</div>
+        <div class="chart-title">Books by author gender</div>
         <div class="chart-wrap"><canvas id="chart-gender"></canvas></div>
         <div class="chart-empty" id="chart-gender-empty" style="display:none">Not enough data.</div>
       </div>
@@ -415,6 +415,7 @@
     import { requireAuth } from '../js/auth.js';
     import { getProfileByUsername, getProfile, getFinishedBooks, getFollowing, db } from '../js/firebase.js';
     import { doc, updateDoc, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { COUNTRY_ISO, ISO_CONTINENT, calcStats } from '../js/stats-utils.js';
 
     const NOW  = new Date();
     const CY   = NOW.getFullYear();
@@ -439,17 +440,6 @@
     function fmtTargetNum(n) {
       return n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
     }
-    const ISO_CONTINENT = {
-      ng:'AF', za:'AF', eg:'AF', ke:'AF', gh:'AF', et:'AF', ma:'AF', tz:'AF', ug:'AF', zw:'AF', rw:'AF', ao:'AF',
-      jp:'AS', cn:'AS', kr:'AS', tw:'AS', in:'AS', pk:'AS', bd:'AS', lk:'AS', vn:'AS', th:'AS', id:'AS', ph:'AS',
-      my:'AS', sg:'AS', mm:'AS', kh:'AS', ir:'AS', tr:'AS', il:'AS', jo:'AS', iq:'AS', sa:'AS', ae:'AS', hk:'AS',
-      gb:'EU', fr:'EU', de:'EU', it:'EU', es:'EU', pt:'EU', nl:'EU', be:'EU', ch:'EU', at:'EU', se:'EU', no:'EU',
-      dk:'EU', fi:'EU', pl:'EU', ua:'EU', gr:'EU', cz:'EU', hu:'EU', ro:'EU', rs:'EU', hr:'EU', sk:'EU', bg:'EU',
-      ru:'EU', ie:'EU', is:'EU', lu:'EU', ee:'EU', lv:'EU', lt:'EU',
-      us:'NA', ca:'NA', mx:'NA', cu:'NA', gt:'NA', cr:'NA', tt:'NA', jm:'NA', ht:'NA', do:'NA',
-      au:'OC', nz:'OC',
-      br:'SA', ar:'SA', co:'SA', cl:'SA', pe:'SA', ve:'SA', ec:'SA', bo:'SA', uy:'SA', py:'SA',
-    };
     const CONTINENT_TYPE = { african:'AF', asian:'AS', european:'EU', northamerican:'NA', oceanian:'OC', southamerican:'SA' };
     const PERIODS       = ['monthly', 'yearly', 'overall'];
     const PERIOD_LABELS = { monthly: 'Monthly', yearly: 'Yearly', overall: 'Overall' };
@@ -479,34 +469,6 @@
     const PIE_COLOR_OTHER = '#6b7280';
 
     const PIE_COLORS = ['#C4607A','#3A68B0','#B85C3A','#8B2252','#C4832A','#6B7B3A','#3A7A72','#8A6040','#E0AC00','#B8963A','#3A6B4A','#7A8A5A','#8A7A6A','#6A6A8A'];
-
-    const COUNTRY_ISO = {
-      'united states': 'us', 'usa': 'us', 'us': 'us',
-      'united kingdom': 'gb', 'uk': 'gb', 'england': 'gb', 'great britain': 'gb', 'britain': 'gb', 'scotland': 'gb', 'wales': 'gb', 'northern ireland': 'gb',
-      'france': 'fr', 'germany': 'de', 'italy': 'it', 'spain': 'es', 'portugal': 'pt',
-      'netherlands': 'nl', 'belgium': 'be', 'switzerland': 'ch', 'austria': 'at',
-      'sweden': 'se', 'norway': 'no', 'denmark': 'dk', 'finland': 'fi',
-      'poland': 'pl', 'ukraine': 'ua', 'greece': 'gr',
-      'czech republic': 'cz', 'czechia': 'cz', 'hungary': 'hu', 'romania': 'ro',
-      'serbia': 'rs', 'croatia': 'hr', 'slovakia': 'sk', 'bulgaria': 'bg',
-      'russia': 'ru', 'ireland': 'ie', 'iceland': 'is', 'luxembourg': 'lu',
-      'estonia': 'ee', 'latvia': 'lv', 'lithuania': 'lt',
-      'japan': 'jp', 'china': 'cn', 'south korea': 'kr', 'korea': 'kr', 'taiwan': 'tw',
-      'india': 'in', 'pakistan': 'pk', 'bangladesh': 'bd', 'sri lanka': 'lk',
-      'vietnam': 'vn', 'thailand': 'th', 'indonesia': 'id', 'philippines': 'ph',
-      'malaysia': 'my', 'singapore': 'sg', 'myanmar': 'mm', 'cambodia': 'kh',
-      'iran': 'ir', 'turkey': 'tr', 'israel': 'il', 'jordan': 'jo', 'iraq': 'iq',
-      'saudi arabia': 'sa', 'united arab emirates': 'ae', 'uae': 'ae',
-      'canada': 'ca', 'mexico': 'mx', 'cuba': 'cu', 'guatemala': 'gt', 'costa rica': 'cr',
-      'trinidad and tobago': 'tt', 'trinidad': 'tt', 'tobago': 'tt', 'jamaica': 'jm', 'haiti': 'ht', 'dominican republic': 'do',
-      'brazil': 'br', 'argentina': 'ar', 'colombia': 'co', 'chile': 'cl',
-      'peru': 'pe', 'venezuela': 've', 'ecuador': 'ec', 'bolivia': 'bo', 'uruguay': 'uy', 'paraguay': 'py',
-      'australia': 'au', 'new zealand': 'nz',
-      'nigeria': 'ng', 'south africa': 'za', 'egypt': 'eg', 'kenya': 'ke',
-      'ghana': 'gh', 'ethiopia': 'et', 'morocco': 'ma', 'tanzania': 'tz',
-      'uganda': 'ug', 'zimbabwe': 'zw', 'rwanda': 'rw', 'angola': 'ao',
-      'hong kong': 'hk',
-    };
 
     const flagImageCache = new Map();
 
@@ -979,44 +941,6 @@
 
     function toAuthorSlug(name) { return (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 
-    function calcStats(bks) {
-      const total = bks.length;
-      const rated = bks.filter(b => b.rating != null && b.rating >= 0.5);
-      const avgRating = rated.length ? rated.reduce((s, b) => s + b.rating, 0) / rated.length : null;
-      const stdDev = avgRating != null && rated.length >= 2
-        ? Math.sqrt(rated.reduce((s, b) => s + Math.pow(b.rating - avgRating, 2), 0) / rated.length) : null;
-      const withPages = bks.filter(b => b.totalPages > 0);
-      const totalPages = withPages.reduce((s, b) => s + b.totalPages, 0);
-      const avgPages = withPages.length ? Math.round(totalPages / withPages.length) : null;
-      const uniqueAuthors   = new Set(bks.map(b => b.author).filter(Boolean)).size;
-      const uniqueCountries = new Set(bks.map(b => b.country).filter(Boolean)).size;
-      const uniqueLanguages = new Set(bks.map(b => b.language).filter(Boolean)).size;
-      const now = new Date();
-      const thisYear  = bks.filter(b => { const d = b.finishedAt?.toDate?.() ?? null; return d && d.getFullYear() === now.getFullYear(); }).length;
-      const thisMonth = bks.filter(b => { const d = b.finishedAt?.toDate?.() ?? null; return d && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); }).length;
-      const continentCounts = { AF: 0, AS: 0, EU: 0, NA: 0, OC: 0, SA: 0 };
-      for (const b of bks) {
-        if (!b.country) continue;
-        const iso = COUNTRY_ISO[b.country.toLowerCase()];
-        const cont = iso && ISO_CONTINENT[iso];
-        if (cont) continentCounts[cont]++;
-      }
-      const genderCounts = { Male: 0, Female: 0, 'Non-binary': 0, Other: 0 };
-      const seenGenderAuthors = new Set();
-      for (const b of bks) {
-        if (!b.author || !b.authorGender) continue;
-        if (seenGenderAuthors.has(b.author)) continue;
-        seenGenderAuthors.add(b.author);
-        if (b.authorGender in genderCounts) genderCounts[b.authorGender]++;
-      }
-      const genderKnown = genderCounts.Male + genderCounts.Female + genderCounts['Non-binary'] + genderCounts.Other;
-      const genderRatio = genderKnown > 0
-        ? [Math.round(genderCounts.Male / genderKnown * 100), Math.round(genderCounts.Female / genderKnown * 100), Math.round(genderCounts['Non-binary'] / genderKnown * 100)].join('/')
-        : '–';
-      const fiveStars = rated.filter(b => b.rating === 5).length;
-      const halfStars = rated.filter(b => b.rating === 0.5).length;
-      return { total, avgRating, stdDev, totalPages, avgPages, uniqueAuthors, uniqueCountries, uniqueLanguages, thisYear, thisMonth, continentCounts, genderCounts, genderKnown, genderRatio, fiveStars, halfStars };
-    }
 
     function buildSummary() {
       const panel = document.getElementById('panel-summary');
@@ -1052,52 +976,14 @@
         ? `${theirs}<span style="color:#c84f4f;font-weight:400"> // ${mine}</span>`
         : String(theirs);
 
-      const rated = books.filter(b => b.rating != null && b.rating >= 0.5);
-      const avgRating = rated.length ? rated.reduce((s, b) => s + b.rating, 0) / rated.length : null;
-      const stdDev = avgRating != null && rated.length >= 2
-        ? Math.sqrt(rated.reduce((s, b) => s + Math.pow(b.rating - avgRating, 2), 0) / rated.length)
-        : null;
-
-      const withPages = books.filter(b => b.totalPages > 0);
-      const totalPages = withPages.reduce((s, b) => s + b.totalPages, 0);
-      const avgPages = withPages.length ? Math.round(totalPages / withPages.length) : null;
-
-      const uniqueAuthors   = new Set(books.map(b => b.author).filter(Boolean)).size;
-      const uniqueCountries = new Set(books.map(b => b.country).filter(Boolean)).size;
-      const uniqueLanguages = new Set(books.map(b => b.language).filter(Boolean)).size;
-
-      const now = new Date();
-      const thisYear  = books.filter(b => { const d = b.finishedAt?.toDate?.() ?? null; return d && d.getFullYear() === now.getFullYear(); }).length;
-      const thisMonth = books.filter(b => { const d = b.finishedAt?.toDate?.() ?? null; return d && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); }).length;
-
-      const continentCounts = { AF: 0, AS: 0, EU: 0, NA: 0, OC: 0, SA: 0 };
-      for (const b of books) {
-        if (!b.country) continue;
-        const iso = COUNTRY_ISO[b.country.toLowerCase()];
-        const cont = iso && ISO_CONTINENT[iso];
-        if (cont) continentCounts[cont]++;
-      }
-
-      const genderCounts = { Male: 0, Female: 0, 'Non-binary': 0, Other: 0 };
-      const seenGenderAuthors = new Set();
-      for (const b of books) {
-        if (!b.author || !b.authorGender) continue;
-        if (seenGenderAuthors.has(b.author)) continue;
-        seenGenderAuthors.add(b.author);
-        if (b.authorGender in genderCounts) genderCounts[b.authorGender]++;
-      }
-      const genderKnown = genderCounts.Male + genderCounts.Female + genderCounts['Non-binary'] + genderCounts.Other;
-      const genderRatio = genderKnown > 0
-        ? [
-            Math.round(genderCounts.Male        / genderKnown * 100),
-            Math.round(genderCounts.Female      / genderKnown * 100),
-            Math.round(genderCounts['Non-binary'] / genderKnown * 100),
-          ].join('/')
-        : '–';
+      const {
+        avgRating, stdDev, totalPages, avgPages,
+        uniqueAuthors, uniqueCountries, uniqueLanguages,
+        thisYear, thisMonth, continentCounts,
+        genderCounts, genderKnown, genderRatio, fiveStars, halfStars,
+      } = calcStats(books);
 
       const pl = (n, s, p) => n === 1 ? s : p;
-      const fiveStars = rated.filter(b => b.rating === 5).length;
-      const halfStars = rated.filter(b => b.rating === 0.5).length;
 
       const sections = [
         { title: 'books', stats: [
@@ -1125,10 +1011,10 @@
           { label: pl(continentCounts.SA, 'south american book', 'south american books'), value: cv(continentCounts.SA,        me ? me.continentCounts.SA : '') },
         ]},
         ...((genderKnown > 0 || (me && me.genderKnown > 0)) ? [{ title: 'gender', stats: [
-          { label: pl(genderCounts.Male,          'male author',       'male authors'),       value: cv(genderCounts.Male,          me ? me.genderCounts.Male : '') },
-          { label: pl(genderCounts.Female,        'female author',     'female authors'),     value: cv(genderCounts.Female,        me ? me.genderCounts.Female : '') },
-          { label: pl(genderCounts['Non-binary'], 'non-binary author', 'non-binary authors'), value: cv(genderCounts['Non-binary'], me ? me.genderCounts['Non-binary'] : '') },
-          ...(genderCounts.Other > 0 || (me && me.genderCounts.Other > 0) ? [{ label: pl(genderCounts.Other, 'other', 'other'), value: cv(genderCounts.Other, me ? me.genderCounts.Other : '') }] : []),
+          { label: pl(genderCounts.Male,          'book by a male author',       'books by male authors'),       value: cv(genderCounts.Male,          me ? me.genderCounts.Male : '') },
+          { label: pl(genderCounts.Female,        'book by a female author',     'books by female authors'),     value: cv(genderCounts.Female,        me ? me.genderCounts.Female : '') },
+          { label: pl(genderCounts['Non-binary'], 'book by a non-binary author', 'books by non-binary authors'), value: cv(genderCounts['Non-binary'], me ? me.genderCounts['Non-binary'] : '') },
+          ...(genderCounts.Other > 0 || (me && me.genderCounts.Other > 0) ? [{ label: pl(genderCounts.Other, 'book by an other-gender author', 'books by other-gender authors'), value: cv(genderCounts.Other, me ? me.genderCounts.Other : '') }] : []),
           { label: 'gender ratio (M/F/NB)', value: cv(genderRatio, me ? me.genderRatio : '') },
         ]}] : []),
         ...(!me ? [{ title: 'highlights', stats: (() => {
@@ -1203,16 +1089,12 @@
       if (type === 'languages') return new Set(finished.map(b => b.language).filter(Boolean)).size;
       if (type === 'countries') return new Set(finished.map(b => b.country).filter(Boolean)).size;
       if (type === 'female_pct' || type === 'nb_pct') {
-        const seen = new Map();
-        for (const b of finished) {
-          if (!b.author || !b.authorGender) continue;
-          if (!seen.has(b.author)) seen.set(b.author, b.authorGender);
-        }
-        if (!seen.size) return 0;
+        // Per book, not per unique author — matches the summary and the chart.
+        const withGender = finished.filter(b => b.authorGender);
+        if (!withGender.length) return 0;
         const match = type === 'female_pct' ? 'Female' : 'Non-binary';
-        let count = 0;
-        for (const g of seen.values()) if (g === match) count++;
-        return Math.round(count / seen.size * 100);
+        const count = withGender.filter(b => b.authorGender === match).length;
+        return Math.round(count / withGender.length * 100);
       }
       const contKey = CONTINENT_TYPE[type];
       if (contKey) return finished.filter(b => {
@@ -1242,8 +1124,9 @@
       if (!total) { tabTargets.textContent = 'Targets'; return; }
       let done = 0;
       for (const [key, val] of Object.entries(targetsData)) {
-        const [type, period] = key.split('_');
-        if (computeProgress(type, period) >= val) done++;
+        // Split on the LAST underscore — types can contain one ('female_pct').
+        const cut = key.lastIndexOf('_');
+        if (computeProgress(key.slice(0, cut), key.slice(cut + 1)) >= val) done++;
       }
       tabTargets.textContent = `Targets (${done}/${total})`;
     }
@@ -2367,14 +2250,11 @@
         }
       }
 
-      // Author gender
+      // Books by author gender
       {
-        const seen = new Set();
         const genderCounts = {};
         for (const b of books) {
-          if (!b.author || !b.authorGender) continue;
-          if (seen.has(b.author)) continue;
-          seen.add(b.author);
+          if (!b.authorGender) continue;
           genderCounts[b.authorGender] = (genderCounts[b.authorGender] || 0) + 1;
         }
         const ORDER = ['Male', 'Female', 'Non-binary', 'Other'];

@@ -146,6 +146,13 @@
           <div id="repair-finished-activity-status" style="display:none;font-size:.85rem"></div>
         </div>
 
+        <div class="settings-row" id="backfill-list-privacy-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Backfill list privacy</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">One-off migration — sets <code>private: false</code> on every list that has no <code>private</code> field. Without it those lists stay invisible on other users' profiles and lists pages.</p>
+          <button class="btn-update" id="backfill-list-privacy-btn" type="button">Run migration</button>
+          <div id="backfill-list-privacy-status" style="display:none;font-size:.85rem"></div>
+        </div>
+
         <div class="settings-row" id="set-olive-theme-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
           <span class="settings-row-label">Set grey theme for all users</span>
           <p style="font-size:.82rem;color:var(--text-muted);margin:0">One-off migration — sets <code>avatarBorderColor</code> to <code>#6C6460</code> on every user document.</p>
@@ -208,7 +215,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { ROOT, db, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, setThemeColorForAllUsers } from '../js/firebase.js';
+    import { ROOT, db, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, setThemeColorForAllUsers, backfillListPrivacyForAllUsers } from '../js/firebase.js';
     import { deleteField, collection, doc, getDocs, query as fsQuery, where, updateDoc, Timestamp, limit, getCountFromServer, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor } from '../js/hardcover.js';
     import { normalizeCountry } from '../js/utils.js';
@@ -309,6 +316,29 @@
     const repairFinishedActivitySection = document.getElementById('repair-finished-activity-section');
     const fixYearsSection               = document.getElementById('fix-years-section');
     const changePasswordSection  = document.getElementById('change-password-section');
+
+    document.getElementById('backfill-list-privacy-section').style.display = '';
+    document.getElementById('backfill-list-privacy-btn').addEventListener('click', async () => {
+      const btn    = document.getElementById('backfill-list-privacy-btn');
+      const status = document.getElementById('backfill-list-privacy-status');
+      if (!confirm('Set private: false on every list across ALL users that has no private field?')) return;
+      btn.disabled = true;
+      status.style.display = '';
+      status.style.color = 'var(--text-muted)';
+      status.textContent = 'Running…';
+      try {
+        const { users, scanned, updated, failed } = await backfillListPrivacyForAllUsers();
+        status.textContent = `Done — ${updated} of ${scanned} list${scanned === 1 ? '' : 's'} updated across ${users} user${users === 1 ? '' : 's'}.`
+          + (failed ? ` ${failed} user${failed === 1 ? '' : 's'} could not be read — check the console.` : '');
+        status.style.color = failed ? 'var(--danger, #d44)' : 'var(--accent)';
+      } catch (err) {
+        console.error(err);
+        status.textContent = 'Failed. Check the console.';
+        status.style.color = 'var(--danger, #d44)';
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     document.getElementById('set-olive-theme-section').style.display = '';
     document.getElementById('set-olive-theme-btn').addEventListener('click', async () => {

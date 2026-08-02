@@ -40,6 +40,65 @@ export function cleanAuthor(a) {
   return (a || '').replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim();
 }
 
+// Labels a date relative to `now` when it falls inside the last seven days:
+// 'Today', 'Yesterday', then the weekday name for 2–6 days ago.
+// Returns null for anything older, leaving the caller to format it its own way.
+//
+// Stops at 6 days deliberately: 7 days ago is the same weekday as today, so
+// labelling it would put a second 'Sunday' below 'Monday' in the same feed.
+export function recentDayLabel(date, now = new Date()) {
+  if (!(date instanceof Date) || isNaN(date)) return null;
+  // Compare calendar days, not elapsed hours, so DST shifts can't move a date
+  // across a boundary.
+  const day      = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const todayDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round((todayDay - day) / 86400000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays >= 2 && diffDays <= 6) return date.toLocaleDateString('en-GB', { weekday: 'long' });
+  return null;
+}
+
+// Feed/activity day divider for a Firestore-style timestamp ({ seconds }).
+//
+// Today / Yesterday / weekday for the last seven days, then the day within the
+// current month, then the month, then month + year. The recent-window labels
+// take precedence over the month fallback, so a day that is only a few days old
+// still reads as 'Friday' rather than collapsing into 'July' just because it
+// sits the other side of the 1st.
+export function dayLabel(ts, now = new Date()) {
+  if (!ts?.seconds) return null;
+  const d = new Date(ts.seconds * 1000);
+  const recent = recentDayLabel(d, now);
+  if (recent) return recent;
+  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) {
+    return `${ordinal(d.getDate())} ${d.toLocaleDateString('en-GB', { month: 'long' })}`;
+  }
+  return d.getFullYear() === now.getFullYear()
+    ? d.toLocaleDateString('en-GB', { month: 'long' })
+    : d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+}
+
+// Timestamp shown on an individual activity card.
+//
+// Relative only within the current day; an exact date after that. A relative
+// '3d ago' never told you the actual date, and the day divider above the card
+// says 'Thursday' rather than a date either — so the date appeared nowhere.
+export function timeAgo(ts, now = new Date()) {
+  if (!ts?.seconds) return '';
+  const d = new Date(ts.seconds * 1000);
+  const sameDay = d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate()  === now.getDate();
+  if (sameDay) {
+    const mins = Math.floor((now - d) / 60000);
+    if (mins < 1)  return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    return `${Math.floor((now - d) / 3600000)}h ago`;
+  }
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 // Groups consecutive "followed" feed events from the same user into one aggregated event.
 // getDayKey(timestamp) → string: optional, groups by day key to avoid cross-day merging.
 export function aggregateFollows(events, myUid, getDayKey = () => '') {

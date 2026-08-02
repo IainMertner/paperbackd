@@ -181,6 +181,7 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { getProfileByUsername, getFollowers, getProfile, getBookCount, getListCount, getReadingBooks, getRecentlyFinishedBooks, followUser, unfollowUser, logOut, ROOT, updateShelf, getBooks, updateAvatarUrl, updateAvatarBorderColor, updateDisplayName } from '../js/firebase.js';
+    import { COUNTRY_ISO, ISO_CONTINENT } from '../js/stats-utils.js';
 
     const { user, profile: myProfile } = await requireAuth();
     const params      = new URLSearchParams(location.search);
@@ -625,29 +626,6 @@
 
     function computeCompletedTargets(targets, finishedBooks) {
       const now = new Date();
-      const COUNTRY_ISO = {
-        'united states':'us','usa':'us','us':'us','united kingdom':'gb','uk':'gb','england':'gb','great britain':'gb','britain':'gb','scotland':'gb','wales':'gb','northern ireland':'gb',
-        'france':'fr','germany':'de','italy':'it','spain':'es','portugal':'pt','netherlands':'nl','belgium':'be','switzerland':'ch','austria':'at',
-        'sweden':'se','norway':'no','denmark':'dk','finland':'fi','poland':'pl','ukraine':'ua','greece':'gr',
-        'czech republic':'cz','czechia':'cz','hungary':'hu','romania':'ro','serbia':'rs','croatia':'hr','slovakia':'sk','bulgaria':'bg',
-        'russia':'ru','ireland':'ie','iceland':'is','luxembourg':'lu','estonia':'ee','latvia':'lv','lithuania':'lt',
-        'japan':'jp','china':'cn','south korea':'kr','korea':'kr','taiwan':'tw','india':'in','pakistan':'pk','bangladesh':'bd','sri lanka':'lk',
-        'vietnam':'vn','thailand':'th','indonesia':'id','philippines':'ph','malaysia':'my','singapore':'sg','myanmar':'mm','cambodia':'kh',
-        'iran':'ir','turkey':'tr','israel':'il','jordan':'jo','iraq':'iq','saudi arabia':'sa','united arab emirates':'ae','uae':'ae',
-        'canada':'ca','mexico':'mx','cuba':'cu','guatemala':'gt','costa rica':'cr','trinidad and tobago':'tt','trinidad':'tt','tobago':'tt','jamaica':'jm','haiti':'ht','dominican republic':'do',
-        'brazil':'br','argentina':'ar','colombia':'co','chile':'cl','peru':'pe','venezuela':'ve','ecuador':'ec','bolivia':'bo','uruguay':'uy','paraguay':'py',
-        'australia':'au','new zealand':'nz',
-        'nigeria':'ng','south africa':'za','egypt':'eg','kenya':'ke','ghana':'gh','ethiopia':'et','morocco':'ma','tanzania':'tz',
-        'uganda':'ug','zimbabwe':'zw','rwanda':'rw','angola':'ao','hong kong':'hk',
-      };
-      const ISO_CONTINENT = {
-        ng:'AF',za:'AF',eg:'AF',ke:'AF',gh:'AF',et:'AF',ma:'AF',tz:'AF',ug:'AF',zw:'AF',rw:'AF',ao:'AF',
-        jp:'AS',cn:'AS',kr:'AS',tw:'AS',in:'AS',pk:'AS',bd:'AS',lk:'AS',vn:'AS',th:'AS',id:'AS',ph:'AS',my:'AS',sg:'AS',mm:'AS',kh:'AS',ir:'AS',tr:'AS',il:'AS',jo:'AS',iq:'AS',sa:'AS',ae:'AS',hk:'AS',
-        gb:'EU',fr:'EU',de:'EU',it:'EU',es:'EU',pt:'EU',nl:'EU',be:'EU',ch:'EU',at:'EU',se:'EU',no:'EU',dk:'EU',fi:'EU',pl:'EU',ua:'EU',gr:'EU',cz:'EU',hu:'EU',ro:'EU',rs:'EU',hr:'EU',sk:'EU',bg:'EU',ru:'EU',ie:'EU',is:'EU',lu:'EU',ee:'EU',lv:'EU',lt:'EU',
-        us:'NA',ca:'NA',mx:'NA',cu:'NA',gt:'NA',cr:'NA',tt:'NA',jm:'NA',ht:'NA',do:'NA',
-        au:'OC',nz:'OC',
-        br:'SA',ar:'SA',co:'SA',cl:'SA',pe:'SA',ve:'SA',ec:'SA',bo:'SA',uy:'SA',py:'SA',
-      };
       const CONTINENT_TYPE = { african:'AF', asian:'AS', european:'EU', northamerican:'NA', oceanian:'OC', southamerican:'SA' };
 
       function booksInPeriod(period) {
@@ -661,11 +639,19 @@
         });
       }
 
+      // Mirrors computeProgress() on the stats page — keep the two in step.
       function progressFor(type, period) {
         const bs = booksInPeriod(period);
         if (type === 'books')     return bs.length;
+        if (type === 'pages')     return bs.reduce((s, b) => s + (b.totalPages || 0), 0);
         if (type === 'languages') return new Set(bs.map(b => b.language).filter(Boolean)).size;
         if (type === 'countries') return new Set(bs.map(b => b.country).filter(Boolean)).size;
+        if (type === 'female_pct' || type === 'nb_pct') {
+          const withGender = bs.filter(b => b.authorGender);
+          if (!withGender.length) return 0;
+          const match = type === 'female_pct' ? 'Female' : 'Non-binary';
+          return Math.round(withGender.filter(b => b.authorGender === match).length / withGender.length * 100);
+        }
         const contKey = CONTINENT_TYPE[type];
         if (contKey) return bs.filter(b => {
           const iso = b.country && COUNTRY_ISO[b.country.toLowerCase()];
@@ -676,8 +662,9 @@
 
       let done = 0;
       for (const [key, val] of Object.entries(targets)) {
-        const [type, period] = key.split('_');
-        if (progressFor(type, period) >= val) done++;
+        // Split on the LAST underscore — types can contain one ('female_pct').
+        const cut = key.lastIndexOf('_');
+        if (progressFor(key.slice(0, cut), key.slice(cut + 1)) >= val) done++;
       }
       return done;
     }

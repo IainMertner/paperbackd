@@ -69,6 +69,15 @@ export function bookMissingFlags(book) {
   return flags;
 }
 
+// True when a viewer should only see the owner's public lists.
+//
+// An omitted viewerUid means the owner is loading their own data, not that an
+// anonymous stranger is: treating undefined as "someone else" filtered owners
+// out of their own list count and reported 0 lists on every profile.
+export function viewerSeesOnlyPublic(ownerUid, viewerUid) {
+  return viewerUid !== undefined && viewerUid !== null && viewerUid !== ownerUid;
+}
+
 // Groups finished books into duplicate clusters by gbid or title+author key.
 // Returns only groups with more than one entry.
 export function computeDupeGroups(bookList) {

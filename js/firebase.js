@@ -34,6 +34,7 @@ import {
   limit,
   startAfter
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { viewerSeesOnlyPublic } from './book-utils.js';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const firebaseConfig = {
@@ -816,7 +817,9 @@ export async function unfinishBook(uid, bookId, { title, author }) {
 
 export async function getListCount(uid, viewerUid) {
   const col = collection(db, 'users', uid, 'lists');
-  const q = viewerUid !== uid ? query(col, where('private', '!=', true)) : col;
+  const q = viewerSeesOnlyPublic(uid, viewerUid)
+    ? query(col, where('private', '==', false))
+    : col;
   const snap = await getCountFromServer(q);
   return snap.data().count;
 }
@@ -827,7 +830,12 @@ export async function setListPrivate(uid, listId, isPrivate) {
 
 export async function getLists(uid, viewerUid) {
   const col = collection(db, 'users', uid, 'lists');
-  const q = viewerUid !== undefined && viewerUid !== uid ? query(col, where('private', '!=', true)) : col;
+  // '==' false rather than '!=' true: a '!=' filter silently drops documents
+  // that have no `private` field at all, which is every list created before
+  // the feature existed. The owner path below backfills them.
+  const q = viewerSeesOnlyPublic(uid, viewerUid)
+    ? query(col, where('private', '==', false))
+    : col;
   const snap = await getDocs(q);
   const lists = snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
@@ -843,6 +851,22 @@ export async function getLists(uid, viewerUid) {
     await updateDoc(doc(db, 'users', uid, 'lists', stale.id), { name: 'Reading list' });
     stale.name = 'Reading list';
   }
+  // Backfill lists predating the private flag. Only the owner can write here,
+  // and only the owner's unfiltered read can see them, so this is the one place
+  // the repair can happen. Without it they stay invisible to everyone else.
+  if (!viewerSeesOnlyPublic(uid, viewerUid)) {
+    const unflagged = lists.filter(l => l.private === undefined);
+    if (unflagged.length) {
+      try {
+        await Promise.all(unflagged.map(l =>
+          updateDoc(doc(db, 'users', uid, 'lists', l.id), { private: false })
+        ));
+        for (const l of unflagged) l.private = false;
+      } catch {
+        // A failed repair must not stop the lists themselves loading.
+      }
+    }
+  }
   return lists;
 }
 
@@ -853,6 +877,7 @@ export async function ensureDefaultList(uid) {
   const ref = await addDoc(collection(db, 'users', uid, 'lists'), {
     name: 'Reading list',
     isDefault: true,
+    private: false,
     createdAt: new Date().toISOString(),
     books: []
   });
@@ -863,10 +888,11 @@ export async function createList(uid, name) {
   const ref = await addDoc(collection(db, 'users', uid, 'lists'), {
     name,
     isDefault: false,
+    private: false,
     createdAt: new Date().toISOString(),
     books: []
   });
-  return { id: ref.id, name, isDefault: false, books: [] };
+  return { id: ref.id, name, isDefault: false, private: false, books: [] };
 }
 
 export async function deleteList(uid, listId) {
@@ -1128,6 +1154,31 @@ export async function getAnnouncements(n = 5) {
     limit(n)
   ));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// One-off migration. Lists created before the `private` flag existed carry no
+// such field, and a `private == false` query cannot match a missing field — so
+// those lists are invisible on every other user's profile and lists page.
+// getLists() self-heals the owner's own lists on visit; this sweeps everyone.
+// Requires admin read access to all lists (see firestore.rules).
+export async function backfillListPrivacyForAllUsers() {
+  const users = await getDocs(collection(db, 'users'));
+  let scanned = 0, updated = 0, failed = 0;
+  for (const u of users.docs) {
+    try {
+      const lists = await getDocs(collection(db, 'users', u.id, 'lists'));
+      scanned += lists.docs.length;
+      const missing = lists.docs.filter(d => d.data().private === undefined);
+      if (missing.length) {
+        await Promise.all(missing.map(d => updateDoc(d.ref, { private: false })));
+        updated += missing.length;
+      }
+    } catch (err) {
+      failed++;
+      console.warn('List privacy backfill failed for', u.id, err);
+    }
+  }
+  return { users: users.docs.length, scanned, updated, failed };
 }
 
 export async function setThemeColorForAllUsers(color) {

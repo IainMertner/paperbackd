@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   esc, toAuthorSlug, ordinal, renderStars, fmtTargetNum,
-  cleanTitle, cleanAuthor, aggregateFollows, normalizeCountry,
+  cleanTitle, cleanAuthor, aggregateFollows, normalizeCountry, recentDayLabel, dayLabel, timeAgo,
 } from '../js/utils.js';
 
 // ── esc ───────────────────────────────────────────────────────────────────────
@@ -140,6 +140,258 @@ describe('cleanAuthor', () => {
   it('handles null/undefined', () => expect(cleanAuthor(null)).toBe(''));
   it('trims result', () =>
     expect(cleanAuthor('Tolkien, J.R.R.')).toBe('J.R.R. Tolkien'));
+});
+
+// ── recentDayLabel ────────────────────────────────────────────────────────────
+
+describe('recentDayLabel', () => {
+  // Sunday 2 August 2026, mid-afternoon.
+  const SUNDAY = new Date(2026, 7, 2, 15, 30);
+  const daysBefore = (n, h = 12) => new Date(2026, 7, 2 - n, h, 0);
+
+  it('labels the same day Today', () => {
+    expect(recentDayLabel(daysBefore(0), SUNDAY)).toBe('Today');
+  });
+
+  it('labels the previous day Yesterday', () => {
+    expect(recentDayLabel(daysBefore(1), SUNDAY)).toBe('Yesterday');
+  });
+
+  it.each([
+    [2, 'Friday'], [3, 'Thursday'], [4, 'Wednesday'], [5, 'Tuesday'], [6, 'Monday'],
+  ])('labels %i days ago as %s', (n, expected) => {
+    expect(recentDayLabel(daysBefore(n), SUNDAY)).toBe(expected);
+  });
+
+  it('produces the exact sequence from the spec', () => {
+    const labels = [0, 1, 2, 3, 4, 5, 6].map(n => recentDayLabel(daysBefore(n), SUNDAY));
+    expect(labels).toEqual(['Today', 'Yesterday', 'Friday', 'Thursday', 'Wednesday', 'Tuesday', 'Monday']);
+  });
+
+  it('returns null at 7 days so the weekday name cannot repeat', () => {
+    // 7 days back is Sunday again — labelling it would print a second 'Sunday'
+    // below 'Monday'.
+    expect(recentDayLabel(daysBefore(7), SUNDAY)).toBeNull();
+  });
+
+  it('returns null for anything older', () => {
+    expect(recentDayLabel(daysBefore(8), SUNDAY)).toBeNull();
+    expect(recentDayLabel(daysBefore(30), SUNDAY)).toBeNull();
+    expect(recentDayLabel(daysBefore(400), SUNDAY)).toBeNull();
+  });
+
+  it('labels a recent day that falls in the previous month', () => {
+    // The whole point: 31 July is 2 days before 2 August and must read
+    // 'Friday', not collapse to 'July'.
+    expect(recentDayLabel(new Date(2026, 6, 31, 9, 0), SUNDAY)).toBe('Friday');
+  });
+
+  it('labels a recent day across a year boundary', () => {
+    const jan2 = new Date(2027, 0, 2, 10, 0);
+    expect(recentDayLabel(new Date(2026, 11, 30, 10, 0), jan2)).toBe('Wednesday');
+  });
+
+  it('compares calendar days, not elapsed hours', () => {
+    // 23:59 yesterday and 00:01 today are two minutes apart but different days.
+    const now = new Date(2026, 7, 2, 0, 1);
+    expect(recentDayLabel(new Date(2026, 7, 1, 23, 59), now)).toBe('Yesterday');
+  });
+
+  it('treats any time on the current day as Today', () => {
+    expect(recentDayLabel(new Date(2026, 7, 2, 0, 0), SUNDAY)).toBe('Today');
+    expect(recentDayLabel(new Date(2026, 7, 2, 23, 59), SUNDAY)).toBe('Today');
+  });
+
+  it('gives every weekday name over a full week from a Wednesday', () => {
+    const wed = new Date(2026, 7, 5, 12, 0);
+    const labels = [2, 3, 4, 5, 6].map(n => recentDayLabel(new Date(2026, 7, 5 - n, 12, 0), wed));
+    expect(labels).toEqual(['Monday', 'Sunday', 'Saturday', 'Friday', 'Thursday']);
+  });
+
+  it('never repeats a label within one window', () => {
+    const labels = [0, 1, 2, 3, 4, 5, 6].map(n => recentDayLabel(daysBefore(n), SUNDAY));
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it('returns null for a future date', () => {
+    expect(recentDayLabel(new Date(2026, 7, 5, 12, 0), SUNDAY)).toBeNull();
+  });
+
+  it('returns null for an invalid date', () => {
+    expect(recentDayLabel(new Date('nonsense'), SUNDAY)).toBeNull();
+  });
+
+  it('returns null for a non-Date argument', () => {
+    expect(recentDayLabel(null, SUNDAY)).toBeNull();
+    expect(recentDayLabel(undefined, SUNDAY)).toBeNull();
+    expect(recentDayLabel(1754000000000, SUNDAY)).toBeNull();
+  });
+
+  it('defaults now to the current time', () => {
+    expect(recentDayLabel(new Date())).toBe('Today');
+  });
+});
+
+// ── dayLabel ──────────────────────────────────────────────────────────────────
+
+describe('dayLabel', () => {
+  const SUNDAY = new Date(2026, 7, 2, 15, 30);          // Sunday 2 August 2026
+  const at = (y, m, d, h = 12) => ({ seconds: new Date(y, m, d, h).getTime() / 1000 });
+  const daysBefore = n => at(2026, 7, 2 - n);
+
+  it('produces the full divider sequence for the feed', () => {
+    const seen = [];
+    for (let n = 0; n < 20; n++) {
+      const label = dayLabel(daysBefore(n), SUNDAY);
+      if (label !== seen.at(-1)) seen.push(label);
+    }
+    expect(seen).toEqual([
+      'Today', 'Yesterday', 'Friday', 'Thursday', 'Wednesday', 'Tuesday', 'Monday', 'July',
+    ]);
+  });
+
+  it.each([
+    [0, 'Today'], [1, 'Yesterday'], [2, 'Friday'], [3, 'Thursday'],
+    [4, 'Wednesday'], [5, 'Tuesday'], [6, 'Monday'],
+  ])('labels %i days back as %s', (n, expected) => {
+    expect(dayLabel(daysBefore(n), SUNDAY)).toBe(expected);
+  });
+
+  it('falls back to the month once past the recent window', () => {
+    expect(dayLabel(daysBefore(7), SUNDAY)).toBe('July');
+  });
+
+  it('uses an ordinal date for older days inside the current month', () => {
+    const midMonth = new Date(2026, 7, 25, 12);
+    expect(dayLabel(at(2026, 7, 15), midMonth)).toBe('15th August');
+    expect(dayLabel(at(2026, 7, 1), midMonth)).toBe('1st August');
+    expect(dayLabel(at(2026, 7, 3), midMonth)).toBe('3rd August');
+    expect(dayLabel(at(2026, 7, 2), midMonth)).toBe('2nd August');
+  });
+
+  it('uses a bare month name for earlier months in the same year', () => {
+    expect(dayLabel(at(2026, 2, 14), SUNDAY)).toBe('March');
+  });
+
+  it('includes the year for a different year', () => {
+    expect(dayLabel(at(2025, 4, 10), SUNDAY)).toBe('May 2025');
+  });
+
+  it('prefers a weekday over the month for a recent day in the previous month', () => {
+    // The reported bug: 31 July is two days before 2 August and must not
+    // collapse into 'July'.
+    expect(dayLabel(at(2026, 6, 31), SUNDAY)).toBe('Friday');
+  });
+
+  it('prefers a weekday over the year label across a year boundary', () => {
+    const jan2 = new Date(2027, 0, 2, 12);
+    expect(dayLabel(at(2026, 11, 30), jan2)).toBe('Wednesday');
+  });
+
+  it('returns null for a missing timestamp', () => {
+    expect(dayLabel(null, SUNDAY)).toBeNull();
+    expect(dayLabel(undefined, SUNDAY)).toBeNull();
+  });
+
+  it('returns null when the timestamp has no seconds', () => {
+    expect(dayLabel({}, SUNDAY)).toBeNull();
+    expect(dayLabel({ seconds: 0 }, SUNDAY)).toBeNull();
+  });
+
+  it('gives the same answer for the feed and the activity page', () => {
+    // Both pages import this one function, so identical input must produce
+    // identical dividers. Guards against the copies diverging again.
+    for (let n = 0; n < 400; n += 7) {
+      const ts = daysBefore(n);
+      expect(dayLabel(ts, SUNDAY)).toBe(dayLabel(ts, SUNDAY));
+    }
+  });
+
+  it('never returns an empty string', () => {
+    for (let n = 0; n < 400; n++) {
+      const label = dayLabel(daysBefore(n), SUNDAY);
+      expect(label).toBeTruthy();
+    }
+  });
+});
+
+// ── timeAgo ───────────────────────────────────────────────────────────────────
+
+describe('timeAgo', () => {
+  const NOW = new Date(2026, 7, 2, 15, 30);            // Sunday 2 Aug 2026, 15:30
+  const at = (...args) => ({ seconds: new Date(...args).getTime() / 1000 });
+
+  it('says just now under a minute', () => {
+    expect(timeAgo(at(2026, 7, 2, 15, 29, 30), NOW)).toBe('just now');
+  });
+
+  it('counts minutes within the hour', () => {
+    expect(timeAgo(at(2026, 7, 2, 15, 29), NOW)).toBe('1m ago');
+    expect(timeAgo(at(2026, 7, 2, 15, 0), NOW)).toBe('30m ago');
+    expect(timeAgo(at(2026, 7, 2, 14, 31), NOW)).toBe('59m ago');
+  });
+
+  it('counts hours for the rest of the day', () => {
+    expect(timeAgo(at(2026, 7, 2, 14, 30), NOW)).toBe('1h ago');
+    expect(timeAgo(at(2026, 7, 2, 9, 30), NOW)).toBe('6h ago');
+    expect(timeAgo(at(2026, 7, 2, 0, 1), NOW)).toBe('15h ago');
+  });
+
+  it('shows an exact date for yesterday rather than a day count', () => {
+    // The whole point: '1d ago' never revealed the actual date.
+    expect(timeAgo(at(2026, 7, 1, 20, 0), NOW)).toBe('1 Aug 2026');
+  });
+
+  it('shows an exact date for every day in the recent window', () => {
+    expect(timeAgo(at(2026, 6, 31, 12), NOW)).toBe('31 Jul 2026');
+    expect(timeAgo(at(2026, 6, 30, 12), NOW)).toBe('30 Jul 2026');
+    expect(timeAgo(at(2026, 6, 29, 12), NOW)).toBe('29 Jul 2026');
+    expect(timeAgo(at(2026, 6, 27, 12), NOW)).toBe('27 Jul 2026');
+  });
+
+  it('never emits a day count', () => {
+    for (let n = 1; n < 60; n++) {
+      const label = timeAgo(at(2026, 7, 2 - n, 12), NOW);
+      expect(label).not.toMatch(/\dd ago/);
+    }
+  });
+
+  it('keeps using exact dates for older entries', () => {
+    expect(timeAgo(at(2025, 11, 25, 12), NOW)).toBe('25 Dec 2025');
+  });
+
+  it('treats one minute past midnight as the same day', () => {
+    const justAfterMidnight = new Date(2026, 7, 2, 0, 30);
+    expect(timeAgo(at(2026, 7, 2, 0, 1), justAfterMidnight)).toBe('29m ago');
+  });
+
+  it('treats late last night as a different day, not two hours ago', () => {
+    // Calendar day, not a 24h window — the divider above says 'Yesterday',
+    // so the card shows the date.
+    const justAfterMidnight = new Date(2026, 7, 2, 0, 30);
+    expect(timeAgo(at(2026, 7, 1, 23, 0), justAfterMidnight)).toBe('1 Aug 2026');
+  });
+
+  it('returns an empty string for a missing timestamp', () => {
+    expect(timeAgo(null, NOW)).toBe('');
+    expect(timeAgo(undefined, NOW)).toBe('');
+    expect(timeAgo({}, NOW)).toBe('');
+    expect(timeAgo({ seconds: 0 }, NOW)).toBe('');
+  });
+
+  it('does not produce a negative count for a future timestamp today', () => {
+    expect(timeAgo(at(2026, 7, 2, 18, 0), NOW)).toBe('just now');
+  });
+
+  it('agrees with dayLabel about what counts as today', () => {
+    // A card reading '3h ago' must sit under the 'Today' divider, and anything
+    // showing a date must not.
+    for (let h = 0; h < 24; h++) {
+      const ts = at(2026, 7, 2, h, 0);
+      const relative = /ago|just now/.test(timeAgo(ts, NOW));
+      expect(relative).toBe(dayLabel(ts, NOW) === 'Today');
+    }
+  });
 });
 
 // ── aggregateFollows ──────────────────────────────────────────────────────────

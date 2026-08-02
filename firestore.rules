@@ -26,8 +26,14 @@ service cloud.firestore {
       }
 
       // Lists subcollection — private lists visible to owner only.
+      // Uses .get('private', false) rather than .private: reading a key that
+      // does not exist raises an error and denies, which would hide every list
+      // created before the private flag was introduced.
+      // isAdmin() also lets the backfill migration read every list: without a
+      // data-independent clause an unfiltered admin query is not provably safe
+      // and Firestore rejects it outright.
       match /lists/{listId} {
-        allow read:  if request.auth != null && (request.auth.uid == uid || resource.data.private != true);
+        allow read:  if request.auth != null && (request.auth.uid == uid || isAdmin() || resource.data.get('private', false) != true);
         allow write: if request.auth.uid == uid || isAdmin();
       }
     }

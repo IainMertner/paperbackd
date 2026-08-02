@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   tsOf, getReads, getDisplayRating, sortBooks,
-  bookMissingFlags, computeDupeGroups,
+  bookMissingFlags, computeDupeGroups, viewerSeesOnlyPublic,
 } from '../js/book-utils.js';
 
 // ── tsOf ──────────────────────────────────────────────────────────────────────
@@ -252,6 +252,54 @@ describe('bookMissingFlags', () => {
     expect(flags).toContain('no-language');
     expect(flags).toContain('no-format');
     expect(flags).toHaveLength(8);
+  });
+});
+
+// ── viewerSeesOnlyPublic ──────────────────────────────────────────────────────
+
+describe('viewerSeesOnlyPublic', () => {
+  it('is false when the owner views their own data', () => {
+    expect(viewerSeesOnlyPublic('u1', 'u1')).toBe(false);
+  });
+
+  it('is true for a different signed-in viewer', () => {
+    expect(viewerSeesOnlyPublic('u1', 'u2')).toBe(true);
+  });
+
+  it('treats an omitted viewer as the owner, not a stranger', () => {
+    // getListCount(uid) is called with no viewer on your own profile. Reading
+    // undefined as "someone else" filtered owners out of their own count and
+    // showed 0 lists on every profile.
+    expect(viewerSeesOnlyPublic('u1', undefined)).toBe(false);
+  });
+
+  it('treats a null viewer as the owner', () => {
+    expect(viewerSeesOnlyPublic('u1', null)).toBe(false);
+  });
+
+  it('does not confuse an empty-string viewer with the owner', () => {
+    expect(viewerSeesOnlyPublic('u1', '')).toBe(true);
+  });
+
+  it('is false when both are undefined', () => {
+    expect(viewerSeesOnlyPublic(undefined, undefined)).toBe(false);
+  });
+
+  it('compares by exact identity, not prefix', () => {
+    expect(viewerSeesOnlyPublic('u1', 'u10')).toBe(true);
+  });
+
+  it('is case sensitive', () => {
+    expect(viewerSeesOnlyPublic('User1', 'user1')).toBe(true);
+  });
+
+  it.each([
+    ['owner viewing own', 'abc', 'abc', false],
+    ['friend viewing',    'abc', 'xyz', true],
+    ['no viewer passed',  'abc', undefined, false],
+    ['null viewer',       'abc', null, false],
+  ])('%s → %s', (_label, owner, viewer, expected) => {
+    expect(viewerSeesOnlyPublic(owner, viewer)).toBe(expected);
   });
 });
 

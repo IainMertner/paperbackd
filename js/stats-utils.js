@@ -198,12 +198,11 @@ export function calcStats(bks, now = new Date()) {
     const cont = iso && ISO_CONTINENT[iso];
     if (cont) continentCounts[cont]++;
   }
+  // Counted per book rather than per unique author: five books by one author
+  // count five times, so the breakdown reflects what was actually read.
   const genderCounts = { Male: 0, Female: 0, 'Non-binary': 0, Other: 0 };
-  const seenGenderAuthors = new Set();
   for (const b of bks) {
-    if (!b.author || !b.authorGender) continue;
-    if (seenGenderAuthors.has(b.author)) continue;
-    seenGenderAuthors.add(b.author);
+    if (!b.authorGender) continue;
     if (b.authorGender in genderCounts) genderCounts[b.authorGender]++;
   }
   const genderKnown = genderCounts.Male + genderCounts.Female + genderCounts['Non-binary'] + genderCounts.Other;

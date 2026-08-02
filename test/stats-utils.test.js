@@ -393,12 +393,84 @@ describe('calcStats — gender counts', () => {
     expect(genderKnown).toBe(2);
   });
 
-  it('deduplicates same author across multiple books', () => {
+  it('counts every book by the same author, not the author once', () => {
     const books = [
       { author: 'Author A', authorGender: 'Male' },
       { author: 'Author A', authorGender: 'Male' },
     ];
-    expect(calcStats(books, NOW).genderCounts.Male).toBe(1);
+    expect(calcStats(books, NOW).genderCounts.Male).toBe(2);
+  });
+
+  it('counts a book whose author name is missing but gender is known', () => {
+    expect(calcStats([{ authorGender: 'Female' }], NOW).genderCounts.Female).toBe(1);
+  });
+
+  it('weights the ratio by books rather than authors', () => {
+    // One prolific male author, three separate female authors: by author this
+    // would be 25/75, by book it is 57/43.
+    const books = [
+      { author: 'A', authorGender: 'Male' }, { author: 'A', authorGender: 'Male' },
+      { author: 'A', authorGender: 'Male' }, { author: 'A', authorGender: 'Male' },
+      { author: 'B', authorGender: 'Female' },
+      { author: 'C', authorGender: 'Female' },
+      { author: 'D', authorGender: 'Female' },
+    ];
+    const { genderCounts, genderKnown, genderRatio } = calcStats(books, NOW);
+    expect(genderCounts.Male).toBe(4);
+    expect(genderCounts.Female).toBe(3);
+    expect(genderKnown).toBe(7);
+    expect(genderRatio).toBe('57/43/0');
+  });
+
+  it('counts non-binary authors per book', () => {
+    const books = [
+      { author: 'A', authorGender: 'Non-binary' },
+      { author: 'A', authorGender: 'Non-binary' },
+    ];
+    expect(calcStats(books, NOW).genderCounts['Non-binary']).toBe(2);
+  });
+
+  it('counts other-gender authors per book', () => {
+    const books = [
+      { author: 'A', authorGender: 'Other' },
+      { author: 'A', authorGender: 'Other' },
+    ];
+    expect(calcStats(books, NOW).genderCounts.Other).toBe(2);
+  });
+
+  it('ignores a gender value outside the four known buckets', () => {
+    const books = [
+      { author: 'A', authorGender: 'Male' },
+      { author: 'B', authorGender: 'Transgender female' },
+    ];
+    const { genderCounts, genderKnown } = calcStats(books, NOW);
+    expect(genderKnown).toBe(1);
+    expect(genderCounts.Male).toBe(1);
+  });
+
+  it('keeps genderKnown equal to the number of counted books', () => {
+    const books = [
+      { author: 'A', authorGender: 'Male' },
+      { author: 'A', authorGender: 'Male' },
+      { author: 'B', authorGender: 'Female' },
+      { author: 'C' },
+    ];
+    const { genderCounts, genderKnown } = calcStats(books, NOW);
+    const summed = genderCounts.Male + genderCounts.Female
+      + genderCounts['Non-binary'] + genderCounts.Other;
+    expect(genderKnown).toBe(3);
+    expect(summed).toBe(genderKnown);
+  });
+
+  it('does not let uniqueAuthors and genderKnown drift together', () => {
+    // uniqueAuthors stays author-based; only the gender counts became per-book.
+    const books = [
+      { author: 'A', authorGender: 'Male' },
+      { author: 'A', authorGender: 'Male' },
+    ];
+    const { uniqueAuthors, genderKnown } = calcStats(books, NOW);
+    expect(uniqueAuthors).toBe(1);
+    expect(genderKnown).toBe(2);
   });
 
   it('computes gender ratio', () => {

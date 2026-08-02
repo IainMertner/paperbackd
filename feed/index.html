@@ -136,6 +136,7 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { getFollowing, getFeed, getProfile, getBookByGbid, removeActivityEvent, toggleReaction, db } from '../js/firebase.js';
+    import { dayLabel, timeAgo } from '../js/utils.js';
     import { doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const { user } = await requireAuth();
@@ -148,20 +149,6 @@
       return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     }
 
-    function timeAgo(ts) {
-      if (!ts?.seconds) return '';
-      const diff  = Date.now() - ts.seconds * 1000;
-      const mins  = Math.floor(diff / 60000);
-      const hours = Math.floor(diff / 3600000);
-      const days  = Math.floor(diff / 86400000);
-      if (mins < 1)   return 'just now';
-      if (mins < 60)  return `${mins}m ago`;
-      if (hours < 24) return `${hours}h ago`;
-      if (days < 7)   return `${days}d ago`;
-      return new Date(ts.seconds * 1000)
-        .toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-    }
-
     function renderStars(rating) {
       if (!rating) return '';
       let html = '<span class="stars-display">';
@@ -171,29 +158,6 @@
         else                      html += '<span class="star-char">★</span>';
       }
       return html + '</span>';
-    }
-
-    function ordinal(n) {
-      const s = ['th','st','nd','rd'];
-      const v = n % 100;
-      return n + (s[(v - 20) % 10] || s[v] || s[0]);
-    }
-
-    function dayLabel(ts) {
-      if (!ts?.seconds) return null;
-      const d   = new Date(ts.seconds * 1000);
-      const now = new Date();
-      const today    = new Date(now.getFullYear(),  now.getMonth(),  now.getDate());
-      const eventDay = new Date(d.getFullYear(),    d.getMonth(),    d.getDate());
-      const diffDays = Math.round((today - eventDay) / 86400000);
-      if (diffDays === 0) return 'Today';
-      if (diffDays === 1) return 'Yesterday';
-      if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) {
-        return `${ordinal(d.getDate())} ${d.toLocaleDateString('en-GB', { month: 'long' })}`;
-      }
-      return d.getFullYear() === now.getFullYear()
-        ? d.toLocaleDateString('en-GB', { month: 'long' })
-        : d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
     }
 
     let avatarMap = {};
@@ -689,7 +653,7 @@ if (event.type === 'finished') {
       filterPanel.appendChild(peopleCol);
 
       const allToggle = document.createElement('button');
-      allToggle.style.cssText = 'font-size:.72rem;color:var(--text-muted);background:none;border:none;padding:0;cursor:pointer;font-family:inherit;margin-left:auto;display:block;margin-top:.3rem';
+      allToggle.style.cssText = 'font-size:.72rem;color:var(--text-muted);background:none;border:none;padding:0;cursor:pointer;font-family:inherit;margin-right:auto;display:block;text-align:left;margin-bottom:.35rem';
       allToggle.textContent = 'Deselect all';
 
       const allRows = [];
@@ -717,6 +681,8 @@ if (event.type === 'finished') {
         saveFilter();
         resetFeed();
       });
+
+      peopleCol.appendChild(allToggle);
 
       allPeople.forEach(person => {
         const active = activeUids.has(person.uid);
@@ -751,7 +717,6 @@ if (event.type === 'finished') {
         });
         peopleCol.appendChild(row);
       });
-      peopleCol.appendChild(allToggle);
 
       updateFilterDot();
       syncAllToggle();
@@ -765,6 +730,9 @@ if (event.type === 'finished') {
       let lastDay = null;
       let loading = false;
       let seenIds = new Set();
+      // Bumped by resetFeed(). A page request that started under an older
+      // generation must not touch shared state when it lands.
+      let generation = 0;
 
       const sentinel = document.createElement('div');
       sentinel.style.cssText = 'height:1px';
@@ -772,7 +740,20 @@ if (event.type === 'finished') {
       async function loadPage() {
         if (loading) return;
         loading = true;
-        const { events, lastDoc: newCursor } = await getFeed(user.uid, followingUids, lastDoc);
+        const gen = generation;
+        let page;
+        try {
+          page = await getFeed(user.uid, followingUids, lastDoc);
+        } catch (err) {
+          console.error('Feed page failed', err);
+          if (gen === generation) loading = false;
+          return;
+        }
+        // Superseded by a filter change: drop this page entirely. Returning
+        // without clearing `loading` is deliberate — resetFeed() already
+        // cleared it and started a fresh load that owns the flag now.
+        if (gen !== generation) return;
+        const { events, lastDoc: newCursor } = page;
         const visible = events.filter(e => {
           if (seenIds.has(e.id)) return false;
           seenIds.add(e.id);
@@ -810,6 +791,10 @@ if (event.type === 'finished') {
           }));
         }
 
+        // The cover backfill and profile lookups above are awaited too, so the
+        // filter may have changed again while they were in flight.
+        if (gen !== generation) return;
+
         if (feedContent.contains(sentinel)) feedContent.removeChild(sentinel);
 
         if (visible.length === 0 && !newCursor && !lastDoc) {
@@ -837,11 +822,17 @@ if (event.type === 'finished') {
         loading = false;
         // If the sentinel is still on-screen after a sparse/filtered page, keep loading
         if (newCursor) requestAnimationFrame(() => {
+          if (gen !== generation) return;
           if (feedContent.contains(sentinel) && sentinel.getBoundingClientRect().top < window.innerHeight + 200) loadPage();
         });
       }
 
       function resetFeed() {
+        // Abandon any page still in flight before restarting from the top,
+        // otherwise it lands afterwards and overwrites lastDoc with a deep
+        // cursor, skipping everything recent.
+        generation++;
+        loading = false;
         while (feedContent.firstChild) feedContent.removeChild(feedContent.firstChild);
         lastDoc = null;
         lastDay = null;
