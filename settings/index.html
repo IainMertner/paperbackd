@@ -213,6 +213,7 @@
     import { requireAuth } from '../js/auth.js';
     import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary, addEmailToAccount, deleteAccountData } from '../js/firebase.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, searchHardcover } from '../js/hardcover.js';
+    import { normalizeCountry } from '../js/utils.js';
     import { updatePassword, reauthenticateWithCredential, EmailAuthProvider, deleteUser } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
     let currentUser = null;

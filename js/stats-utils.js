@@ -10,6 +10,27 @@ export const ISO_CONTINENT = {
   us:'NA', ca:'NA', mx:'NA', cu:'NA', gt:'NA', cr:'NA', tt:'NA', jm:'NA', ht:'NA', do:'NA',
   au:'OC', nz:'OC',
   br:'SA', ar:'SA', co:'SA', cl:'SA', pe:'SA', ve:'SA', ec:'SA', bo:'SA', uy:'SA', py:'SA',
+
+  dz:'AF', bj:'AF', bw:'AF', bf:'AF', bi:'AF', cv:'AF', cm:'AF', cf:'AF', td:'AF',
+  km:'AF', cg:'AF', cd:'AF', ci:'AF', dj:'AF', gq:'AF', er:'AF', sz:'AF', ga:'AF',
+  gm:'AF', gn:'AF', gw:'AF', ls:'AF', lr:'AF', ly:'AF', mg:'AF', mw:'AF', ml:'AF',
+  mr:'AF', mu:'AF', mz:'AF', na:'AF', ne:'AF', st:'AF', sn:'AF', sc:'AF', sl:'AF',
+  so:'AF', ss:'AF', sd:'AF', tg:'AF', tn:'AF', zm:'AF',
+
+  af:'AS', am:'AS', az:'AS', bh:'AS', bt:'AS', bn:'AS', ge:'AS', kz:'AS', kw:'AS',
+  kg:'AS', la:'AS', lb:'AS', mv:'AS', mn:'AS', np:'AS', kp:'AS', om:'AS', ps:'AS',
+  qa:'AS', sy:'AS', tj:'AS', tl:'AS', tm:'AS', uz:'AS', ye:'AS',
+
+  al:'EU', ad:'EU', by:'EU', ba:'EU', cy:'EU', xk:'EU', li:'EU', mt:'EU', md:'EU',
+  mc:'EU', me:'EU', mk:'EU', sm:'EU', si:'EU', va:'EU',
+
+  ag:'NA', bs:'NA', bb:'NA', bz:'NA', dm:'NA', sv:'NA', gd:'NA', hn:'NA', ni:'NA',
+  pa:'NA', kn:'NA', lc:'NA', vc:'NA',
+
+  fj:'OC', ki:'OC', mh:'OC', fm:'OC', nr:'OC', pw:'OC', pg:'OC', ws:'OC', sb:'OC',
+  to:'OC', tv:'OC', vu:'OC',
+
+  gy:'SA', sr:'SA',
 };
 
 export const COUNTRY_ISO = {
@@ -38,6 +59,44 @@ export const COUNTRY_ISO = {
   'ghana': 'gh', 'ethiopia': 'et', 'morocco': 'ma', 'tanzania': 'tz',
   'uganda': 'ug', 'zimbabwe': 'zw', 'rwanda': 'rw', 'angola': 'ao',
   'hong kong': 'hk',
+
+  'albania': 'al', 'andorra': 'ad', 'belarus': 'by', 'bosnia and herzegovina': 'ba',
+  'cyprus': 'cy', 'kosovo': 'xk', 'liechtenstein': 'li', 'malta': 'mt',
+  'moldova': 'md', 'monaco': 'mc', 'montenegro': 'me', 'north macedonia': 'mk',
+  'san marino': 'sm', 'slovenia': 'si', 'vatican city': 'va',
+
+  'afghanistan': 'af', 'armenia': 'am', 'azerbaijan': 'az', 'bahrain': 'bh',
+  'bhutan': 'bt', 'brunei': 'bn', 'georgia': 'ge', 'kazakhstan': 'kz',
+  'kuwait': 'kw', 'kyrgyzstan': 'kg', 'laos': 'la', 'lebanon': 'lb',
+  'maldives': 'mv', 'mongolia': 'mn', 'nepal': 'np', 'north korea': 'kp',
+  'oman': 'om', 'palestine': 'ps', 'qatar': 'qa', 'syria': 'sy',
+  'tajikistan': 'tj', 'timor-leste': 'tl', 'turkmenistan': 'tm',
+  'uzbekistan': 'uz', 'yemen': 'ye',
+
+  'algeria': 'dz', 'benin': 'bj', 'botswana': 'bw', 'burkina faso': 'bf',
+  'burundi': 'bi', 'cabo verde': 'cv', 'cameroon': 'cm',
+  'central african republic': 'cf', 'chad': 'td', 'comoros': 'km',
+  'congo': 'cg', 'dr congo': 'cd', "côte d'ivoire": 'ci', 'djibouti': 'dj',
+  'equatorial guinea': 'gq', 'eritrea': 'er', 'eswatini': 'sz', 'gabon': 'ga',
+  'gambia': 'gm', 'guinea': 'gn', 'guinea-bissau': 'gw', 'lesotho': 'ls',
+  'liberia': 'lr', 'libya': 'ly', 'madagascar': 'mg', 'malawi': 'mw',
+  'mali': 'ml', 'mauritania': 'mr', 'mauritius': 'mu', 'mozambique': 'mz',
+  'namibia': 'na', 'niger': 'ne', 'são tomé and príncipe': 'st',
+  'senegal': 'sn', 'seychelles': 'sc', 'sierra leone': 'sl', 'somalia': 'so',
+  'south sudan': 'ss', 'sudan': 'sd', 'togo': 'tg', 'tunisia': 'tn',
+  'zambia': 'zm',
+
+  'antigua and barbuda': 'ag', 'bahamas': 'bs', 'barbados': 'bb',
+  'belize': 'bz', 'dominica': 'dm', 'el salvador': 'sv', 'grenada': 'gd',
+  'honduras': 'hn', 'nicaragua': 'ni', 'panama': 'pa',
+  'saint kitts and nevis': 'kn', 'saint lucia': 'lc',
+  'saint vincent and the grenadines': 'vc',
+
+  'guyana': 'gy', 'suriname': 'sr',
+
+  'fiji': 'fj', 'kiribati': 'ki', 'marshall islands': 'mh', 'micronesia': 'fm',
+  'nauru': 'nr', 'palau': 'pw', 'papua new guinea': 'pg', 'samoa': 'ws',
+  'solomon islands': 'sb', 'tonga': 'to', 'tuvalu': 'tv', 'vanuatu': 'vu',
 };
 
 // Lanczos lgamma, regularised incomplete beta, and two-tailed t p-value

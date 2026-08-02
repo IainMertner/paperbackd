@@ -86,6 +86,8 @@ export function normalizeCountry(raw) {
     'British Raj': 'India',
     'Kingdom of Great Britain': 'United Kingdom',
     'United Kingdom of Great Britain and Northern Ireland': 'United Kingdom',
+    'Great Britain': 'United Kingdom',
+    'Britain': 'United Kingdom',
     'England': 'United Kingdom',
     'Scotland': 'United Kingdom',
     'Wales': 'United Kingdom',
