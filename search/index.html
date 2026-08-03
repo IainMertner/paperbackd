@@ -95,6 +95,7 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { searchUsers } from '../js/firebase.js';
+    import { searchBooks } from '../js/hardcover.js';
 
     const { user } = await requireAuth();
     document.body.classList.remove('auth-loading');
@@ -251,10 +252,7 @@
     async function fetchAll(q) {
       results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">Searching…</p>';
       const [br, ar, ur] = await Promise.allSettled([
-        (async () => {
-          const res = await fetch(HARDCOVER_PROXY, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ query:`query($q:String!){search(query:$q,query_type:"Book",per_page:8){results}}`, variables:{q} }) });
-          return ((await res.json())?.data?.search?.results?.hits || []).map(h => h.document);
-        })(),
+        searchBooks(q, 8),
         (async () => {
           const res = await fetch(HARDCOVER_PROXY, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ query:`query($q:String!){search(query:$q,query_type:"Author",per_page:8){results}}`, variables:{q} }) });
           return ((await res.json())?.data?.search?.results?.hits || []).map(h => h.document);
@@ -286,19 +284,14 @@
     async function fetchBooks(q) {
       results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">Searching…</p>';
       try {
-        const res  = await fetch(HARDCOVER_PROXY, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: `query($q:String!){search(query:$q,query_type:"Book",per_page:20){results}}`,
-            variables: { q }
-          })
-        });
-        if (res.status === 429) { results.innerHTML = ''; showToast('Our servers are busy — give it a moment and try again.'); return; }
-        const data = await res.json();
-        const hits = data?.data?.search?.results?.hits || [];
-        renderBooks(hits.map(h => h.document));
+        renderBooks(await searchBooks(q, 20));
       } catch (e) {
+        // searchBooks already backs off and retries a 429 before giving up.
+        if (String(e?.message || '').includes('429')) {
+          results.innerHTML = '';
+          showToast('Our servers are busy — give it a moment and try again.');
+          return;
+        }
         results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">Search failed. Please try again.</p>';
       }
     }

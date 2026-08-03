@@ -152,6 +152,7 @@
     import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, undnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing, setBookPrivate } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { normalizeCountry } from '../js/utils.js';
+    import { workIdForSlug, searchBooks } from '../js/hardcover.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -226,8 +227,9 @@
     function cleanAuthor(a) { return (a || '').replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim(); }
 
     async function searchHardcover(q) {
-      const data = await hcPost(`query($q:String!){search(query:$q,query_type:"Book",per_page:3){results}}`, { q });
-      const doc = data?.data?.search?.results?.hits?.[0]?.document;
+      // searchBooks applies admin remaps, so a redirected record is never the
+      // one a newly added book gets matched to.
+      const [doc] = await searchBooks(q, 3);
       return doc?.slug ? doc : null;
     }
 
@@ -3566,8 +3568,9 @@
         await Promise.race([selectedBook._countryFetch, new Promise(r => setTimeout(r, 5000))]);
       }
       const { title, author, pages, gbid, cover, releaseYear, country, authorGender, genres } = selectedBook;
+      const workId = await workIdForSlug(gbid);
 
-      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, coverUrl: cover, releaseYear, country, authorGender, genres }, profile.username);
+      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, workId, coverUrl: cover, releaseYear, country, authorGender, genres }, profile.username);
       const isPrivate = privateCheck.checked;
       if (isPrivate) await setBookPrivate(user.uid, id, true);
       const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, authorGender, genres, addedAt: { toDate: () => new Date() }, addedAtPrecision: 'day', private: isPrivate || undefined };
@@ -3678,7 +3681,8 @@
           document.getElementById('library-filter')?.dispatchEvent(new Event('input'));
         } else {
           const id = await addFinishedBook(user.uid, {
-            title, author, totalPages: pages, gbid, coverUrl: cover, rating, review, releaseYear, country, authorGender, genres,
+            title, author, totalPages: pages, gbid, workId: await workIdForSlug(gbid),
+            coverUrl: cover, rating, review, releaseYear, country, authorGender, genres,
             finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,
             addedAt,    addedAtPrecision:    addedAt    ? startedPrec  : undefined
           }, profile.username);

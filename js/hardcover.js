@@ -1,5 +1,6 @@
-import { getHcCache, setHcCache } from './firebase.js';
+import { getHcCache, setHcCache, getBookRemaps } from './firebase.js';
 import { cleanTitle, cleanAuthor } from './utils.js';
+import { hardcoverWorkId, applyBookRemaps } from './book-utils.js';
 
 export const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -31,6 +32,9 @@ export function applyHardcoverBook(book, hc) {
     _hardcoverMatched: true,
   };
   if (hc.release_year) result.releaseYear = hc.release_year;
+  // Work-level identity, so translations and split volumes of one book group
+  const workId = hc.workId || hardcoverWorkId(hc) || book.workId;
+  if (workId) result.workId = workId;
   return result;
 }
 
@@ -38,13 +42,22 @@ export { cleanTitle, cleanAuthor };
 
 const STUDY_GUIDE_RE = /\b(sparknotes?|cliffsnotes?|shmoop|study guide|bookrags|novelguide|gradesaver|litcharts?|supersummary|a-level notes?)\b/i;
 
-export async function searchHardcover(q) {
+// Runs a Hardcover book search and rewrites the results through the admin remap
+// table, so a record an admin has redirected never surfaces again — searching
+// "De ansatte" returns "The Employees". Every book search in the app goes
+// through here so the redirect is consistent everywhere.
+export async function searchBooks(q, perPage = 20) {
   const data = await hcQuery(
-    `query($q:String!){search(query:$q,query_type:"Book",per_page:5){results}}`, { q }
+    `query($q:String!,$n:Int!){search(query:$q,query_type:"Book",per_page:$n){results}}`,
+    { q, n: perPage }
   );
-  const hits = data?.data?.search?.results?.hits || [];
-  for (const hit of hits) {
-    const doc = hit?.document;
+  const docs = (data?.data?.search?.results?.hits || []).map(h => h.document).filter(Boolean);
+  return applyBookRemaps(docs, await getBookRemaps());
+}
+
+export async function searchHardcover(q) {
+  const docs = await searchBooks(q, 5);
+  for (const doc of docs) {
     if (!doc?.slug) continue;
     const titleStr  = doc.title || '';
     const authorStr = Array.isArray(doc.author_names) ? doc.author_names.join(' ') : (doc.author_names || '');
@@ -55,13 +68,17 @@ export async function searchHardcover(q) {
 }
 
 // Converts a Hardcover API result to the flat format stored in hc_cache.
-function toCacheEntry(hc) {
-  return { slug: hc.slug, coverUrl: hc.image?.url || '', pages: hc.pages || 0, release_year: hc.release_year || null };
+function toCacheEntry(hc, workId = null) {
+  const entry = { slug: hc.slug, coverUrl: hc.image?.url || '', pages: hc.pages || 0, release_year: hc.release_year || null };
+  if (workId) entry.workId = workId;
+  return entry;
 }
 
 // Converts a cache entry back to the shape applyHardcoverBook expects.
 function fromCacheEntry(c) {
-  return { slug: c.slug, pages: c.pages, release_year: c.release_year, image: { url: c.coverUrl || '' } };
+  const hc = { slug: c.slug, pages: c.pages, release_year: c.release_year, image: { url: c.coverUrl || '' } };
+  if (c.workId) hc.workId = c.workId;
+  return hc;
 }
 
 // Cache key for a title+author search query.
@@ -167,7 +184,69 @@ export async function enrichBatch(books, onProgress) {
     } catch (e) { console.warn('Title search failed for', book.title, e); }
   }
 
+  // ── Step 4: resolve work ids ─────────────────────────────────────────────────
+  await resolveWorkIds(results);
+
   return results;
+}
+
+// Fills in `workId` for every matched book that still lacks one.
+//
+// The search endpoint does not expose canonical_id, and neither do the batch
+// queries above, so work identity is resolved here in one pass keyed by slug.
+// Doing it as a separate step also repairs books that matched from a cache
+// entry written before work ids existed.
+export async function resolveWorkIds(books) {
+  const pending = books
+    .map((b, i) => [i, b])
+    .filter(([, b]) => b.gbid && !b.workId);
+  if (!pending.length) return books;
+
+  // Cache first — a slug's work id never changes unless Hardcover re-merges it.
+  const cached = await Promise.all(pending.map(([, b]) => getHcCache(b.gbid).catch(() => null)));
+  const misses = [];
+  pending.forEach(([i, b], n) => {
+    const hit = cached[n];
+    if (hit?.workId) books[i].workId = hit.workId;
+    else misses.push([i, b.gbid]);
+  });
+  if (!misses.length) return books;
+
+  const CHUNK = 100;
+  for (let c = 0; c < misses.length; c += CHUNK) {
+    const chunk = misses.slice(c, c + CHUNK);
+    try {
+      const data = await hcQuery(
+        `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:100){id slug canonical_id parent_book_id pages release_year image{url}}}`,
+        { slugs: chunk.map(([, slug]) => slug) }
+      );
+      const bySlug = new Map((data?.data?.books || []).map(b => [b.slug, b]));
+      const writes = [];
+      for (const [i, slug] of chunk) {
+        const hc = bySlug.get(slug);
+        const workId = hardcoverWorkId(hc);
+        if (!workId) continue;
+        books[i].workId = workId;
+        writes.push(setHcCache(slug, toCacheEntry(hc, workId)));
+      }
+      await Promise.all(writes);
+    } catch (e) { console.warn('Work id batch failed', e); }
+  }
+  return books;
+}
+
+// Work id for a single Hardcover slug, for the add-a-book paths.
+// Cache-first, so this is usually one Firestore read and no Hardcover call.
+// Never throws: a book must still be addable if the lookup fails.
+export async function workIdForSlug(slug) {
+  if (!slug) return null;
+  try {
+    const [out] = await resolveWorkIds([{ gbid: slug }]);
+    return out?.workId || null;
+  } catch (e) {
+    console.warn('Work id lookup failed for', slug, e);
+    return null;
+  }
 }
 
 export async function enrichFromHardcover(book) {

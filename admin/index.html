@@ -66,19 +66,10 @@
           <div id="remap-preview" style="display:none;font-size:.85rem;color:var(--text-muted)"></div>
           <button class="btn-update" id="remap-apply-btn" type="button" style="display:none">Apply</button>
           <div id="remap-status" style="display:none;font-size:.85rem"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="settings-group">
-      <div class="settings-group-label">Archive old activity (global)</div>
-      <div class="settings-list">
-        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.75rem;padding:.875rem 1rem">
-          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Delete activity events older than 90 days for all users. The feed only shows recent activity, so this has no visible effect.</p>
-          <button class="btn-update" id="archive-activity-preview-btn" type="button">Preview</button>
-          <div id="archive-activity-preview" style="display:none;font-size:.85rem;color:var(--text-muted)"></div>
-          <button class="btn-update" id="archive-activity-run-btn" type="button" style="display:none">Delete</button>
-          <div id="archive-activity-status" style="display:none;font-size:.85rem"></div>
+          <details id="remap-list-details" style="width:100%">
+            <summary style="font-size:.82rem;color:var(--text-muted);cursor:pointer;user-select:none;padding:.15rem 0">Existing redirects <span id="remap-list-count"></span></summary>
+            <div id="remap-list" style="width:100%;display:flex;flex-direction:column;gap:.35rem;margin-top:.5rem"></div>
+          </details>
         </div>
       </div>
     </div>
@@ -118,18 +109,18 @@
           <div id="repair-status" style="display:none;font-size:.85rem"></div>
         </div>
 
+        <div class="settings-row" id="workid-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Match books to works</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Labels each book with Hardcover's work-level id, so translations and split volumes it already links are recognised as one book. Nothing is merged — run Repair afterwards to fold matches together. Safe to re-run.</p>
+          <button class="btn-update" id="workid-btn" type="button">Match works</button>
+          <div id="workid-status" style="display:none;font-size:.85rem"></div>
+        </div>
+
         <div class="settings-row" id="sync-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
           <span class="settings-row-label">Sync library</span>
           <p style="font-size:.82rem;color:var(--text-muted);margin:0">Re-derives top-level rating, format, language, and date fields from each book's reads array. Fixes sort and filter inconsistencies without changing anything the user can see.</p>
           <button class="btn-update" id="sync-btn" type="button">Sync</button>
           <div id="sync-status" style="display:none;font-size:.85rem"></div>
-        </div>
-
-        <div class="settings-row" id="fix-years-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
-          <span class="settings-row-label">Fix invalid years</span>
-          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Clears any release year that isn't exactly 4 digits.</p>
-          <button class="btn-update" id="fix-years-btn" type="button">Fix years</button>
-          <div id="fix-years-status" style="display:none;font-size:.85rem"></div>
         </div>
 
         <div class="settings-row" id="repair-activity-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
@@ -146,18 +137,11 @@
           <div id="repair-finished-activity-status" style="display:none;font-size:.85rem"></div>
         </div>
 
-        <div class="settings-row" id="backfill-list-privacy-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
-          <span class="settings-row-label">Backfill list privacy</span>
-          <p style="font-size:.82rem;color:var(--text-muted);margin:0">One-off migration — sets <code>private: false</code> on every list that has no <code>private</code> field. Without it those lists stay invisible on other users' profiles and lists pages.</p>
-          <button class="btn-update" id="backfill-list-privacy-btn" type="button">Run migration</button>
-          <div id="backfill-list-privacy-status" style="display:none;font-size:.85rem"></div>
-        </div>
-
-        <div class="settings-row" id="set-olive-theme-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
-          <span class="settings-row-label">Set grey theme for all users</span>
-          <p style="font-size:.82rem;color:var(--text-muted);margin:0">One-off migration — sets <code>avatarBorderColor</code> to <code>#6C6460</code> on every user document.</p>
-          <button class="btn-update" id="set-olive-theme-btn" type="button">Run migration</button>
-          <div id="set-olive-theme-status" style="display:none;font-size:.85rem"></div>
+        <div class="settings-row" id="backfill-workid-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Match books to works (all users)</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">One-off migration — labels every book in every library with Hardcover's work id. New books get theirs when added, so this only needs running once. Nothing is merged.</p>
+          <button class="btn-update" id="backfill-workid-btn" type="button">Run migration</button>
+          <div id="backfill-workid-status" style="display:none;font-size:.85rem"></div>
         </div>
 
         <div class="settings-row" id="change-password-section" style="display:none;flex-direction:column;align-items:flex-start;gap:.5rem;padding:.875rem 1rem">
@@ -215,10 +199,11 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { ROOT, db, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, setThemeColorForAllUsers, backfillListPrivacyForAllUsers } from '../js/firebase.js';
+    import { ROOT, db, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, backfillWorkIds, backfillWorkIdsForAllUsers, setBookRemap, deleteBookRemap, getBookRemaps, mergeDuplicatesForSlug, remapActivityForSlug } from '../js/firebase.js';
     import { deleteField, collection, doc, getDocs, query as fsQuery, where, updateDoc, Timestamp, limit, getCountFromServer, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-    import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor } from '../js/hardcover.js';
-    import { normalizeCountry } from '../js/utils.js';
+    import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, resolveWorkIds, workIdForSlug } from '../js/hardcover.js';
+    import { computeDupeGroups, planWorkMerge } from '../js/book-utils.js';
+    import { normalizeCountry, esc } from '../js/utils.js';
 
     let currentUser = null;
     let targetUid   = null;
@@ -311,25 +296,28 @@
     const exportSection          = document.getElementById('export-section');
     const clearCountrySection    = document.getElementById('clear-country-section');
     const repairSection          = document.getElementById('repair-section');
+    const workIdSection                 = document.getElementById('workid-section');
     const syncSection                   = document.getElementById('sync-section');
     const repairActivitySection         = document.getElementById('repair-activity-section');
     const repairFinishedActivitySection = document.getElementById('repair-finished-activity-section');
-    const fixYearsSection               = document.getElementById('fix-years-section');
     const changePasswordSection  = document.getElementById('change-password-section');
 
-    document.getElementById('backfill-list-privacy-section').style.display = '';
-    document.getElementById('backfill-list-privacy-btn').addEventListener('click', async () => {
-      const btn    = document.getElementById('backfill-list-privacy-btn');
-      const status = document.getElementById('backfill-list-privacy-status');
-      if (!confirm('Set private: false on every list across ALL users that has no private field?')) return;
+    document.getElementById('backfill-workid-section').style.display = '';
+    document.getElementById('backfill-workid-btn').addEventListener('click', async () => {
+      const btn    = document.getElementById('backfill-workid-btn');
+      const status = document.getElementById('backfill-workid-status');
+      if (!confirm('Look up Hardcover work ids for every book of every user? Nothing is merged.')) return;
       btn.disabled = true;
       status.style.display = '';
       status.style.color = 'var(--text-muted)';
       status.textContent = 'Running…';
       try {
-        const { users, scanned, updated, failed } = await backfillListPrivacyForAllUsers();
-        status.textContent = `Done — ${updated} of ${scanned} list${scanned === 1 ? '' : 's'} updated across ${users} user${users === 1 ? '' : 's'}.`
-          + (failed ? ` ${failed} user${failed === 1 ? '' : 's'} could not be read — check the console.` : '');
+        const { users, scanned, written, failed } = await backfillWorkIdsForAllUsers(
+          resolveWorkIds,
+          (done, total) => { status.textContent = `Running… user ${done + 1}/${total}`; }
+        );
+        status.textContent = `Done — ${written} of ${scanned} book${scanned === 1 ? '' : 's'} matched across ${users} user${users === 1 ? '' : 's'}.`
+          + (failed ? ` ${failed} user${failed === 1 ? '' : 's'} failed — check the console.` : '');
         status.style.color = failed ? 'var(--danger, #d44)' : 'var(--accent)';
       } catch (err) {
         console.error(err);
@@ -340,25 +328,32 @@
       }
     });
 
-    document.getElementById('set-olive-theme-section').style.display = '';
-    document.getElementById('set-olive-theme-btn').addEventListener('click', async () => {
-      const btn    = document.getElementById('set-olive-theme-btn');
-      const status = document.getElementById('set-olive-theme-status');
-      if (!confirm('Set avatarBorderColor to #6C6460 for ALL users?')) return;
-      btn.disabled = true;
-      status.style.display = '';
-      status.style.color = 'var(--text-muted)';
-      status.textContent = 'Running…';
+    // ── Match books to works ──────────────────────────────────────────────────
+    const workIdBtn    = document.getElementById('workid-btn');
+    const workIdStatus = document.getElementById('workid-status');
+
+    workIdBtn.addEventListener('click', async () => {
+      if (!targetUid) return;
+      workIdBtn.disabled = true;
+      workIdStatus.style.display = '';
+      workIdStatus.style.color = 'var(--text-muted)';
+      workIdStatus.textContent = 'Looking up works…';
       try {
-        const count = await setThemeColorForAllUsers('#6C6460');
-        status.textContent = `Done — updated ${count} user${count === 1 ? '' : 's'}.`;
-        status.style.color = 'var(--accent)';
+        const { pending = 0, written } = await backfillWorkIds(
+          targetUid,
+          resolveWorkIds,
+          (done, total) => { workIdStatus.textContent = `Looking up works… ${done}/${total}`; }
+        );
+        workIdStatus.textContent = pending === 0
+          ? 'Every book already has a work id.'
+          : `Matched ${written} of ${pending} book${pending === 1 ? '' : 's'}. Run Repair to fold together any that share a work.`;
+        workIdStatus.style.color = 'var(--accent)';
       } catch (err) {
         console.error(err);
-        status.textContent = 'Failed. Check the console.';
-        status.style.color = 'var(--danger, #d44)';
+        workIdStatus.textContent = 'Failed. Check the console.';
+        workIdStatus.style.color = 'var(--danger, #d44)';
       } finally {
-        btn.disabled = false;
+        workIdBtn.disabled = false;
       }
     });
 
@@ -373,10 +368,10 @@
       exportSection.style.display          = 'none';
       clearCountrySection.style.display    = 'none';
       repairSection.style.display          = 'none';
+      workIdSection.style.display                 = 'none';
       syncSection.style.display                   = 'none';
       repairActivitySection.style.display         = 'none';
       repairFinishedActivitySection.style.display = 'none';
-      fixYearsSection.style.display               = 'none';
       changePasswordSection.style.display  = 'none';
       targetUid = null;
 
@@ -395,17 +390,16 @@
         exportSection.style.display          = '';
         clearCountrySection.style.display    = '';
         repairSection.style.display          = '';
+        workIdSection.style.display                 = '';
         syncSection.style.display                   = '';
         repairActivitySection.style.display         = '';
         repairFinishedActivitySection.style.display = '';
-        fixYearsSection.style.display               = '';
         changePasswordSection.style.display  = '';
         document.getElementById('export-status').style.display           = 'none';
         document.getElementById('clear-country-status').style.display    = 'none';
         document.getElementById('repair-status').style.display           = 'none';
         document.getElementById('sync-status').style.display             = 'none';
         document.getElementById('repair-activity-status').style.display  = 'none';
-        document.getElementById('fix-years-status').style.display        = 'none';
         document.getElementById('change-password-status').style.display  = 'none';
         document.getElementById('admin-new-password').value              = '';
       } catch (err) {
@@ -557,21 +551,6 @@
       try {
         let books = await getBooks(targetUid);
 
-        function computeDupeGroups(bookList) {
-          const groups = new Map();
-          for (const book of bookList.filter(b => b.status === 'finished')) {
-            const key = book.gbid?.trim()
-              ? `g:${book.gbid.trim()}`
-              : (book.title && book.author)
-                ? `t:${book.title.toLowerCase().trim()}||${book.author.toLowerCase().trim()}`
-                : null;
-            if (!key) continue;
-            if (!groups.has(key)) groups.set(key, []);
-            groups.get(key).push(book);
-          }
-          return [...groups.values()].filter(g => g.length > 1);
-        }
-
         const dupeGroups   = computeDupeGroups(books);
         let unmatched      = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
         let incomplete        = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author || !b.genres?.length));
@@ -590,7 +569,20 @@
         const mergedGroupsCount = dupeGroups.length;
 
         // ── Phase 0: merge duplicate finished entries ─────────────────────────
+        // Merging deletes book documents and cannot be undone, so name every
+        // entry that would disappear first. canonical_id is right the vast
+        // majority of the time, but occasionally links an omnibus or a split
+        // volume to the wrong thing — this is where that gets caught.
         if (dupeGroups.length) {
+          const plans = dupeGroups.map(g => planWorkMerge(g)).filter(Boolean);
+          const summary = plans.map(p =>
+            `  • keep "${p.primary.title || '(untitled)'}" — delete ${p.secondaries.map(s => `"${s.title || '(untitled)'}"`).join(', ')}`
+          ).join('\n');
+          if (!confirm(`Merge ${plans.length} group${plans.length === 1 ? '' : 's'} of duplicates?\n\n${summary}\n\nReads are combined onto the kept entry. The deleted entries cannot be recovered.`)) {
+            repairStatus.textContent = 'Cancelled.';
+            repairBtn.disabled = false;
+            return;
+          }
           repairStatus.textContent = `Merging ${dupeGroups.length} duplicate entr${dupeGroups.length === 1 ? 'y' : 'ies'}…`;
 
           function bookToReads(book) {
@@ -851,106 +843,6 @@
       }
     });
 
-    // ── Fix invalid years ─────────────────────────────────────────────────────
-    document.getElementById('fix-years-btn').addEventListener('click', async () => {
-      if (!targetUid) return;
-      const btn    = document.getElementById('fix-years-btn');
-      const status = document.getElementById('fix-years-status');
-      btn.disabled = true;
-      status.style.display = '';
-      status.style.color = 'var(--text-muted)';
-      status.textContent = 'Scanning…';
-      try {
-        const books = await getBooks(targetUid);
-        const invalid = books.filter(b => b.releaseYear != null && !(b.releaseYear >= 1000 && b.releaseYear <= 2100));
-        for (const b of invalid) {
-          await updateBookMeta(targetUid, b.id, { releaseYear: deleteField() });
-        }
-        status.textContent = invalid.length ? `Cleared ${invalid.length} invalid year${invalid.length === 1 ? '' : 's'}.` : 'No invalid years found.';
-        status.style.color = 'var(--accent)';
-      } catch (err) {
-        console.error(err);
-        status.textContent = 'Failed. Check the console.';
-        status.style.color = 'var(--danger, #d44)';
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
-
-    // ── Archive old activity (global) ────────────────────────────────────────
-    const ARCHIVE_CUTOFF_DAYS = 90;
-
-    document.getElementById('archive-activity-preview-btn').addEventListener('click', async () => {
-      const previewBtn = document.getElementById('archive-activity-preview-btn');
-      const previewEl  = document.getElementById('archive-activity-preview');
-      const runBtn     = document.getElementById('archive-activity-run-btn');
-      const statusEl   = document.getElementById('archive-activity-status');
-      previewEl.style.display  = 'none';
-      runBtn.style.display     = 'none';
-      statusEl.style.display   = 'none';
-      previewBtn.disabled = true;
-      previewEl.textContent = 'Counting…';
-      previewEl.style.display = '';
-      try {
-        const cutoff = Timestamp.fromDate(new Date(Date.now() - ARCHIVE_CUTOFF_DAYS * 24 * 60 * 60 * 1000));
-        const snap   = await getCountFromServer(fsQuery(collection(db, 'activity'), where('timestamp', '<', cutoff)));
-        const count  = snap.data().count;
-        if (count === 0) {
-          previewEl.textContent = 'No activity older than 90 days found.';
-        } else {
-          previewEl.textContent = `Found ${count.toLocaleString()} event${count === 1 ? '' : 's'} older than 90 days.`;
-          runBtn.textContent    = `Delete ${count.toLocaleString()} events`;
-          runBtn.style.display  = '';
-        }
-      } catch (err) {
-        console.error(err);
-        previewEl.textContent = 'Count failed. Check the console.';
-      } finally {
-        previewBtn.disabled = false;
-      }
-    });
-
-    document.getElementById('archive-activity-run-btn').addEventListener('click', async () => {
-      const previewBtn = document.getElementById('archive-activity-preview-btn');
-      const runBtn     = document.getElementById('archive-activity-run-btn');
-      const statusEl   = document.getElementById('archive-activity-status');
-      if (!confirm('Move all activity older than 90 days to activity_archive for all users?')) return;
-      previewBtn.disabled = true;
-      runBtn.disabled     = true;
-      statusEl.style.display = '';
-      statusEl.style.color   = 'var(--text-muted)';
-      statusEl.textContent   = 'Archiving…';
-      try {
-        const cutoff = Timestamp.fromDate(new Date(Date.now() - ARCHIVE_CUTOFF_DAYS * 24 * 60 * 60 * 1000));
-        let archived = 0;
-        // Each doc needs 1 set + 1 delete = 2 batch ops; limit 250 docs to stay within 500-op batch cap.
-        while (true) {
-          const snap = await getDocs(fsQuery(collection(db, 'activity'), where('timestamp', '<', cutoff), limit(250)));
-          if (snap.empty) break;
-          const batch = writeBatch(db);
-          snap.docs.forEach(d => {
-            batch.set(doc(db, 'activity_archive', d.id), d.data());
-            batch.delete(d.ref);
-          });
-          await batch.commit();
-          archived += snap.docs.length;
-          statusEl.textContent = `Archived ${archived.toLocaleString()} so far…`;
-        }
-        statusEl.textContent = `Done — archived ${archived.toLocaleString()} event${archived === 1 ? '' : 's'}.`;
-        statusEl.style.color = 'var(--accent)';
-        document.getElementById('archive-activity-preview').style.display = 'none';
-        runBtn.style.display = 'none';
-      } catch (err) {
-        console.error(err);
-        statusEl.textContent = 'Archive failed. Check the console.';
-        statusEl.style.color = 'var(--danger,#d44)';
-      } finally {
-        previewBtn.disabled = false;
-        runBtn.disabled     = false;
-      }
-    });
-
     // ── Remap book (global) ───────────────────────────────────────────────────
     const remapFromInput  = document.getElementById('remap-from');
     const remapToInput    = document.getElementById('remap-to');
@@ -969,6 +861,7 @@
       remapApplyBtn.style.display  = 'none';
       remapStatus.style.display    = 'none';
       remapHits = [];
+      remapTargetMeta = {};   // a failed preview must not leave a stale target applyable
       if (!fromSlug || !toSlug) {
         remapStatus.textContent = 'Enter both slugs.';
         remapStatus.style.color = 'var(--danger,#d44)';
@@ -994,14 +887,17 @@
           remapPreviewEl.textContent = `No Hardcover book found for slug "${toSlug}".`;
           return;
         }
+        const targetTitle  = hcBook.title || toSlug;
+        const targetAuthor = hcBook.contributions?.[0]?.author?.name || '';
         remapTargetMeta = {
           gbid:        toSlug,
           coverUrl:    hcBook.image?.url || '',
           totalPages:  hcBook.pages || 0,
           releaseYear: hcBook.release_year || null,
+          title:       targetTitle,
+          author:      targetAuthor,
+          fromSlug,
         };
-        const targetTitle  = hcBook.title || toSlug;
-        const targetAuthor = hcBook.contributions?.[0]?.author?.name || '';
 
         const usersSnap = await getDocs(collection(db, 'users'));
         remapPreviewEl.textContent = `Checking ${usersSnap.docs.length} users…`;
@@ -1014,13 +910,17 @@
           }
         }
 
-        if (!remapHits.length) {
-          remapPreviewEl.textContent = `No books found with slug "${fromSlug}".`;
-        } else {
-          remapPreviewEl.textContent = `Found ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} across ${userCount} user${userCount === 1 ? '' : 's'} → "${targetTitle}"${targetAuthor ? ` by ${targetAuthor}` : ''}.`;
-          remapApplyBtn.textContent = `Apply to ${remapHits.length} book${remapHits.length === 1 ? '' : 's'}`;
-          remapApplyBtn.style.display = '';
-        }
+        // A remap is worth saving even when nobody owns the book: it keeps the
+        // wrong record out of search and off the author page, so it can never
+        // be added in the first place.
+        const to = `→ "${targetTitle}"${targetAuthor ? ` by ${targetAuthor}` : ''}`;
+        remapPreviewEl.textContent = remapHits.length
+          ? `Found ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} across ${userCount} user${userCount === 1 ? '' : 's'} ${to}.`
+          : `No one has "${fromSlug}" in their library ${to}. The redirect will still be saved, hiding it from search and author pages.`;
+        remapApplyBtn.textContent = remapHits.length
+          ? `Apply to ${remapHits.length} book${remapHits.length === 1 ? '' : 's'}`
+          : 'Save redirect';
+        remapApplyBtn.style.display = '';
       } catch (err) {
         console.error(err);
         remapPreviewEl.textContent = 'Preview failed. Check the console.';
@@ -1030,13 +930,22 @@
     });
 
     remapApplyBtn.addEventListener('click', async () => {
-      if (!remapHits.length) return;
-      if (!confirm(`Remap ${remapHits.length} book${remapHits.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+      // Gated on a resolved target, not on hits: saving the redirect is
+      // worthwhile on its own.
+      if (!remapTargetMeta.gbid) return;
+      const message = remapHits.length
+        ? `Remap ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} to "${remapTargetMeta.title}"?\n\nAnyone who ends up holding both books will have them merged into one entry, combining their reads and deleting the spare. This cannot be undone.`
+        : `Save a redirect from "${remapTargetMeta.fromSlug}" to "${remapTargetMeta.title}"?\n\nNo libraries change — the old record just stops appearing in search and on author pages.`;
+      if (!confirm(message)) return;
       remapApplyBtn.disabled = true;
       remapPreviewBtn.disabled = true;
       remapStatus.style.display = '';
       remapStatus.style.color = 'var(--text-muted)';
       try {
+        // The book is being repointed at a different Hardcover record, so its
+        // old work id no longer describes it. Re-resolve from the new slug —
+        // stale work ids would stop the remapped book grouping with its target.
+        const remapWorkId = await workIdForSlug(remapTargetMeta.gbid);
         let done = 0;
         for (const ref of remapHits) {
           remapStatus.textContent = `Updating ${done + 1}/${remapHits.length}…`;
@@ -1044,11 +953,52 @@
           if (remapTargetMeta.coverUrl)       updates.coverUrl    = remapTargetMeta.coverUrl;
           if (remapTargetMeta.totalPages > 0) updates.totalPages  = remapTargetMeta.totalPages;
           if (remapTargetMeta.releaseYear)    updates.releaseYear = remapTargetMeta.releaseYear;
+          updates.workId = remapWorkId || deleteField();
           await updateDoc(ref, updates);
           done++;
         }
-        remapStatus.textContent = `Done — remapped ${done} book${done === 1 ? '' : 's'}. Run "Repair activity" on affected users to sync activity docs.`;
+        // Store the redirect so it also applies to search from now on: looking
+        // up the old record surfaces the new one instead of re-adding the
+        // mistake. Fixing existing books alone would leave the bad record
+        // findable forever.
+        await setBookRemap(remapTargetMeta.fromSlug, {
+          slug:        remapTargetMeta.gbid,
+          title:       remapTargetMeta.title || '',
+          author:      remapTargetMeta.author || '',
+          coverUrl:    remapTargetMeta.coverUrl || '',
+          releaseYear: remapTargetMeta.releaseYear || null,
+        });
+
+        // Feed cards carry their own copy of the title and cover, so past
+        // events would keep showing the old book until these are rewritten.
+        remapStatus.textContent = 'Updating activity…';
+        const activityFixed = await remapActivityForSlug(remapTargetMeta.fromSlug, {
+          slug:     remapTargetMeta.gbid,
+          title:    remapTargetMeta.title,
+          author:   remapTargetMeta.author,
+          coverUrl: remapTargetMeta.coverUrl,
+        });
+
+        // Anyone who held both books now has two entries on the same record.
+        // Merge them here rather than leaving a per-user Repair to be run
+        // afterwards — only groups involving this slug are touched.
+        const affectedUids = [...new Set(remapHits.map(ref => ref.parent.parent.id))];
+        let mergedAway = 0;
+        for (let i = 0; i < affectedUids.length; i++) {
+          remapStatus.textContent = `Merging duplicates… user ${i + 1}/${affectedUids.length}`;
+          try {
+            mergedAway += await mergeDuplicatesForSlug(affectedUids[i], remapTargetMeta.gbid);
+          } catch (e) {
+            console.warn('Duplicate merge failed for', affectedUids[i], e);
+          }
+        }
+
+        remapStatus.textContent = `Done — remapped ${done} book${done === 1 ? '' : 's'} across ${affectedUids.length} user${affectedUids.length === 1 ? '' : 's'}`
+          + `, updated ${activityFixed} feed event${activityFixed === 1 ? '' : 's'}`
+          + (mergedAway ? `, merged ${mergedAway} duplicate${mergedAway === 1 ? '' : 's'} away` : ', no duplicates to merge')
+          + `, and saved the redirect for search.`;
         remapStatus.style.color = 'var(--accent)';
+        await renderRemaps();
         remapHits = [];
         remapApplyBtn.style.display = 'none';
       } catch (err) {
@@ -1063,6 +1013,48 @@
 
     remapFromInput.addEventListener('keydown', e => { if (e.key === 'Enter') remapToInput.focus(); });
     remapToInput.addEventListener('keydown',   e => { if (e.key === 'Enter') remapPreviewBtn.click(); });
+
+    // ── Existing redirects ────────────────────────────────────────────────────
+    // Collapsed by default: the list only grows, and it is reference material
+    // rather than something you act on every visit.
+    const remapListEl    = document.getElementById('remap-list');
+    const remapListCount = document.getElementById('remap-list-count');
+
+    async function renderRemaps() {
+      const remaps = await getBookRemaps({ force: true });
+      const entries = Object.entries(remaps).sort((a, b) => a[0].localeCompare(b[0]));
+      remapListCount.textContent = entries.length ? `(${entries.length})` : '';
+      remapListEl.innerHTML = '';
+      if (!entries.length) {
+        remapListEl.innerHTML = '<span style="font-size:.82rem;color:var(--text-muted)">No redirects yet.</span>';
+        return;
+      }
+      for (const [from, target] of entries) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.5rem;font-size:.85rem';
+        const label = document.createElement('span');
+        label.style.cssText = 'flex:1;min-width:0;word-break:break-word';
+        label.textContent = `${from} → ${target.slug}${target.title ? ` (${target.title})` : ''}`;
+        const del = document.createElement('button');
+        del.textContent = 'Remove';
+        del.style.cssText = 'padding:.2rem .5rem;font-size:.8rem;font-family:inherit;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;color:var(--text-muted);flex-shrink:0';
+        del.addEventListener('click', async () => {
+          if (!confirm(`Remove the redirect from "${from}"? Books already remapped stay as they are — only search stops redirecting.`)) return;
+          del.disabled = true;
+          try {
+            await deleteBookRemap(from);
+            await renderRemaps();
+          } catch (err) {
+            console.error(err);
+            del.disabled = false;
+          }
+        });
+        row.append(label, del);
+        remapListEl.appendChild(row);
+      }
+    }
+
+    renderRemaps().catch(() => {});
   </script>
   <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
 </body>

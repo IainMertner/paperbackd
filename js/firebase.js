@@ -34,7 +34,7 @@ import {
   limit,
   startAfter
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { viewerSeesOnlyPublic } from './book-utils.js';
+import { viewerSeesOnlyPublic, planWorkMerge, dupeGroupsForSlug } from './book-utils.js';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const firebaseConfig = {
@@ -347,6 +347,43 @@ export async function deleteAuthorCountryOverride(author) {
   await updateDoc(OVERRIDES_DOC(), { [`overrides.${key}`]: deleteField() });
 }
 
+// ── Book remaps ───────────────────────────────────────────────────────────────
+//
+// A remap says "this Hardcover record should always be treated as that one":
+// a study guide standing in for the real book, or an edition that duplicates a
+// work already in the catalogue. Applying a remap fixes existing libraries;
+// storing it here also makes search substitute the target from then on, so
+// searching "De ansatte" surfaces "The Employees".
+
+const REMAPS_DOC = () => doc(db, 'config', 'bookRemaps');
+
+let remapCache = null;
+
+export async function getBookRemaps({ force = false } = {}) {
+  if (remapCache && !force) return remapCache;
+  try {
+    const snap = await getDoc(REMAPS_DOC());
+    remapCache = snap.exists() ? (snap.data().remaps || {}) : {};
+  } catch {
+    remapCache = {};   // search must still work if the config read fails
+  }
+  return remapCache;
+}
+
+// `target` carries enough metadata for search to render the substitute without
+// a second round trip: { slug, title, author, coverUrl, releaseYear }.
+export async function setBookRemap(fromSlug, target) {
+  const key = String(fromSlug).trim();
+  if (!key || !target?.slug) throw new Error('A remap needs a source slug and a target.');
+  await setDoc(REMAPS_DOC(), { remaps: { [key]: target } }, { merge: true });
+  remapCache = null;
+}
+
+export async function deleteBookRemap(fromSlug) {
+  await updateDoc(REMAPS_DOC(), { [`remaps.${String(fromSlug).trim()}`]: deleteField() });
+  remapCache = null;
+}
+
 export async function updateBookCover(uid, bookId, coverUrl, { gbid, title } = {}) {
   await updateDoc(doc(db, 'users', uid, 'books', bookId), { coverUrl });
   const docs = await activityDocsForBook(uid, { bookId, gbid, title });
@@ -412,7 +449,7 @@ export async function getRecentlyFinishedBooks(uid) {
     .sort((a, b) => (b.finishedAt?.seconds ?? 0) - (a.finishedAt?.seconds ?? 0));
 }
 
-export async function addFinishedBook(uid, { title, author, totalPages, gbid, coverUrl, rating, review, releaseYear, country, authorGender, genres, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
+export async function addFinishedBook(uid, { title, author, totalPages, gbid, workId, coverUrl, rating, review, releaseYear, country, authorGender, genres, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
   const data = {
     title,
     author:      author || '',
@@ -426,6 +463,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, co
   if (finishedAt)          data.finishedAt          = finishedAt;
   if (finishedAtPrecision) data.finishedAtPrecision = finishedAtPrecision;
   if (addedAt && addedAtPrecision) data.addedAtPrecision = addedAtPrecision;
+  if (workId)         data.workId         = workId;
   if (coverUrl)       data.coverUrl       = coverUrl;
   if (rating != null) data.rating         = rating;
   if (review)         data.review         = review;
@@ -460,7 +498,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, co
   return bookRef.id;
 }
 
-export async function addBook(uid, { title, author, totalPages, gbid, coverUrl, releaseYear, country, authorGender, genres }, username) {
+export async function addBook(uid, { title, author, totalPages, gbid, workId, coverUrl, releaseYear, country, authorGender, genres }, username) {
   const bookData = {
     title,
     author:           author || '',
@@ -472,6 +510,7 @@ export async function addBook(uid, { title, author, totalPages, gbid, coverUrl, 
     addedAtPrecision: 'day',
     language:         'English'
   };
+  if (workId)                bookData.workId       = workId;
   if (coverUrl)              bookData.coverUrl     = coverUrl;
   if (releaseYear)           bookData.releaseYear  = releaseYear;
   if (country)               bookData.country      = country;
@@ -1156,35 +1195,97 @@ export async function getAnnouncements(n = 5) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-// One-off migration. Lists created before the `private` flag existed carry no
-// such field, and a `private == false` query cannot match a missing field — so
-// those lists are invisible on every other user's profile and lists page.
-// getLists() self-heals the owner's own lists on visit; this sweeps everyone.
-// Requires admin read access to all lists (see firestore.rules).
-export async function backfillListPrivacyForAllUsers() {
-  const users = await getDocs(collection(db, 'users'));
-  let scanned = 0, updated = 0, failed = 0;
-  for (const u of users.docs) {
-    try {
-      const lists = await getDocs(collection(db, 'users', u.id, 'lists'));
-      scanned += lists.docs.length;
-      const missing = lists.docs.filter(d => d.data().private === undefined);
-      if (missing.length) {
-        await Promise.all(missing.map(d => updateDoc(d.ref, { private: false })));
-        updated += missing.length;
-      }
-    } catch (err) {
-      failed++;
-      console.warn('List privacy backfill failed for', u.id, err);
-    }
-  }
-  return { users: users.docs.length, scanned, updated, failed };
+// ── Work identity ─────────────────────────────────────────────────────────────
+
+// Folds a group of same-work books into the single best entry: merged reads on
+// the survivor, missing metadata backfilled from the others, the others deleted.
+export async function applyWorkMerge(uid, group) {
+  const plan = planWorkMerge(group);
+  if (!plan) return null;
+  const { primary, secondaries, mergedReads, metaUpdates } = plan;
+  await updateBookReads(uid, primary.id, mergedReads);
+  if (Object.keys(metaUpdates).length) await updateBookMeta(uid, primary.id, metaUpdates);
+  for (const s of secondaries) await deleteBookDoc(uid, s.id);
+  return { keptId: primary.id, removed: secondaries.length };
 }
 
-export async function setThemeColorForAllUsers(color) {
-  const snap = await getDocs(collection(db, 'users'));
-  await Promise.all(snap.docs.map(d => updateDoc(d.ref, { avatarBorderColor: color })));
-  return snap.docs.length;
+// Feed cards render from fields stored on the activity doc itself, not from the
+// book, so remapping the books alone leaves the old title and cover on every
+// past event. Rewrites those in place, across all users, keyed by the old slug.
+export async function remapActivityForSlug(fromSlug, target) {
+  const snap = await getDocs(query(collection(db, 'activity'), where('gbid', '==', fromSlug)));
+  const updates = { gbid: target.slug };
+  if (target.title)    updates.bookTitle  = target.title;
+  if (target.author)   updates.bookAuthor = target.author;
+  if (target.coverUrl) updates.coverUrl   = target.coverUrl;
+  let done = 0;
+  for (const d of snap.docs) {
+    try { await updateDoc(d.ref, updates); done++; }
+    catch (err) { console.warn('Activity remap failed for', d.id, err); }
+  }
+  return done;
+}
+
+// After a remap points several of a user's books at the same record, they hold
+// duplicates. Merges only the groups involving `slug`, leaving any unrelated
+// duplicates in that library alone — a remap should not quietly restructure
+// books it was never asked about.
+export async function mergeDuplicatesForSlug(uid, slug) {
+  const books = await getBooks(uid);
+  const groups = dupeGroupsForSlug(books, slug);
+  let removed = 0;
+  for (const group of groups) {
+    const result = await applyWorkMerge(uid, group);
+    removed += result?.removed || 0;
+  }
+  return removed;
+}
+
+// Backfills `workId` on a library's existing books by resolving their Hardcover
+// slugs. Returns counts so the caller can report what happened. `resolve` is
+// injected to keep this module free of the Hardcover import cycle.
+export async function backfillWorkIds(uid, resolve, onProgress) {
+  const books = await getBooks(uid);
+  const pending = books.filter(b => b.gbid && !b.workId);
+  if (!pending.length) return { scanned: books.length, resolved: 0, written: 0 };
+
+  const CHUNK = 100;
+  let written = 0, resolved = 0;
+  for (let i = 0; i < pending.length; i += CHUNK) {
+    const chunk = pending.slice(i, i + CHUNK);
+    if (onProgress) onProgress(i, pending.length);
+    const withIds = await resolve(chunk.map(b => ({ ...b })));
+    const writes = [];
+    withIds.forEach((b, n) => {
+      if (!b.workId) return;
+      resolved++;
+      writes.push(updateDoc(doc(db, 'users', uid, 'books', chunk[n].id), { workId: b.workId }));
+    });
+    await Promise.all(writes);
+    written += writes.length;
+  }
+  return { scanned: books.length, pending: pending.length, resolved, written };
+}
+
+// One-off migration across every library. Books added from now on get their
+// work id at add time, so this only needs running once to catch up existing
+// data. Slugs are shared between users and cached, so later users mostly hit
+// the cache rather than Hardcover.
+export async function backfillWorkIdsForAllUsers(resolve, onProgress) {
+  const users = await getDocs(collection(db, 'users'));
+  let scanned = 0, written = 0, failed = 0;
+  for (let i = 0; i < users.docs.length; i++) {
+    if (onProgress) onProgress(i, users.docs.length);
+    try {
+      const r = await backfillWorkIds(users.docs[i].id, resolve);
+      scanned += r.scanned;
+      written += r.written;
+    } catch (err) {
+      failed++;
+      console.warn('Work id backfill failed for', users.docs[i].id, err);
+    }
+  }
+  return { users: users.docs.length, scanned, written, failed };
 }
 
 export async function toggleReaction(activityId, emoji, uid, add) {

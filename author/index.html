@@ -84,6 +84,8 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { initSearchWidget } from '../js/search-widget.js';
+    import { getBookRemaps } from '../js/firebase.js';
+    import { applyBookRemaps } from '../js/book-utils.js';
 
     const params    = new URLSearchParams(location.search);
     const slug      = params.get('slug');
@@ -147,7 +149,10 @@
       const authorData = authorRes.ok ? await authorRes.json() : {};
       const booksData  = booksRes.ok  ? await booksRes.json()  : {};
       const author = authorData?.data?.authors?.[0];
-      const books  = booksData?.data?.books || [];
+      // A record an admin has redirected should not appear here either. Where
+      // both the redirected record and its target are in the list — the usual
+      // case for a translation — applyBookRemaps collapses them into one.
+      const books  = applyBookRemaps(booksData?.data?.books || [], await getBookRemaps());
 
       if (!author && nameParam) {
         try {

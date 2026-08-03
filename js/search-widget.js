@@ -1,4 +1,5 @@
 import { searchUsers } from './firebase.js';
+import { searchBooks } from './hardcover.js';
 
 const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -169,13 +170,9 @@ export function initSearchWidget(container, { defaultTab = 'all', user } = {}) {
     dropdown.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem;padding:.5rem .75rem">No results found.</p>';
   }
 
-  async function fetchBooksData(q) {
-    const res = await fetch(HARDCOVER_PROXY, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: `query($q:String!){search(query:$q,query_type:"Book",per_page:20){results}}`, variables: { q } })
-    });
-    return ((await res.json())?.data?.search?.results?.hits || []).map(h => h.document);
-  }
+  // Goes through searchBooks so admin remaps apply: a record redirected to
+  // another never appears in suggestions.
+  const fetchBooksData = q => searchBooks(q, 20);
 
   async function fetchAuthorsData(q) {
     const res = await fetch(HARDCOVER_PROXY, {

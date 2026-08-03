@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   tsOf, getReads, getDisplayRating, sortBooks,
   bookMissingFlags, computeDupeGroups, viewerSeesOnlyPublic,
+  hardcoverWorkId, workKey, planWorkMerge, applyBookRemaps, resolveRemappedSlug, dupeGroupsForSlug,
 } from '../js/book-utils.js';
 
 // ── tsOf ──────────────────────────────────────────────────────────────────────
@@ -255,6 +256,452 @@ describe('bookMissingFlags', () => {
   });
 });
 
+// ── hardcoverWorkId ───────────────────────────────────────────────────────────
+
+describe('hardcoverWorkId', () => {
+  it('uses canonical_id when present', () => {
+    // Hardcover points translations at one canonical record: the Italian
+    // "Memorie dal sottosuolo" carries canonical_id 42, "Notes from Underground".
+    expect(hardcoverWorkId({ id: 1488398, canonical_id: 42, parent_book_id: null })).toBe('hc:42');
+  });
+
+  it('ignores parent_book_id and keeps a split volume separate', () => {
+    // parent_book_id links previews and split volumes to the full book, so
+    // grouping on it would let an automatic merge delete separate entries.
+    expect(hardcoverWorkId({ id: 1119334, canonical_id: null, parent_book_id: 236 })).toBe('hc:1119334');
+  });
+
+  it('ignores parent_book_id even when canonical_id is also set', () => {
+    expect(hardcoverWorkId({ id: 9, canonical_id: 1, parent_book_id: 2 })).toBe('hc:1');
+  });
+
+  it('keeps a preview separate from the book it previews', () => {
+    // "A Game Of Thrones preview" carries parent_book_id but no canonical_id.
+    const preview = hardcoverWorkId({ id: 555, canonical_id: null, parent_book_id: 100 });
+    const full    = hardcoverWorkId({ id: 100, canonical_id: null, parent_book_id: null });
+    expect(preview).not.toBe(full);
+  });
+
+  it('falls back to the book id when neither is set', () => {
+    expect(hardcoverWorkId({ id: 443866, canonical_id: null, parent_book_id: null })).toBe('hc:443866');
+  });
+
+  it('falls back to the book id when the fields are absent entirely', () => {
+    expect(hardcoverWorkId({ id: 42 })).toBe('hc:42');
+  });
+
+  it('returns null without an id', () => {
+    expect(hardcoverWorkId({ canonical_id: null })).toBeNull();
+    expect(hardcoverWorkId({})).toBeNull();
+    expect(hardcoverWorkId(null)).toBeNull();
+    expect(hardcoverWorkId(undefined)).toBeNull();
+  });
+
+  it('treats id 0 as a real id', () => {
+    expect(hardcoverWorkId({ id: 0 })).toBe('hc:0');
+  });
+
+  it('gives both Dostoevsky translations the same work id', () => {
+    const italian = hardcoverWorkId({ id: 1488398, canonical_id: 42 });
+    const finnish = hardcoverWorkId({ id: 1933229, canonical_id: 42 });
+    const english = hardcoverWorkId({ id: 42, canonical_id: null });
+    expect(italian).toBe(finnish);
+    expect(italian).toBe(english);
+  });
+});
+
+// ── dupeGroupsForSlug ─────────────────────────────────────────────────────────
+
+describe('dupeGroupsForSlug', () => {
+  const fin = o => ({ status: 'finished', ...o });
+
+  it('returns the group created by a remap', () => {
+    // Both books were repointed at the-employees, so they are now duplicates.
+    const books = [
+      fin({ id: 'a', gbid: 'the-employees', workId: 'hc:443866' }),
+      fin({ id: 'b', gbid: 'the-employees', workId: 'hc:443866' }),
+    ];
+    const groups = dupeGroupsForSlug(books, 'the-employees');
+    expect(groups).toHaveLength(1);
+    expect(groups[0].map(b => b.id).sort()).toEqual(['a', 'b']);
+  });
+
+  it('leaves unrelated duplicates alone', () => {
+    // A remap must not quietly restructure books it was never asked about.
+    const books = [
+      fin({ id: 'a', gbid: 'the-employees' }),
+      fin({ id: 'b', gbid: 'the-employees' }),
+      fin({ id: 'c', gbid: 'dune' }),
+      fin({ id: 'd', gbid: 'dune' }),
+    ];
+    const groups = dupeGroupsForSlug(books, 'the-employees');
+    expect(groups).toHaveLength(1);
+    expect(groups[0].every(b => b.gbid === 'the-employees')).toBe(true);
+  });
+
+  it('returns nothing when the slug has no duplicates', () => {
+    const books = [
+      fin({ id: 'a', gbid: 'the-employees' }),
+      fin({ id: 'b', gbid: 'dune' }),
+      fin({ id: 'c', gbid: 'dune' }),
+    ];
+    expect(dupeGroupsForSlug(books, 'the-employees')).toEqual([]);
+  });
+
+  it('returns nothing for an empty library', () => {
+    expect(dupeGroupsForSlug([], 'the-employees')).toEqual([]);
+  });
+
+  it('returns nothing without a slug', () => {
+    const books = [fin({ id: 'a', gbid: 'x' }), fin({ id: 'b', gbid: 'x' })];
+    expect(dupeGroupsForSlug(books, null)).toEqual([]);
+    expect(dupeGroupsForSlug(books, '')).toEqual([]);
+  });
+
+  it('ignores unfinished copies', () => {
+    const books = [
+      fin({ id: 'a', gbid: 'the-employees' }),
+      { id: 'b', status: 'reading', gbid: 'the-employees' },
+    ];
+    expect(dupeGroupsForSlug(books, 'the-employees')).toEqual([]);
+  });
+
+  it('catches a group reached via workId where only one carries the slug', () => {
+    // The remapped book shares a work id with a book on a different slug.
+    const books = [
+      fin({ id: 'a', gbid: 'the-employees', workId: 'hc:443866' }),
+      fin({ id: 'b', gbid: 'the-employees-audio', workId: 'hc:443866' }),
+    ];
+    expect(dupeGroupsForSlug(books, 'the-employees')).toHaveLength(1);
+  });
+});
+
+// ── resolveRemappedSlug ───────────────────────────────────────────────────────
+
+describe('resolveRemappedSlug', () => {
+  const RAVN = { 'de-ansatte': { slug: 'the-employees' } };
+
+  it('redirects a remapped slug', () => {
+    expect(resolveRemappedSlug('de-ansatte', RAVN)).toBe('the-employees');
+  });
+
+  it('leaves an unmapped slug alone', () => {
+    expect(resolveRemappedSlug('dune', RAVN)).toBe('dune');
+  });
+
+  it('follows a chain to the end', () => {
+    expect(resolveRemappedSlug('a', { a: { slug: 'b' }, b: { slug: 'c' } })).toBe('c');
+  });
+
+  it('stops on a direct cycle', () => {
+    const out = resolveRemappedSlug('a', { a: { slug: 'b' }, b: { slug: 'a' } });
+    expect(['a', 'b']).toContain(out);
+  });
+
+  it('stops on a self-reference', () => {
+    expect(resolveRemappedSlug('a', { a: { slug: 'a' } })).toBe('a');
+  });
+
+  it('handles missing input', () => {
+    expect(resolveRemappedSlug(null, RAVN)).toBeNull();
+    expect(resolveRemappedSlug('', RAVN)).toBeNull();
+    expect(resolveRemappedSlug('dune', null)).toBe('dune');
+  });
+
+  it('ignores a malformed table entry', () => {
+    expect(resolveRemappedSlug('a', { a: {} })).toBe('a');
+    expect(resolveRemappedSlug('a', { a: null })).toBe('a');
+  });
+});
+
+// ── applyBookRemaps ───────────────────────────────────────────────────────────
+
+describe('applyBookRemaps', () => {
+  const RAVN = {
+    'de-ansatte': { slug: 'the-employees', title: 'The Employees', author: 'Olga Ravn', coverUrl: 'emp.jpg', releaseYear: 2018 },
+  };
+  const hit = (slug, extra = {}) => ({ slug, title: slug, author_names: ['Someone'], ...extra });
+
+  it('substitutes the target for a remapped result', () => {
+    const [out] = applyBookRemaps([hit('de-ansatte', { title: 'De ansatte' })], RAVN);
+    expect(out.slug).toBe('the-employees');
+    expect(out.title).toBe('The Employees');
+  });
+
+  it('carries the target author and cover through', () => {
+    const [out] = applyBookRemaps([hit('de-ansatte')], RAVN);
+    expect(out.author_names).toEqual(['Olga Ravn']);
+    expect(out.image).toEqual({ url: 'emp.jpg' });
+    expect(out.release_year).toBe(2018);
+  });
+
+  it('sets the cover on both shapes the app queries', () => {
+    // Search returns `image`; the author page's query returns `cached_image`.
+    const [out] = applyBookRemaps([hit('de-ansatte', { cached_image: { url: 'old.jpg' } })], RAVN);
+    expect(out.image).toEqual({ url: 'emp.jpg' });
+    expect(out.cached_image).toEqual({ url: 'emp.jpg' });
+  });
+
+  it('removes a redirected book from an author list, collapsing onto the target', () => {
+    // Both records sit under the same author, so the list must not show two.
+    const authorBooks = [
+      { slug: 'the-employees', title: 'The Employees', cached_image: { url: 'emp.jpg' } },
+      { slug: 'de-ansatte',    title: 'De ansatte',    cached_image: { url: 'da.jpg' } },
+      { slug: 'my-work',       title: 'My Work' },
+    ];
+    const out = applyBookRemaps(authorBooks, RAVN);
+    expect(out.map(b => b.slug)).toEqual(['the-employees', 'my-work']);
+  });
+
+  it('records where the substitution came from', () => {
+    const [out] = applyBookRemaps([hit('de-ansatte')], RAVN);
+    expect(out._remappedFrom).toBe('de-ansatte');
+  });
+
+  it('leaves unrelated results untouched', () => {
+    const input = [hit('dune'), hit('ubik')];
+    expect(applyBookRemaps(input, RAVN).map(d => d.slug)).toEqual(['dune', 'ubik']);
+  });
+
+  it('does not mutate the input documents', () => {
+    const input = [hit('de-ansatte', { title: 'De ansatte' })];
+    applyBookRemaps(input, RAVN);
+    expect(input[0].slug).toBe('de-ansatte');
+    expect(input[0].title).toBe('De ansatte');
+  });
+
+  it('collapses a remapped result and its target into one entry', () => {
+    // Searching "employees" can return both records; only one should show.
+    const out = applyBookRemaps([hit('de-ansatte'), hit('the-employees')], RAVN);
+    expect(out).toHaveLength(1);
+    expect(out[0].slug).toBe('the-employees');
+  });
+
+  it('keeps the earlier rank when collapsing', () => {
+    const out = applyBookRemaps([hit('the-employees'), hit('de-ansatte')], RAVN);
+    expect(out).toHaveLength(1);
+    expect(out[0]._remappedFrom).toBeUndefined();
+  });
+
+  it('prefers the genuine record over a substituted stand-in', () => {
+    // The stand-in only carries what the remap table stored; the real record
+    // has the true cover and full author list.
+    const out = applyBookRemaps([hit('de-ansatte'), hit('the-employees', { title: 'Real' })], RAVN);
+    expect(out).toHaveLength(1);
+    expect(out[0]._remappedFrom).toBeUndefined();
+    expect(out[0].title).toBe('Real');
+  });
+
+  it('keeps the rank of whichever appeared first when preferring the genuine record', () => {
+    const out = applyBookRemaps([hit('dune'), hit('de-ansatte'), hit('the-employees')], RAVN);
+    expect(out.map(d => d.slug)).toEqual(['dune', 'the-employees']);
+  });
+
+  it('follows a two-step chain to the final target', () => {
+    const chain = {
+      a: { slug: 'b', title: 'B' },
+      b: { slug: 'c', title: 'C' },
+    };
+    const [out] = applyBookRemaps([hit('a')], chain);
+    expect(out.slug).toBe('c');
+    expect(out.title).toBe('C');
+  });
+
+  it('stops rather than looping on a cycle', () => {
+    const cycle = { a: { slug: 'b' }, b: { slug: 'a' } };
+    const out = applyBookRemaps([hit('a')], cycle);
+    expect(out).toHaveLength(1);
+    expect(['a', 'b']).toContain(out[0].slug);
+  });
+
+  it('handles an empty remap table', () => {
+    const input = [hit('dune')];
+    expect(applyBookRemaps(input, {})).toHaveLength(1);
+  });
+
+  it('handles missing arguments safely', () => {
+    expect(applyBookRemaps([], {})).toEqual([]);
+    expect(applyBookRemaps(null, {})).toEqual([]);
+    expect(applyBookRemaps([hit('dune')], null)).toHaveLength(1);
+  });
+
+  it('tolerates a result with no slug', () => {
+    const out = applyBookRemaps([{ title: 'No slug' }], RAVN);
+    expect(out).toHaveLength(1);
+    expect(out[0].title).toBe('No slug');
+  });
+
+  it('falls back to the original field when the target omits it', () => {
+    const sparse = { 'de-ansatte': { slug: 'the-employees' } };
+    const [out] = applyBookRemaps([hit('de-ansatte', { title: 'De ansatte', release_year: 2018 })], sparse);
+    expect(out.slug).toBe('the-employees');
+    expect(out.title).toBe('De ansatte');
+    expect(out.release_year).toBe(2018);
+  });
+
+  it('preserves order for a mixed result set', () => {
+    const out = applyBookRemaps([hit('dune'), hit('de-ansatte'), hit('ubik')], RAVN);
+    expect(out.map(d => d.slug)).toEqual(['dune', 'the-employees', 'ubik']);
+  });
+});
+
+// ── workKey ───────────────────────────────────────────────────────────────────
+
+describe('workKey', () => {
+  it('prefers workId over everything else', () => {
+    expect(workKey({ workId: 'hc:42', gbid: 'slug', title: 'T', author: 'A' })).toBe('w:hc:42');
+  });
+
+  it('falls back to the slug when there is no workId', () => {
+    expect(workKey({ gbid: 'the-employees', title: 'T', author: 'A' })).toBe('g:the-employees');
+  });
+
+  it('falls back to title+author when there is no slug', () => {
+    expect(workKey({ title: 'Dune', author: 'Frank Herbert' })).toBe('t:dune||frank herbert');
+  });
+
+  it('lowercases and trims the title+author fallback', () => {
+    expect(workKey({ title: '  DUNE ', author: ' Frank Herbert  ' })).toBe('t:dune||frank herbert');
+  });
+
+  it('ignores a whitespace-only slug', () => {
+    expect(workKey({ gbid: '   ', title: 'Dune', author: 'Frank Herbert' })).toBe('t:dune||frank herbert');
+  });
+
+  it('returns null with nothing to key on', () => {
+    expect(workKey({})).toBeNull();
+    expect(workKey({ title: 'Dune' })).toBeNull();
+    expect(workKey({ author: 'Frank Herbert' })).toBeNull();
+    expect(workKey(null)).toBeNull();
+  });
+
+  it('matches two editions of one work that share a workId', () => {
+    const danish  = { workId: 'hc:443866', gbid: 'de-ansatte',   title: 'De ansatte',    author: 'Olga Ravn' };
+    const english = { workId: 'hc:443866', gbid: 'the-employees', title: 'The Employees', author: 'Olga Ravn' };
+    expect(workKey(danish)).toBe(workKey(english));
+  });
+
+  it('keeps different works apart even with the same author', () => {
+    const a = { workId: 'hc:1', title: 'Book One', author: 'Same Author' };
+    const b = { workId: 'hc:2', title: 'Book Two', author: 'Same Author' };
+    expect(workKey(a)).not.toBe(workKey(b));
+  });
+
+  it('does not collide a workId with a slug of the same text', () => {
+    expect(workKey({ workId: 'x' })).not.toBe(workKey({ gbid: 'x' }));
+  });
+});
+
+// ── planWorkMerge ─────────────────────────────────────────────────────────────
+
+describe('planWorkMerge', () => {
+  const ts = s => ({ seconds: s });
+  const rich = { id: 'rich', title: 'The Employees', coverUrl: 'c.jpg', totalPages: 136, author: 'Olga Ravn', releaseYear: 2018, country: 'Denmark' };
+  const bare = { id: 'bare', title: 'De ansatte', addedAt: ts(50) };
+
+  it('returns null for a group that is not a group', () => {
+    expect(planWorkMerge([])).toBeNull();
+    expect(planWorkMerge([rich])).toBeNull();
+    expect(planWorkMerge(null)).toBeNull();
+  });
+
+  it('keeps the entry with the most metadata', () => {
+    expect(planWorkMerge([bare, rich]).primary.id).toBe('rich');
+  });
+
+  it('lists the others as secondaries', () => {
+    expect(planWorkMerge([bare, rich]).secondaries.map(b => b.id)).toEqual(['bare']);
+  });
+
+  it('breaks a metadata tie by whichever was added first', () => {
+    const older = { id: 'older', addedAt: ts(10) };
+    const newer = { id: 'newer', addedAt: ts(99) };
+    expect(planWorkMerge([newer, older]).primary.id).toBe('older');
+  });
+
+  it('combines reads from every entry', () => {
+    const a = { id: 'a', coverUrl: 'x', reads: [{ finishedAt: ts(100) }] };
+    const b = { id: 'b', reads: [{ finishedAt: ts(200) }] };
+    expect(planWorkMerge([a, b]).mergedReads).toHaveLength(2);
+  });
+
+  it('synthesises a read for a legacy single-read entry', () => {
+    const a = { id: 'a', coverUrl: 'x', finishedAt: ts(100), rating: 4 };
+    const b = { id: 'b', finishedAt: ts(200), rating: 5 };
+    const { mergedReads } = planWorkMerge([a, b]);
+    expect(mergedReads).toHaveLength(2);
+    expect(mergedReads.map(r => r.rating).sort()).toEqual([4, 5]);
+  });
+
+  it('deduplicates reads that finished at the same moment', () => {
+    // Re-running a merge must not inflate the read count.
+    const a = { id: 'a', coverUrl: 'x', reads: [{ finishedAt: ts(100) }] };
+    const b = { id: 'b', reads: [{ finishedAt: ts(100) }] };
+    expect(planWorkMerge([a, b]).mergedReads).toHaveLength(1);
+  });
+
+  it('keeps reads with no finish date rather than collapsing them', () => {
+    const a = { id: 'a', coverUrl: 'x', reads: [{ finishedAt: null }] };
+    const b = { id: 'b', reads: [{ finishedAt: null }] };
+    expect(planWorkMerge([a, b]).mergedReads).toHaveLength(2);
+  });
+
+  it('backfills metadata the survivor is missing', () => {
+    const thin = { id: 'thin', coverUrl: 'c.jpg', totalPages: 100, author: 'A', releaseYear: 2000 };
+    const other = { id: 'other', country: 'Denmark', gbid: 'de-ansatte' };
+    const { metaUpdates } = planWorkMerge([thin, other]);
+    expect(metaUpdates.country).toBe('Denmark');
+    expect(metaUpdates.gbid).toBe('de-ansatte');
+  });
+
+  it('does not overwrite metadata the survivor already has', () => {
+    const a = { id: 'a', coverUrl: 'keep.jpg', totalPages: 100, author: 'Keep', country: 'Denmark' };
+    const b = { id: 'b', coverUrl: 'other.jpg', author: 'Other', country: 'Norway' };
+    const { metaUpdates } = planWorkMerge([a, b]);
+    expect(metaUpdates.coverUrl).toBeUndefined();
+    expect(metaUpdates.author).toBeUndefined();
+    expect(metaUpdates.country).toBeUndefined();
+  });
+
+  it('promotes the most recent read to the top-level rating', () => {
+    const a = { id: 'a', coverUrl: 'x', reads: [{ finishedAt: ts(100), rating: 3, review: 'old' }] };
+    const b = { id: 'b', reads: [{ finishedAt: ts(200), rating: 5, review: 'new' }] };
+    const { metaUpdates } = planWorkMerge([a, b]);
+    expect(metaUpdates.rating).toBe(5);
+    expect(metaUpdates.review).toBe('new');
+    expect(metaUpdates.finishedAt).toEqual(ts(200));
+  });
+
+  it('merges a translation pair into one entry keeping both reads', () => {
+    const danish  = { id: 'da', workId: 'local:x', title: 'De ansatte',    reads: [{ finishedAt: ts(100), rating: 4 }] };
+    const english = { id: 'en', workId: 'local:x', title: 'The Employees', coverUrl: 'c.jpg', totalPages: 136, author: 'Olga Ravn', releaseYear: 2018, reads: [{ finishedAt: ts(200), rating: 5 }] };
+    const plan = planWorkMerge([danish, english]);
+    expect(plan.primary.id).toBe('en');
+    expect(plan.secondaries.map(b => b.id)).toEqual(['da']);
+    expect(plan.mergedReads).toHaveLength(2);
+    expect(plan.metaUpdates.rating).toBe(5);
+  });
+
+  it('does not mutate the input group', () => {
+    const group = [{ ...bare }, { ...rich }];
+    const snapshot = JSON.stringify(group);
+    planWorkMerge(group);
+    expect(JSON.stringify(group)).toBe(snapshot);
+  });
+
+  it('handles a three-way merge', () => {
+    const g = [
+      { id: 'a', coverUrl: 'x', totalPages: 10, reads: [{ finishedAt: ts(1) }] },
+      { id: 'b', reads: [{ finishedAt: ts(2) }] },
+      { id: 'c', reads: [{ finishedAt: ts(3) }] },
+    ];
+    const plan = planWorkMerge(g);
+    expect(plan.primary.id).toBe('a');
+    expect(plan.secondaries).toHaveLength(2);
+    expect(plan.mergedReads).toHaveLength(3);
+  });
+});
+
 // ── viewerSeesOnlyPublic ──────────────────────────────────────────────────────
 
 describe('viewerSeesOnlyPublic', () => {
@@ -304,6 +751,78 @@ describe('viewerSeesOnlyPublic', () => {
 });
 
 // ── computeDupeGroups ─────────────────────────────────────────────────────────
+
+describe('computeDupeGroups — work-level grouping', () => {
+  const fin = (overrides) => ({ status: 'finished', ...overrides });
+
+  it('groups a translation with its original when they share a workId', () => {
+    // The reported case: two Hardcover records, two slugs, one work.
+    const books = [
+      fin({ id: 'a', workId: 'hc:443866', gbid: 'de-ansatte',    title: 'De ansatte',    author: 'Olga Ravn' }),
+      fin({ id: 'b', workId: 'hc:443866', gbid: 'the-employees', title: 'The Employees', author: 'Olga Ravn' }),
+    ];
+    const groups = computeDupeGroups(books);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].map(b => b.id).sort()).toEqual(['a', 'b']);
+  });
+
+  it('groups a split volume with the whole book', () => {
+    const books = [
+      fin({ id: 'a', workId: 'hc:446681', gbid: 'dungeon-crawler-carl',        title: 'Dungeon Crawler Carl' }),
+      fin({ id: 'b', workId: 'hc:446681', gbid: 'dungeon-crawler-carl-vol-1',  title: 'Dungeon Crawler Carl, Vol. 1' }),
+    ];
+    expect(computeDupeGroups(books)).toHaveLength(1);
+  });
+
+  it('groups three records of one work together', () => {
+    const books = ['a', 'b', 'c'].map(id => fin({ id, workId: 'hc:42', gbid: `slug-${id}` }));
+    const groups = computeDupeGroups(books);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveLength(3);
+  });
+
+  it('respects a manual merge between books Hardcover keeps apart', () => {
+    const books = [
+      fin({ id: 'a', workId: 'local:xyz', gbid: 'de-ansatte' }),
+      fin({ id: 'b', workId: 'local:xyz', gbid: 'the-employees' }),
+    ];
+    expect(computeDupeGroups(books)).toHaveLength(1);
+  });
+
+  it('does not group different works by the same author', () => {
+    const books = [
+      fin({ id: 'a', workId: 'hc:1', title: 'Book One', author: 'Olga Ravn' }),
+      fin({ id: 'b', workId: 'hc:2', title: 'Book Two', author: 'Olga Ravn' }),
+    ];
+    expect(computeDupeGroups(books)).toEqual([]);
+  });
+
+  it('does not group when only one of the pair has been backfilled', () => {
+    // Half-migrated data must not merge on a guess.
+    const books = [
+      fin({ id: 'a', workId: 'hc:443866', gbid: 'de-ansatte' }),
+      fin({ id: 'b', gbid: 'the-employees' }),
+    ];
+    expect(computeDupeGroups(books)).toEqual([]);
+  });
+
+  it('still groups by slug for books with no workId', () => {
+    // Pre-migration behaviour must survive untouched.
+    const books = [
+      fin({ id: 'a', gbid: 'dune' }),
+      fin({ id: 'b', gbid: 'dune' }),
+    ];
+    expect(computeDupeGroups(books)).toHaveLength(1);
+  });
+
+  it('ignores unfinished books even when they share a work', () => {
+    const books = [
+      fin({ id: 'a', workId: 'hc:42' }),
+      { id: 'b', status: 'reading', workId: 'hc:42' },
+    ];
+    expect(computeDupeGroups(books)).toEqual([]);
+  });
+});
 
 describe('computeDupeGroups', () => {
   const fin = (overrides) => ({ status: 'finished', ...overrides });

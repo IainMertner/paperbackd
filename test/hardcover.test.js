@@ -4,6 +4,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 vi.mock('../js/firebase.js', () => ({
   getHcCache: vi.fn().mockResolvedValue(null),
   setHcCache: vi.fn().mockResolvedValue(undefined),
+  getBookRemaps: vi.fn().mockResolvedValue({}),
 }));
 
 import { applyHardcoverBook, cleanTitle, cleanAuthor } from '../js/hardcover.js';

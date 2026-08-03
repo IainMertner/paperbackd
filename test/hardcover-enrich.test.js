@@ -7,9 +7,12 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 const getHcCache = vi.fn();
 const setHcCache = vi.fn();
 
+const getBookRemaps = vi.fn();
+
 vi.mock('../js/firebase.js', () => ({
   getHcCache: (...a) => getHcCache(...a),
   setHcCache: (...a) => setHcCache(...a),
+  getBookRemaps: (...a) => getBookRemaps(...a),
 }));
 
 import {
@@ -28,6 +31,7 @@ const searchRes = docs => jsonRes({
 
 beforeEach(() => {
   getHcCache.mockReset().mockResolvedValue(null);
+  getBookRemaps.mockReset().mockResolvedValue({});
   setHcCache.mockReset().mockResolvedValue(undefined);
   global.fetch = vi.fn();
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -270,7 +274,9 @@ describe('enrichBatch — Goodreads ID stage', () => {
   });
 
   it('uses a cached Goodreads ID without hitting the network', async () => {
-    getHcCache.mockResolvedValue({ slug: 'dune', pages: 412, coverUrl: 'c.jpg', release_year: 1965 });
+    // A complete cache entry now includes workId; without it the work-id
+    // resolution step would still need one request.
+    getHcCache.mockResolvedValue({ slug: 'dune', pages: 412, coverUrl: 'c.jpg', release_year: 1965, workId: 'hc:42' });
     const [book] = await enrichBatch([{ title: 'Dune', _grId: '234225' }]);
     expect(book.gbid).toBe('dune');
     expect(global.fetch).not.toHaveBeenCalled();
@@ -487,7 +493,7 @@ describe('enrichBatch — title search stage', () => {
   });
 
   it('uses a cached title query without searching', async () => {
-    getHcCache.mockResolvedValue({ slug: 'dune', pages: 412, coverUrl: '', release_year: 1965 });
+    getHcCache.mockResolvedValue({ slug: 'dune', pages: 412, coverUrl: '', release_year: 1965, workId: 'hc:42' });
     const [book] = await enrichBatch([{ title: 'Dune', author: 'Frank Herbert' }]);
     expect(book.gbid).toBe('dune');
     expect(global.fetch).not.toHaveBeenCalled();
@@ -579,7 +585,7 @@ describe('enrichBatch — title search stage', () => {
   });
 
   it('skips the title stage entirely when everything already matched', async () => {
-    getHcCache.mockResolvedValue({ slug: 'x', pages: 1, coverUrl: '', release_year: null });
+    getHcCache.mockResolvedValue({ slug: 'x', pages: 1, coverUrl: '', release_year: null, workId: 'hc:1' });
     await enrichBatch([{ title: 'A', _grId: '1' }]);
     expect(global.fetch).not.toHaveBeenCalled();
   });
@@ -624,6 +630,128 @@ describe('enrichBatch — pipeline', () => {
     global.fetch.mockResolvedValue(searchRes([{ slug: 'dune', pages: 412 }]));
     const [book] = await enrichBatch([{ title: 'Dune', status: 'finished', currentPage: 0 }]);
     expect(book.currentPage).toBe(412);
+  });
+});
+
+// ── work id resolution ────────────────────────────────────────────────────────
+
+describe('enrichBatch — work id resolution', () => {
+  // One books-by-slug response.
+  const worksRes = books => jsonRes({ data: { books } });
+
+  it('stamps a work id from canonical_id', async () => {
+    global.fetch
+      .mockResolvedValueOnce(searchRes([{ slug: 'memorie-dal-sottosuolo' }]))
+      .mockResolvedValueOnce(worksRes([{ id: 1488398, slug: 'memorie-dal-sottosuolo', canonical_id: 42, parent_book_id: null }]));
+    const [book] = await enrichBatch([{ title: 'Memorie dal sottosuolo' }]);
+    expect(book.workId).toBe('hc:42');
+  });
+
+  it('keeps a split volume separate from the whole book', async () => {
+    // parent_book_id is ignored: merging volumes automatically would delete
+    // entries a reader logged deliberately.
+    global.fetch
+      .mockResolvedValueOnce(searchRes([{ slug: 'a-storm-of-swords-part-1' }]))
+      .mockResolvedValueOnce(worksRes([{ id: 1119334, slug: 'a-storm-of-swords-part-1', canonical_id: null, parent_book_id: 236 }]));
+    const [book] = await enrichBatch([{ title: 'A Storm of Swords, Part 1' }]);
+    expect(book.workId).toBe('hc:1119334');
+  });
+
+  it('falls back to the book id when Hardcover has not merged anything', async () => {
+    global.fetch
+      .mockResolvedValueOnce(searchRes([{ slug: 'the-employees' }]))
+      .mockResolvedValueOnce(worksRes([{ id: 443866, slug: 'the-employees', canonical_id: null, parent_book_id: null }]));
+    const [book] = await enrichBatch([{ title: 'The Employees' }]);
+    expect(book.workId).toBe('hc:443866');
+  });
+
+  it('gives two translations of one work the same work id', async () => {
+    global.fetch
+      .mockResolvedValueOnce(searchRes([{ slug: 'memorie-dal-sottosuolo' }]))
+      .mockResolvedValueOnce(searchRes([{ slug: 'kellariloukko' }]))
+      .mockResolvedValueOnce(worksRes([
+        { id: 1488398, slug: 'memorie-dal-sottosuolo', canonical_id: 42 },
+        { id: 1933229, slug: 'kellariloukko',          canonical_id: 42 },
+      ]));
+    const out = await enrichBatch([{ title: 'Memorie dal sottosuolo' }, { title: 'Kellariloukko' }]);
+    expect(out[0].workId).toBe('hc:42');
+    expect(out[1].workId).toBe(out[0].workId);
+  });
+
+  it('queries by slug', async () => {
+    global.fetch
+      .mockResolvedValueOnce(searchRes([{ slug: 'dune' }]))
+      .mockResolvedValueOnce(worksRes([]));
+    await enrichBatch([{ title: 'Dune' }]);
+    const call = global.fetch.mock.calls.find(c => c[1].body.includes('canonical_id'));
+    expect(JSON.parse(call[1].body).variables.slugs).toEqual(['dune']);
+  });
+
+  it('takes a work id from the cache without querying', async () => {
+    getHcCache.mockImplementation(async key =>
+      key === 'dune' ? { slug: 'dune', pages: 1, coverUrl: '', release_year: null, workId: 'hc:99' } : null);
+    global.fetch.mockResolvedValueOnce(searchRes([{ slug: 'dune' }]));
+    const [book] = await enrichBatch([{ title: 'Dune' }]);
+    expect(book.workId).toBe('hc:99');
+    expect(global.fetch.mock.calls.filter(c => c[1].body.includes('canonical_id'))).toHaveLength(0);
+  });
+
+  it('repairs a cache entry written before work ids existed', async () => {
+    // Older entries have no workId; the resolution step fills them in.
+    getHcCache.mockImplementation(async key =>
+      key === 'dune' ? { slug: 'dune', pages: 412, coverUrl: '', release_year: 1965 } : null);
+    global.fetch
+      .mockResolvedValueOnce(searchRes([{ slug: 'dune' }]))
+      .mockResolvedValueOnce(worksRes([{ id: 7, slug: 'dune', canonical_id: null }]));
+    const [book] = await enrichBatch([{ title: 'Dune' }]);
+    expect(book.workId).toBe('hc:7');
+  });
+
+  it('writes the resolved work id back to the cache', async () => {
+    global.fetch
+      .mockResolvedValueOnce(searchRes([{ slug: 'dune' }]))
+      .mockResolvedValueOnce(worksRes([{ id: 7, slug: 'dune', canonical_id: null, pages: 412, release_year: 1965, image: { url: 'c.jpg' } }]));
+    await enrichBatch([{ title: 'Dune' }]);
+    const write = setHcCache.mock.calls.find(c => c[1]?.workId);
+    expect(write[0]).toBe('dune');
+    expect(write[1].workId).toBe('hc:7');
+  });
+
+  it('never overwrites a manual merge', async () => {
+    global.fetch.mockResolvedValue(worksRes([{ id: 7, slug: 'dune', canonical_id: 42 }]));
+    const [book] = await enrichBatch([{ title: 'Dune', gbid: 'dune', workId: 'local:mine', _hardcoverMatched: true }]);
+    expect(book.workId).toBe('local:mine');
+  });
+
+  it('does not query for books that never matched', async () => {
+    global.fetch.mockResolvedValue(searchRes([]));
+    await enrichBatch([{ title: 'Nothing', author: 'Nobody' }]);
+    expect(global.fetch.mock.calls.filter(c => c[1].body.includes('canonical_id'))).toHaveLength(0);
+  });
+
+  it('chunks more than 100 slugs', async () => {
+    const books = Array.from({ length: 250 }, (_, i) => ({ title: `B${i}`, gbid: `slug-${i}`, _hardcoverMatched: true }));
+    global.fetch.mockResolvedValue(worksRes([]));
+    await enrichBatch(books);
+    const calls = global.fetch.mock.calls.filter(c => c[1].body.includes('canonical_id'));
+    expect(calls).toHaveLength(3);
+  });
+
+  it('survives a failed work id batch', async () => {
+    global.fetch
+      .mockResolvedValueOnce(searchRes([{ slug: 'dune' }]))
+      .mockRejectedValueOnce(new Error('boom'));
+    const [book] = await enrichBatch([{ title: 'Dune' }]);
+    expect(book.gbid).toBe('dune');
+    expect(book.workId).toBeUndefined();
+  });
+
+  it('leaves the work id unset when the slug is unknown to Hardcover', async () => {
+    global.fetch
+      .mockResolvedValueOnce(searchRes([{ slug: 'dune' }]))
+      .mockResolvedValueOnce(worksRes([]));
+    const [book] = await enrichBatch([{ title: 'Dune' }]);
+    expect(book.workId).toBeUndefined();
   });
 });
 
