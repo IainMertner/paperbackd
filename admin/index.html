@@ -868,12 +868,10 @@
         remapStatus.style.display = '';
         return;
       }
-      if (fromSlug === toSlug) {
-        remapStatus.textContent = 'From and To slugs are the same.';
-        remapStatus.style.color = 'var(--danger,#d44)';
-        remapStatus.style.display = '';
-        return;
-      }
+      // Same slug on both sides is allowed: it refreshes every copy's title,
+      // author, cover, pages and year from Hardcover without creating a
+      // redirect. That is the only way to repair books remapped before a field
+      // was included, since they no longer carry the original slug.
       remapPreviewBtn.disabled = true;
       remapPreviewEl.textContent = 'Searching…';
       remapPreviewEl.style.display = '';
@@ -913,14 +911,19 @@
         // A remap is worth saving even when nobody owns the book: it keeps the
         // wrong record out of search and off the author page, so it can never
         // be added in the first place.
+        const isRefresh = fromSlug === toSlug;
         const to = `→ "${targetTitle}"${targetAuthor ? ` by ${targetAuthor}` : ''}`;
         remapPreviewEl.textContent = remapHits.length
-          ? `Found ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} across ${userCount} user${userCount === 1 ? '' : 's'} ${to}.`
-          : `No one has "${fromSlug}" in their library ${to}. The redirect will still be saved, hiding it from search and author pages.`;
-        remapApplyBtn.textContent = remapHits.length
-          ? `Apply to ${remapHits.length} book${remapHits.length === 1 ? '' : 's'}`
-          : 'Save redirect';
-        remapApplyBtn.style.display = '';
+          ? (isRefresh
+              ? `Refresh ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} across ${userCount} user${userCount === 1 ? '' : 's'} from "${targetTitle}". No redirect is created.`
+              : `Found ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} across ${userCount} user${userCount === 1 ? '' : 's'} ${to}.`)
+          : (isRefresh
+              ? `No one has "${fromSlug}" in their library — nothing to refresh.`
+              : `No one has "${fromSlug}" in their library ${to}. The redirect will still be saved, hiding it from search and author pages.`);
+        remapApplyBtn.textContent = isRefresh
+          ? `Refresh ${remapHits.length} book${remapHits.length === 1 ? '' : 's'}`
+          : (remapHits.length ? `Apply to ${remapHits.length} book${remapHits.length === 1 ? '' : 's'}` : 'Save redirect');
+        if (!isRefresh || remapHits.length) remapApplyBtn.style.display = '';
       } catch (err) {
         console.error(err);
         remapPreviewEl.textContent = 'Preview failed. Check the console.';
@@ -933,9 +936,12 @@
       // Gated on a resolved target, not on hits: saving the redirect is
       // worthwhile on its own.
       if (!remapTargetMeta.gbid) return;
-      const message = remapHits.length
-        ? `Remap ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} to "${remapTargetMeta.title}"?\n\nAnyone who ends up holding both books will have them merged into one entry, combining their reads and deleting the spare. This cannot be undone.`
-        : `Save a redirect from "${remapTargetMeta.fromSlug}" to "${remapTargetMeta.title}"?\n\nNo libraries change — the old record just stops appearing in search and on author pages.`;
+      const isRefresh = remapTargetMeta.fromSlug === remapTargetMeta.gbid;
+      const message = isRefresh
+        ? `Refresh ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} from "${remapTargetMeta.title}"?\n\nTitle, author, cover, pages and year are overwritten from Hardcover. No redirect is created.`
+        : remapHits.length
+          ? `Remap ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} to "${remapTargetMeta.title}"?\n\nAnyone who ends up holding both books will have them merged into one entry, combining their reads and deleting the spare. This cannot be undone.`
+          : `Save a redirect from "${remapTargetMeta.fromSlug}" to "${remapTargetMeta.title}"?\n\nNo libraries change — the old record just stops appearing in search and on author pages.`;
       if (!confirm(message)) return;
       remapApplyBtn.disabled = true;
       remapPreviewBtn.disabled = true;
@@ -950,6 +956,11 @@
         for (const ref of remapHits) {
           remapStatus.textContent = `Updating ${done + 1}/${remapHits.length}…`;
           const updates = { gbid: remapTargetMeta.gbid };
+          // Title and author too — without them the library keeps showing the
+          // old book's name while its cover, link and feed events all point at
+          // the new one.
+          if (remapTargetMeta.title)          updates.title       = remapTargetMeta.title;
+          if (remapTargetMeta.author)         updates.author      = remapTargetMeta.author;
           if (remapTargetMeta.coverUrl)       updates.coverUrl    = remapTargetMeta.coverUrl;
           if (remapTargetMeta.totalPages > 0) updates.totalPages  = remapTargetMeta.totalPages;
           if (remapTargetMeta.releaseYear)    updates.releaseYear = remapTargetMeta.releaseYear;
@@ -961,13 +972,17 @@
         // up the old record surfaces the new one instead of re-adding the
         // mistake. Fixing existing books alone would leave the bad record
         // findable forever.
-        await setBookRemap(remapTargetMeta.fromSlug, {
-          slug:        remapTargetMeta.gbid,
-          title:       remapTargetMeta.title || '',
-          author:      remapTargetMeta.author || '',
-          coverUrl:    remapTargetMeta.coverUrl || '',
-          releaseYear: remapTargetMeta.releaseYear || null,
-        });
+        // A refresh points a slug at itself, so there is no redirect to record —
+        // and writing one would put a pointless self-reference in the table.
+        if (!isRefresh) {
+          await setBookRemap(remapTargetMeta.fromSlug, {
+            slug:        remapTargetMeta.gbid,
+            title:       remapTargetMeta.title || '',
+            author:      remapTargetMeta.author || '',
+            coverUrl:    remapTargetMeta.coverUrl || '',
+            releaseYear: remapTargetMeta.releaseYear || null,
+          });
+        }
 
         // Feed cards carry their own copy of the title and cover, so past
         // events would keep showing the old book until these are rewritten.
@@ -993,10 +1008,10 @@
           }
         }
 
-        remapStatus.textContent = `Done — remapped ${done} book${done === 1 ? '' : 's'} across ${affectedUids.length} user${affectedUids.length === 1 ? '' : 's'}`
+        remapStatus.textContent = `Done — ${isRefresh ? 'refreshed' : 'remapped'} ${done} book${done === 1 ? '' : 's'} across ${affectedUids.length} user${affectedUids.length === 1 ? '' : 's'}`
           + `, updated ${activityFixed} feed event${activityFixed === 1 ? '' : 's'}`
           + (mergedAway ? `, merged ${mergedAway} duplicate${mergedAway === 1 ? '' : 's'} away` : ', no duplicates to merge')
-          + `, and saved the redirect for search.`;
+          + (isRefresh ? '.' : ', and saved the redirect for search.');
         remapStatus.style.color = 'var(--accent)';
         await renderRemaps();
         remapHits = [];
