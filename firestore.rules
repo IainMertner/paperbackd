@@ -25,6 +25,13 @@ service cloud.firestore {
         allow write: if request.auth.uid == uid || isAdmin();
       }
 
+      // Owner-only scratch space. The parent user doc is world-readable to
+      // signed-in users, so anything secret — the progress sync token — has to
+      // live here instead.
+      match /private/{docId} {
+        allow read, write: if request.auth.uid == uid;
+      }
+
       // Lists subcollection — private lists visible to owner only.
       // Uses .get('private', false) rather than .private: reading a key that
       // does not exist raises an error and denies, which would hide every list
@@ -92,6 +99,19 @@ service cloud.firestore {
       allow read:            if request.auth != null;
       allow create, update:  if request.auth != null && validCacheEntry();
       allow delete:          if isAdmin();
+    }
+
+    // Progress sync tokens. The document id IS the bearer token, so it must
+    // never be readable — a listable collection here would hand every user's
+    // token to anyone signed in. Only the syncProgress function reads these,
+    // via the admin SDK, which bypasses rules entirely.
+    match /syncTokens/{token} {
+      allow read:   if false;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if false;
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
     }
 
     // Username index — publicly readable so signup can check availability

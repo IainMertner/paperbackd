@@ -347,6 +347,38 @@ export async function deleteAuthorCountryOverride(author) {
   await updateDoc(OVERRIDES_DOC(), { [`overrides.${key}`]: deleteField() });
 }
 
+// ── Progress sync token ───────────────────────────────────────────────────────
+//
+// The token is the id of a doc in `syncTokens`, which nobody can read — the
+// syncProgress function looks it up with the admin SDK. A copy is kept under
+// the user's own private subcollection so the app can show it again; the parent
+// user doc is readable by every signed-in user and would leak it.
+
+const SYNC_DOC = uid => doc(db, 'users', uid, 'private', 'sync');
+
+export async function getSyncToken(uid) {
+  const snap = await getDoc(SYNC_DOC(uid));
+  return snap.exists() ? (snap.data().token || null) : null;
+}
+
+export async function createSyncToken(uid) {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const token = [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+  const existing = await getSyncToken(uid);
+  await setDoc(doc(db, 'syncTokens', token), { uid, createdAt: serverTimestamp() });
+  await setDoc(SYNC_DOC(uid), { token, createdAt: serverTimestamp() });
+  // Retire the old one only once the new one is live, so a failure part-way
+  // leaves the user with a working token rather than none.
+  if (existing) await deleteDoc(doc(db, 'syncTokens', existing)).catch(() => {});
+  return token;
+}
+
+export async function revokeSyncToken(uid) {
+  const existing = await getSyncToken(uid);
+  if (existing) await deleteDoc(doc(db, 'syncTokens', existing)).catch(() => {});
+  await deleteDoc(SYNC_DOC(uid)).catch(() => {});
+}
+
 // ── Book remaps ───────────────────────────────────────────────────────────────
 //
 // A remap says "this Hardcover record should always be treated as that one":

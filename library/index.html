@@ -376,10 +376,11 @@
       if (!following.length && isOwn) return;
       const btn  = document.getElementById('friends-btn');
       const menu = document.getElementById('friends-menu');
-      if (!isOwn) {
+      {
         const a = document.createElement('a');
         a.href = '../library/';
         a.textContent = profile.username;
+        if (isOwn) a.classList.add('friends-active');
         menu.appendChild(a);
         if (following.length) { const d = document.createElement('div'); d.className = 'friends-divider'; menu.appendChild(d); }
       }

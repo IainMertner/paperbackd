@@ -150,6 +150,17 @@
           <div id="repair-status" style="display:none;font-size:.85rem"></div>
         </div>
 
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.625rem;padding:.875rem 1rem">
+          <span class="settings-row-label">Progress sync</span>
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Push your reading position from a Kobo, Audiobookshelf or anything else that can send a web request. Generate a token, then point one of the <a href="https://github.com/" id="sync-scripts-link" style="color:var(--accent)">sync scripts</a> at it. Treat the token like a password — it can write to your library.</p>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+            <button class="btn-update" id="sync-token-btn" type="button">Generate token</button>
+            <button class="btn-update" id="sync-revoke-btn" type="button" style="display:none">Revoke</button>
+          </div>
+          <input id="sync-token-value" class="join-club-input" readonly style="display:none;width:100%;box-sizing:border-box;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.75rem">
+          <div id="sync-token-status" style="display:none;font-size:.85rem"></div>
+        </div>
+
       </div>
     </div>
 
@@ -212,7 +223,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary, addEmailToAccount, deleteAccountData } from '../js/firebase.js';
+    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary, addEmailToAccount, deleteAccountData, getSyncToken, createSyncToken, revokeSyncToken } from '../js/firebase.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, searchHardcover } from '../js/hardcover.js';
     import { computeDupeGroups, planWorkMerge } from '../js/book-utils.js';
     import { normalizeCountry } from '../js/utils.js';
@@ -232,6 +243,7 @@
       } else {
         document.getElementById('add-email-row').style.display = '';
       }
+      getSyncToken(user.uid).then(showSyncToken).catch(() => {});
     } finally {
       document.body.classList.remove('auth-loading');
     }
@@ -546,6 +558,59 @@
       if (parts.length === 3) return new Date(+parts[0], +parts[1] - 1, +parts[2]);
       return null;
     }
+
+    // ── Progress sync token ───────────────────────────────────────────────────
+    const syncTokenBtn    = document.getElementById('sync-token-btn');
+    const syncRevokeBtn   = document.getElementById('sync-revoke-btn');
+    const syncTokenValue  = document.getElementById('sync-token-value');
+    const syncTokenStatus = document.getElementById('sync-token-status');
+
+    function showSyncToken(token) {
+      const has = Boolean(token);
+      syncTokenValue.style.display = has ? '' : 'none';
+      syncTokenValue.value = token || '';
+      syncRevokeBtn.style.display = has ? '' : 'none';
+      syncTokenBtn.textContent = has ? 'Regenerate' : 'Generate token';
+    }
+
+    syncTokenValue.addEventListener('focus', () => syncTokenValue.select());
+
+    syncTokenBtn.addEventListener('click', async () => {
+      if (!currentUser) return;
+      if (syncTokenValue.value && !confirm('Replace the current token? Anything using the old one will stop working.')) return;
+      syncTokenBtn.disabled = true;
+      syncTokenStatus.style.display = '';
+      syncTokenStatus.style.color = 'var(--text-muted)';
+      syncTokenStatus.textContent = 'Generating…';
+      try {
+        showSyncToken(await createSyncToken(currentUser.uid));
+        syncTokenStatus.textContent = 'Copy this into your sync script.';
+        syncTokenStatus.style.color = 'var(--accent)';
+      } catch (err) {
+        console.error(err);
+        syncTokenStatus.textContent = 'Failed. Check the console.';
+        syncTokenStatus.style.color = 'var(--danger, #d44)';
+      } finally {
+        syncTokenBtn.disabled = false;
+      }
+    });
+
+    syncRevokeBtn.addEventListener('click', async () => {
+      if (!currentUser) return;
+      if (!confirm('Revoke this token? Anything using it will stop working.')) return;
+      syncRevokeBtn.disabled = true;
+      try {
+        await revokeSyncToken(currentUser.uid);
+        showSyncToken(null);
+        syncTokenStatus.style.display = '';
+        syncTokenStatus.textContent = 'Revoked.';
+        syncTokenStatus.style.color = 'var(--text-muted)';
+      } catch (err) {
+        console.error(err);
+      } finally {
+        syncRevokeBtn.disabled = false;
+      }
+    });
 
     // ── Repair library ────────────────────────────────────────────────────────
     const repairBtn    = document.getElementById('repair-btn');
