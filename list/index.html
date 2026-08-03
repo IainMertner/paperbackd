@@ -16,8 +16,72 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>list - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
+  <style>
+    .card {
+      position: relative;
+      isolation: isolate;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      background: var(--bg-card);
+      box-shadow: var(--shadow);
+      filter: url(#ink-edge);
+      z-index: -1;
+    }
+
+    .list-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: .6rem;
+    }
+    .list-head-name {
+      font-family: 'Arvo', serif;
+      font-weight: 700;
+      font-size: 1.05rem;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .list-head-meta {
+      font-size: .78rem;
+      color: var(--text-muted);
+      margin-top: .2rem;
+    }
+    .list-actions {
+      display: flex;
+      gap: .1rem;
+      flex-shrink: 0;
+    }
+    .list-action {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: .3rem;
+      line-height: 1;
+      color: var(--text-muted);
+      border-radius: var(--radius-sm);
+      transition: color .15s, background .15s;
+    }
+    .list-action:hover { background: var(--bg-alt); color: var(--text); }
+    .list-action--danger:hover { color: #c84f4f; }
+  </style>
 </head>
 <body>
+
+  <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <defs>
+      <filter id="ink-edge" x="-25%" y="-25%" width="150%" height="150%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" seed="5" result="noise"/>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
 
   <header class="site-header">
     <div class="header-inner">
@@ -169,11 +233,19 @@
         card.className = 'card';
         card.style.marginBottom = '.625rem';
 
+        const count = books.length;
+        const countLine = `${count} book${count === 1 ? '' : 's'}`;
+
         if (isOwn && !list.isDefault) {
-          card.innerHTML = `<div style="display:flex;align-items:center;gap:.5rem">
-            <div id="list-title-display" style="font-size:1.1rem;font-weight:700;flex:1">${esc(list.name)}</div>
-            <button class="btn-update" id="rename-btn" style="font-size:.75rem;padding:.25rem .6rem">Rename</button>
-            <button class="btn-danger" id="delete-btn" style="font-size:.75rem;padding:.25rem .6rem">Delete</button>
+          card.innerHTML = `<div class="list-head">
+            <div style="min-width:0">
+              <div class="list-head-name" id="list-title-display">${esc(list.name)}</div>
+              <div class="list-head-meta">${countLine}</div>
+            </div>
+            <div class="list-actions">
+              <button type="button" class="list-action" id="rename-btn" title="Rename list" aria-label="Rename list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z"/></svg></button>
+              <button type="button" class="list-action list-action--danger" id="delete-btn" title="Delete list" aria-label="Delete list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg></button>
+            </div>
           </div>`;
           headerEl.appendChild(card);
 
@@ -203,8 +275,8 @@
             location.replace(`../profile/`);
           });
         } else {
-          card.innerHTML = `<div style="font-size:1.1rem;font-weight:700">${esc(list.name)}</div>
-            ${!isOwn ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">${esc(ownerUsername)}'s list</div>` : ''}`;
+          card.innerHTML = `<div class="list-head-name">${esc(list.name)}</div>
+            <div class="list-head-meta">${!isOwn ? `${esc(ownerUsername)}'s list · ` : ''}${countLine}</div>`;
           headerEl.appendChild(card);
         }
       }
@@ -307,6 +379,7 @@
                     if (!books.find(b => b.title === title)) {
                       books = [...books, { gbid: '', title, author, coverUrl: '' }];
                       renderBooks();
+                      renderHeader();
                     }
                     const toast = document.createElement('div');
                     toast.textContent = `✓ ${title} added`;
@@ -343,6 +416,7 @@
                   if (!books.find(b => b.gbid === gbid)) {
                     books = [...books, { gbid, title, author, coverUrl }];
                     renderBooks();
+                    renderHeader();
                   }
                   const toast = document.createElement('div');
                   toast.textContent = `✓ ${title} added`;
@@ -405,6 +479,7 @@
                   if (!books.find(b => b.title === title)) {
                     books = [...books, { gbid: '', title, author, coverUrl: '' }];
                     renderBooks();
+                    renderHeader();
                   }
                   const toast = document.createElement('div');
                   toast.textContent = `✓ ${title} added`;
@@ -512,6 +587,7 @@
             await removeBookFromList(user.uid, list.id, book.gbid);
             books = books.filter(b => b.gbid !== book.gbid);
             renderBooks();
+            renderHeader();
           });
         }
         return el;

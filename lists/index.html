@@ -17,23 +17,113 @@
   <title>lists - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
   <style>
-    .profile-rule {
+    .card {
+      position: relative;
+      isolation: isolate;
+      background: transparent;
       border: none;
-      border-top: 2px solid var(--accent);
-      margin: .4rem 0 .875rem;
-      filter: url(#brush-line);
-      overflow: visible;
+      box-shadow: none;
     }
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      background: var(--bg-card);
+      box-shadow: var(--shadow);
+      filter: url(#ink-edge);
+      z-index: -1;
+    }
+
+    .list-card {
+      display: block;
+      padding: .8rem .9rem;
+      text-decoration: none;
+      color: var(--text);
+    }
+    .list-card + .list-card { margin-top: .55rem; }
+    .list-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .6rem;
+    }
+    .list-card-name {
+      font-family: 'Arvo', serif;
+      font-weight: 700;
+      font-size: .95rem;
+      overflow-wrap: anywhere;
+    }
+    .list-card-count {
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      font-size: .78rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .list-card-spines {
+      display: flex;
+      margin-top: .6rem;
+      min-height: 44px;
+      align-items: flex-end;
+    }
+    .list-card-spines img,
+    .list-card-spines .spine-blank {
+      width: 30px;
+      height: 44px;
+      object-fit: cover;
+      border-radius: 2px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.22);
+      flex-shrink: 0;
+    }
+    .list-card-spines > * + * { margin-left: -9px; }
+    .spine-blank { background: var(--bg-alt); border: 1px solid var(--border); }
+    .list-card-empty {
+      margin-top: .6rem;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      font-size: .8rem;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .list-actions {
+      display: flex;
+      gap: .1rem;
+      flex-shrink: 0;
+      margin-left: .35rem;
+    }
+    .list-action {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: .3rem;
+      line-height: 1;
+      color: var(--text-muted);
+      border-radius: var(--radius-sm);
+      transition: color .15s, background .15s;
+    }
+    .list-action:hover { background: var(--bg-alt); color: var(--text); }
+    .list-action--danger:hover { color: #c84f4f; }
+    .list-action--on { color: var(--accent); }
+
+    .list-row {
+      display: flex;
+      align-items: flex-start;
+    }
+    .list-row .list-card { flex: 1; min-width: 0; }
   </style>
 </head>
 <body>
 
   <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
     <defs>
-      <filter id="brush-line" x="-1%" y="-600%" width="102%" height="1300%">
-        <feMorphology operator="dilate" radius="0 1" result="thick"/>
-        <feTurbulence type="fractalNoise" baseFrequency="0.018 0.45" numOctaves="4" seed="8" result="noise"/>
-        <feDisplacementMap in="thick" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G"/>
+      <filter id="ink-edge" x="-25%" y="-25%" width="150%" height="150%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" seed="5" result="noise"/>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G"/>
       </filter>
     </defs>
   </svg>
@@ -65,7 +155,6 @@
         <div id="friends-menu" hidden role="menu"></div>
       </div>
     </div>
-    <hr class="profile-rule">
     <div id="lists-container"></div>
   </main>
 
@@ -190,25 +279,42 @@
               : `../list/?u=${encodeURIComponent(ownerUsername)}&id=${encodeURIComponent(list.id)}`;
 
             const rowDiv = document.createElement('div');
-            rowDiv.style.cssText = `display:flex;align-items:center;padding:.7rem 0${i < lists.length - 1 ? ';border-bottom:1px solid var(--border)' : ''}`;
+            rowDiv.className = 'list-row card';
+            if (i > 0) rowDiv.style.marginTop = '.55rem';
+
+            const covers = (list.books || []).map(b => b.coverUrl).filter(Boolean).slice(0, 6);
+            const spines = count === 0
+              ? `<div class="list-card-empty">Nothing in here yet</div>`
+              : `<div class="list-card-spines">${
+                  covers.map(url => `<img src="${esc(url)}" alt="" loading="lazy">`).join('')
+                }${
+                  // Books without a cover still occupy a spine, so the stack
+                  // reflects the list's real size rather than only its art.
+                  '<div class="spine-blank"></div>'.repeat(Math.max(0, Math.min(count, 6) - covers.length))
+                }</div>`;
 
             const a = document.createElement('a');
             a.href = href;
-            a.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:space-between;text-decoration:none;color:var(--text);font-size:.95rem;gap:.5rem';
-            a.innerHTML = `<span>${esc(list.name)}</span>
-              <span style="display:flex;align-items:center;gap:.5rem">
-                <span style="font-size:.8rem;color:var(--text-muted)">${count} book${count === 1 ? '' : 's'}</span>
-                ${isOwn ? '' : chevron}
-              </span>`;
+            a.className = 'list-card';
+            a.innerHTML = `<div class="list-card-head">
+                <span class="list-card-name">${esc(list.name)}</span>
+                <span class="list-card-count">${count} book${count === 1 ? '' : 's'}${isOwn ? '' : ' ' + chevron}</span>
+              </div>${spines}`;
             rowDiv.appendChild(a);
 
+            let actions = null;
             if (isOwn) {
+              actions = document.createElement('div');
+              actions.className = 'list-actions';
+
               const lockBtn = document.createElement('button');
+              lockBtn.type = 'button';
+              lockBtn.className = 'list-action' + (list.private ? ' list-action--on' : '');
               lockBtn.title = list.private ? 'Make public' : 'Make private';
-              lockBtn.style.cssText = 'background:none;border:none;cursor:pointer;padding:.2rem .35rem;flex-shrink:0;margin-left:.25rem;color:var(--text-muted);opacity:.6;line-height:1';
+              lockBtn.setAttribute('aria-label', lockBtn.title);
               lockBtn.innerHTML = list.private
-                ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`
-                : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 019.9-1"/></svg>`;
+                ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`
+                : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 019.9-1"/></svg>`;
               lockBtn.addEventListener('click', async e => {
                 e.preventDefault();
                 const nowPrivate = !list.private;
@@ -216,15 +322,17 @@
                 list.private = nowPrivate;
                 renderLists(lists);
               });
-              rowDiv.appendChild(lockBtn);
+              actions.appendChild(lockBtn);
             }
 
             if (isOwn && !list.isDefault) {
               const delBtn = document.createElement('button');
-              delBtn.className = 'btn-danger';
+              delBtn.type = 'button';
+              delBtn.className = 'list-action list-action--danger';
               delBtn.dataset.id = list.id;
-              delBtn.style.cssText = 'font-size:.75rem;padding:.3rem .65rem;flex-shrink:0;margin-left:.25rem';
-              delBtn.textContent = 'Delete';
+              delBtn.title = 'Delete list';
+              delBtn.setAttribute('aria-label', `Delete ${list.name}`);
+              delBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>`;
               delBtn.addEventListener('click', async () => {
                 const name = list.name;
                 if (!confirm(`Delete "${name}"?`)) return;
@@ -232,9 +340,10 @@
                 lists = lists.filter(l => l.id !== list.id);
                 renderLists(lists);
               });
-              rowDiv.appendChild(delBtn);
+              actions.appendChild(delBtn);
             }
 
+            if (actions) rowDiv.appendChild(actions);
             wrap.appendChild(rowDiv);
           });
 
@@ -242,12 +351,12 @@
 
           if (isOwn) {
             const newTriggerRow = document.createElement('div');
-            newTriggerRow.style.cssText = 'padding:.7rem 0;border-top:1px solid var(--border)';
+            newTriggerRow.style.cssText = 'padding:.85rem 0 .2rem';
 
             const trigger = document.createElement('div');
             trigger.id = 'new-list-trigger';
-            trigger.style.cssText = 'font-size:.875rem;color:var(--accent);cursor:pointer';
-            trigger.textContent = '+ New list';
+            trigger.style.cssText = 'font-size:.875rem;color:var(--accent);cursor:pointer;display:inline-flex;align-items:center;gap:.35rem';
+            trigger.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New list`;
 
             const form = document.createElement('div');
             form.id = 'new-list-form';

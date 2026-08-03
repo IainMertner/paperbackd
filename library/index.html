@@ -74,6 +74,7 @@
         <div class="add-book-fields">
           <div class="book-search-wrap" id="book-search-wrap">
             <input class="add-book-input" type="text" placeholder="Search for a book…" id="book-search" autocomplete="off" spellcheck="false">
+            <button id="book-search-clear" type="button" aria-label="Clear search" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);font-size:1.1rem;line-height:1;padding:2px 5px;cursor:pointer">&times;</button>
             <div class="book-suggestions" id="book-suggestions" style="display:none"></div>
           </div>
         </div>
@@ -3233,6 +3234,8 @@
 
     function resetForm() {
       searchInput.value           = '';
+      searchInput.style.paddingRight = '';
+      document.getElementById('book-search-clear').style.display = 'none';
       suggestBox.innerHTML        = '';
       suggestBox.style.display    = 'none';
       selectedPreview.style.display = 'none';
@@ -3313,13 +3316,26 @@
       selectedPreview.style.display = '';
     }
 
+    // Custom clear button rather than type="search": the native one is painted
+    // by the browser in its own UI colour and ignores the theme, so it renders
+    // blue next to the grey × on the library filter.
+    const searchClearBtn = document.getElementById('book-search-clear');
+
     searchInput.addEventListener('input', () => {
       selectedBook = null;
       selectedPreview.style.display = 'none';
+      searchClearBtn.style.display = searchInput.value ? '' : 'none';
+      searchInput.style.paddingRight = searchInput.value ? '26px' : '';
       clearTimeout(searchTimer);
       const q = searchInput.value.trim();
       if (q.length < 3) { suggestBox.innerHTML = ''; suggestBox.style.display = 'none'; return; }
       searchTimer = setTimeout(() => fetchSuggestions(q), 250);
+    });
+
+    searchClearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      searchInput.dispatchEvent(new Event('input'));
+      searchInput.focus();
     });
 
     function showToast(msg) {
