@@ -1,4 +1,6 @@
-const CACHE = 'paperbackd-v17';
+// Bump on any release that changes what a JS module exports — activate() drops
+// every older cache, which is what clears a stale module out of existing clients.
+const CACHE = 'paperbackd-v18';
 
 // Firebase API hosts — never intercept these
 const PASS_THROUGH = [
@@ -47,6 +49,11 @@ const PRECACHE = [
   '/js/firebase.js',
   '/js/auth.js',
   '/js/main.js',
+  '/js/book-utils.js',
+  '/js/hardcover.js',
+  '/js/search-widget.js',
+  '/js/stats-utils.js',
+  '/js/utils.js',
 ];
 
 self.addEventListener('install', event => {
@@ -95,8 +102,23 @@ self.addEventListener('fetch', event => {
           return response;
         }).catch(() => caches.match(event.request))
       );
+    } else if (url.pathname.endsWith('.js')) {
+      // JS modules — network-first, like navigations.
+      //
+      // Stale-while-revalidate cannot be used here: pages are network-first, so
+      // a fresh page would import a stale module and fail on any export added
+      // since it was cached ("does not provide an export named ..."). The
+      // modules are small and this keeps page and script versions in step.
+      // Falls back to cache when offline.
+      event.respondWith(
+        fetch(event.request).then(response => {
+          const clone = response.clone();
+          caches.open(CACHE).then(c => c.put(event.request, clone));
+          return response;
+        }).catch(() => caches.match(event.request))
+      );
     } else {
-      // JS/CSS/assets — stale-while-revalidate (instant from cache, updates in background)
+      // CSS/assets — stale-while-revalidate (instant from cache, updates in background)
       event.respondWith(
         caches.open(CACHE).then(cache =>
           cache.match(event.request).then(cached => {
