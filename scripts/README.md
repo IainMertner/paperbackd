@@ -22,13 +22,17 @@ pip install requests
 
 ### The endpoint URL
 
-`firebase deploy --only functions` prints the URL for `syncProgress`. Copy it
-into `DEFAULT_ENDPOINT` at the top of each script, or pass `--endpoint` each
-time.
+Both scripts already point at the deployed endpoint:
 
-Don't guess it. These are 2nd-gen functions, which are served from Cloud Run and
-do not use the older `https://<region>-<project>.cloudfunctions.net/<name>`
-pattern — the deploy output is the only reliable source.
+```
+https://syncprogress-y6xs6qzssa-nw.a.run.app
+```
+
+If it's ever redeployed to a different region the URL changes — take the new one
+from what `firebase deploy --only functions` prints, and update
+`DEFAULT_ENDPOINT` at the top of each script, or pass `--endpoint`. Don't
+reconstruct it: these are 2nd-gen functions served from Cloud Run, so they don't
+use the older `https://<region>-<project>.cloudfunctions.net/<name>` pattern.
 
 The function is deployed to `europe-west2` (London), set in
 `functions/index.js`. Worth keeping that in step with wherever Firestore lives

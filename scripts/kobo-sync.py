@@ -30,7 +30,7 @@ except ImportError:
     sys.exit("This needs `requests`:  pip install requests")
 
 
-DEFAULT_ENDPOINT = "PASTE_YOUR_ENDPOINT_URL_HERE"
+DEFAULT_ENDPOINT = "https://syncprogress-y6xs6qzssa-nw.a.run.app"
 
 # Where a Kobo typically mounts, by platform.
 MOUNT_GLOBS = [
