@@ -121,10 +121,11 @@ def run_once(args):
 
         status, body = push(args.endpoint, args.token, b)
         if status == 200:
-            print(f"  ok          {label}  -> page {body.get('currentPage')}")
+            tag = "added" if body.get("added") else "ok"
+            print(f"  {tag:<11} {label}  -> page {body.get('currentPage')}")
             sent += 1
         elif status == 404:
-            print(f"  not in lib  {label}")
+            print(f"  no match    {label}  (not found on Hardcover)")
             skipped += 1
         elif status == 429:
             print(f"  rate limit  {label}")
@@ -136,7 +137,7 @@ def run_once(args):
         time.sleep(6)
 
     if not args.dry_run:
-        print(f"sent {sent}, not in library {skipped}, failed {failed}")
+        print(f"sent {sent}, no match {skipped}, failed {failed}")
 
 
 def main():

@@ -2,12 +2,15 @@
 // unit tested. Getting these wrong writes a wrong page number into someone's
 // library, or silently updates the wrong book.
 
-// Books are matched against the user's own library rather than looked up
-// externally: progress only means something for a book they already have.
+// Finds the book a push refers to in the user's own library.
 //
-// Order: exact gbid, then exact title (disambiguated by author when several
-// share one), then — if the caller named nothing — the single book in progress.
-// Ambiguity always refuses rather than guesses.
+// Order: exact gbid, then exact title, disambiguated by author when several
+// share one. Ambiguity refuses rather than guesses.
+//
+// There is deliberately no "the one book you're reading" fallback: a library
+// can have dozens in progress, so a push that named nothing would land on an
+// arbitrary book. A caller that names a book not in the library gets it added
+// instead — see the endpoint.
 function matchBook(books, { gbid, title, author } = {}) {
   if (!Array.isArray(books)) return null;
 
@@ -16,22 +19,17 @@ function matchBook(books, { gbid, title, author } = {}) {
     if (hit) return hit;
   }
 
-  if (title) {
-    const want = String(title).trim().toLowerCase();
-    const byTitle = books.filter(b => (b.data.title || '').trim().toLowerCase() === want);
-    if (byTitle.length === 1) return byTitle[0];
-    if (byTitle.length > 1) {
-      if (!author) return null;
-      const wantAuthor = String(author).trim().toLowerCase();
-      const exact = byTitle.filter(b => (b.data.author || '').trim().toLowerCase() === wantAuthor);
-      return exact.length === 1 ? exact[0] : null;
-    }
-    return null;
-  }
+  if (!title) return null;
 
-  if (!gbid) {
-    const reading = books.filter(b => b.data.status === 'reading');
-    if (reading.length === 1) return reading[0];
+  const want = String(title).trim().toLowerCase();
+  if (!want) return null;
+  const byTitle = books.filter(b => (b.data.title || '').trim().toLowerCase() === want);
+  if (byTitle.length === 1) return byTitle[0];
+  if (byTitle.length > 1) {
+    if (!author) return null;
+    const wantAuthor = String(author).trim().toLowerCase();
+    const exact = byTitle.filter(b => (b.data.author || '').trim().toLowerCase() === wantAuthor);
+    return exact.length === 1 ? exact[0] : null;
   }
   return null;
 }

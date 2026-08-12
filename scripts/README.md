@@ -110,7 +110,10 @@ Identify the book in whichever way suits:
 |---|---|
 | `gbid` | Hardcover slug — exact, never ambiguous |
 | `title`, `author` | `author` only needed if two books share a title |
-| *(neither)* | Applies to your book in progress, if there's exactly one |
+
+A title is required. There's no "whatever you're reading" fallback, because a
+library can have dozens of books in progress and a push would land on an
+arbitrary one.
 
 And give the position in whichever unit you have:
 
@@ -120,8 +123,11 @@ And give the position in whichever unit you have:
 | `percent` | 0–100, converted using the book's page count |
 | `seconds` + `totalSeconds` | For audio, converted proportionally |
 
-The book must already be in your paperbackd library — this updates progress, it
-doesn't add books. Updates are limited to one every few seconds.
+A book that isn't in your library yet is looked up on Hardcover and added as
+currently reading, with its cover and page count, exactly as if you'd added it
+in the app. So starting a book on your Kobo is enough to see it here.
 
-Only progress is ever changed. Finishing a book stays something you do in the
-app, since it writes a read entry and an activity event.
+Updates are limited to one every few seconds.
+
+Finishing a book stays something you do in the app — sync only ever moves
+progress forward, never marks a book done.

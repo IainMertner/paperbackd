@@ -82,33 +82,36 @@ describe('matchBook — ambiguous titles', () => {
   });
 });
 
-describe('matchBook — the currently-reading fallback', () => {
-  it('uses the single book in progress when nothing is named', () => {
+describe('matchBook — no currently-reading fallback', () => {
+  // A library can have dozens of books in progress, so guessing from status
+  // would land a push on an arbitrary one. Naming nothing is an error the
+  // endpoint answers by adding the book instead.
+  it('refuses when nothing is named, even with one book in progress', () => {
     const lib = [
       book({ id: 'a', title: 'Done',    status: 'finished' }),
       book({ id: 'b', title: 'Current', status: 'reading' }),
     ];
-    expect(matchBook(lib, {}).id).toBe('b');
-  });
-
-  it('refuses when several books are in progress', () => {
-    const lib = [
-      book({ id: 'a', title: 'One', status: 'reading' }),
-      book({ id: 'b', title: 'Two', status: 'reading' }),
-    ];
     expect(matchBook(lib, {})).toBeNull();
   });
 
-  it('refuses when nothing is in progress', () => {
-    expect(matchBook([book({ id: 'a', title: 'Done', status: 'finished' })], {})).toBeNull();
+  it('refuses when nothing is named and many are in progress', () => {
+    const lib = Array.from({ length: 50 }, (_, i) =>
+      book({ id: `b${i}`, title: `Book ${i}`, status: 'reading' }));
+    expect(matchBook(lib, {})).toBeNull();
   });
 
-  it('ignores dnf books when picking the one in progress', () => {
+  it('ignores status entirely when a title is given', () => {
     const lib = [
-      book({ id: 'a', title: 'Abandoned', status: 'dnf' }),
-      book({ id: 'b', title: 'Current',   status: 'reading' }),
+      book({ id: 'a', title: 'Wanted',  status: 'finished' }),
+      book({ id: 'b', title: 'Current', status: 'reading' }),
     ];
-    expect(matchBook(lib, {}).id).toBe('b');
+    expect(matchBook(lib, { title: 'Wanted' }).id).toBe('a');
+  });
+
+  it('refuses an empty or whitespace title rather than matching anything', () => {
+    const lib = [book({ id: 'a', title: 'Current', status: 'reading' })];
+    expect(matchBook(lib, { title: '' })).toBeNull();
+    expect(matchBook(lib, { title: '   ' })).toBeNull();
   });
 });
 
@@ -122,8 +125,8 @@ describe('matchBook — bad input', () => {
     expect(matchBook(null, { title: 'Dune' })).toBeNull();
   });
 
-  it('handles a missing body', () => {
-    expect(matchBook([book({ id: 'a', status: 'reading' })])).toBeTruthy();
+  it('refuses a missing body rather than picking something', () => {
+    expect(matchBook([book({ id: 'a', status: 'reading' })])).toBeNull();
   });
 
   it('tolerates books with no title', () => {

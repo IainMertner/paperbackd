@@ -148,10 +148,11 @@ def main():
 
         status, body = push(args.endpoint, args.token, b)
         if status == 200:
-            print(f"  ok          {label}  -> page {body.get('currentPage')}")
+            tag = "added" if body.get("added") else "ok"
+            print(f"  {tag:<11} {label}  -> page {body.get('currentPage')}")
             sent += 1
         elif status == 404:
-            print(f"  not in lib  {label}")
+            print(f"  no match    {label}  (not found on Hardcover)")
             skipped += 1
         elif status == 429:
             print(f"  rate limit  {label}  (retry later)")
@@ -161,9 +162,7 @@ def main():
             failed += 1
 
     if not args.dry_run:
-        print(f"\nsent {sent}, not in library {skipped}, failed {failed}")
-        if skipped:
-            print("Books not in your library are ignored — add them in paperbackd first.")
+        print(f"\nsent {sent}, no match {skipped}, failed {failed}")
 
 
 if __name__ == "__main__":

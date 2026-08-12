@@ -1,5 +1,6 @@
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const logger = require('firebase-functions/logger');
 const { matchBook, resolvePage } = require('./progress-utils');
 
 admin.initializeApp();
@@ -38,10 +39,102 @@ exports.adminChangePassword = onCall({ cors: true }, async (request) => {
 //   Authorization: Bearer <sync token>
 //   { "title": "The Employees", "percent": 62 }
 //
-// Identify the book by gbid (exact), or title (+ optional author), or omit both
-// and it applies to the single book currently being read.
+// Identify the book by gbid (exact) or title (+ author when two share a title).
+// A title that isn't in the library yet is looked up on Hardcover and added as
+// currently reading, so starting a book on a device is enough to see it here.
 
 const MIN_SECONDS_BETWEEN_PUSHES = 5;
+const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
+const STUDY_GUIDE_RE = /\b(sparknotes?|cliffsnotes?|shmoop|study guide|bookrags|novelguide|gradesaver|litcharts?|supersummary|a-level notes?)\b/i;
+
+async function hcQuery(query, variables) {
+  const res = await fetch(HARDCOVER_PROXY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!res.ok) throw new Error(`Hardcover HTTP ${res.status}`);
+  return res.json();
+}
+
+// Metadata for a book about to be added. Without this the entry would carry no
+// cover and no page count — and with no page count a percentage cannot be
+// turned into a page at all, so the first push would add a book and then fail.
+async function lookupBook({ title, author }) {
+  const q = `${title} ${author || ''}`.trim();
+  const search = await hcQuery(
+    `query($q:String!){search(query:$q,query_type:"Book",per_page:5){results}}`, { q }
+  );
+  const hits = search?.data?.search?.results?.hits || [];
+  const doc = hits
+    .map(h => h?.document)
+    .find(d => {
+      if (!d?.slug) return false;
+      const names = Array.isArray(d.author_names) ? d.author_names.join(' ') : (d.author_names || '');
+      return !STUDY_GUIDE_RE.test(d.title || '') && !STUDY_GUIDE_RE.test(names);
+    });
+  if (!doc) return null;
+
+  // Second call for canonical_id: the search index does not expose it, and it
+  // is what groups translations and reissues into one work.
+  let workId = null;
+  try {
+    const works = await hcQuery(
+      `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){id canonical_id}}`,
+      { slug: doc.slug }
+    );
+    const hc = works?.data?.books?.[0];
+    const id = hc?.canonical_id ?? hc?.id;
+    if (id != null) workId = `hc:${id}`;
+  } catch (err) {
+    logger.warn('Work id lookup failed', err);
+  }
+
+  return {
+    title:       doc.title || title,
+    author:      Array.isArray(doc.author_names) ? (doc.author_names[0] || '') : (doc.author_names || author || ''),
+    gbid:        doc.slug,
+    coverUrl:    doc.image?.url || '',
+    totalPages:  doc.pages || 0,
+    releaseYear: doc.release_year || null,
+    workId,
+  };
+}
+
+// Mirrors addBook() in js/firebase.js, including the 'started' activity event,
+// so a book that arrives by sync is indistinguishable from one added in the app.
+async function addReadingBook(db, uid, username, meta) {
+  const bookData = {
+    title:            meta.title,
+    author:           meta.author || '',
+    totalPages:       meta.totalPages || 0,
+    currentPage:      0,
+    status:           'reading',
+    gbid:             meta.gbid || '',
+    addedAt:          admin.firestore.FieldValue.serverTimestamp(),
+    addedAtPrecision: 'day',
+    language:         'English',
+  };
+  if (meta.workId)      bookData.workId      = meta.workId;
+  if (meta.coverUrl)    bookData.coverUrl    = meta.coverUrl;
+  if (meta.releaseYear) bookData.releaseYear = meta.releaseYear;
+
+  const bookRef = await db.collection('users').doc(uid).collection('books').add(bookData);
+  await db.collection('activity').add({
+    uid,
+    username:    username || '',
+    type:        'started',
+    bookId:      bookRef.id,
+    bookTitle:   bookData.title,
+    bookAuthor:  bookData.author,
+    gbid:        bookData.gbid,
+    coverUrl:    meta.coverUrl || '',
+    currentPage: 0,
+    totalPages:  bookData.totalPages,
+    timestamp:   admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { id: bookRef.id, ref: bookRef, data: bookData };
+}
 
 // London. Worth keeping in step with the Firestore location rather than with
 // where users are: one push is a single request from the script, but four
@@ -71,11 +164,30 @@ exports.syncProgress = onRequest({ cors: false, region: REGION }, async (req, re
   const booksSnap = await db.collection('users').doc(uid).collection('books').get();
   const books = booksSnap.docs.map(d => ({ id: d.id, ref: d.ref, data: d.data() }));
 
-  const book = matchBook(books, body);
+  let book = matchBook(books, body);
+  let added = false;
+
+  // Not in the library yet: add it as currently reading rather than rejecting.
+  // Starting a book on a Kobo and having it appear here is the point.
   if (!book) {
-    return res.status(404).json({
-      error: 'No single matching book. Pass gbid, or an exact title, or have exactly one book in progress.',
-    });
+    if (!body.title) {
+      return res.status(400).json({
+        error: 'Send a title (or a gbid that is already in your library).',
+      });
+    }
+    let meta;
+    try {
+      meta = await lookupBook(body);
+    } catch (err) {
+      logger.error('Hardcover lookup failed', err);
+      return res.status(502).json({ error: 'Could not reach Hardcover to look the book up.' });
+    }
+    if (!meta) {
+      return res.status(404).json({ error: `No book found on Hardcover for "${body.title}".` });
+    }
+    const userSnap = await db.collection('users').doc(uid).get();
+    book = await addReadingBook(db, uid, userSnap.data()?.username, meta);
+    added = true;
   }
 
   const currentPage = resolvePage(book.data, body);
@@ -93,6 +205,7 @@ exports.syncProgress = onRequest({ cors: false, region: REGION }, async (req, re
   return res.json({
     ok: true,
     book: book.data.title || '(untitled)',
+    added,
     currentPage,
     totalPages: book.data.totalPages || null,
   });
