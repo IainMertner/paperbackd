@@ -89,6 +89,7 @@
     import { initSearchWidget } from '../js/search-widget.js';
     import { workIdForSlug } from '../js/hardcover.js';
     import { resolveRemappedSlug } from '../js/book-utils.js';
+    import { autoFit } from '../js/dropdown.js';
 
     const params = new URLSearchParams(location.search);
     const gbid   = params.get('gbid');
@@ -293,6 +294,10 @@
         const drop = document.createElement('div');
         drop.style.cssText = 'display:none;position:absolute;left:0;top:calc(100% + 4px);background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:100;min-width:160px;padding:.25rem 0';
         wrap.append(btn, drop);
+        // Grows the page while open, so someone with a lot of lists can reach
+        // the bottom of this by scrolling the page rather than only by swiping
+        // inside the menu. autoFit also covers the list being rebuilt.
+        autoFit(drop);
         btn.addEventListener('click', e => {
           e.stopPropagation();
           drop.style.display = drop.style.display === 'none' ? '' : 'none';

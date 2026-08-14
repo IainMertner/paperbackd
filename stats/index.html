@@ -416,6 +416,7 @@
     import { getProfileByUsername, getProfile, getFinishedBooks, getFollowing, db } from '../js/firebase.js';
     import { doc, updateDoc, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { COUNTRY_ISO, ISO_CONTINENT, calcStats } from '../js/stats-utils.js';
+    import { fitDropdown, releaseDropdown } from '../js/dropdown.js';
 
     const NOW  = new Date();
     const CY   = NOW.getFullYear();
@@ -899,10 +900,12 @@
         const opening = menu.hidden;
         menu.hidden = !opening;
         btn.setAttribute('aria-expanded', String(opening));
+        if (opening) fitDropdown(menu); else releaseDropdown();
       });
       document.addEventListener('click', () => {
         menu.hidden = true;
         btn.setAttribute('aria-expanded', 'false');
+        releaseDropdown();
       });
     })();
 

@@ -136,6 +136,7 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { getBooks, updateAvatarUrl, updateShelf, updateDisplayName, updateAvatarBorderColor } from '../js/firebase.js';
+    import { autoFit } from '../js/dropdown.js';
 
     const { user, profile } = await requireAuth();
     const libraryBooks = (await getBooks(user.uid)).filter(b => b.coverUrl);
@@ -234,6 +235,7 @@
     const shelfAddSection = document.getElementById('shelf-add-section');
     const shelfSearch     = document.getElementById('shelf-search');
     const shelfSuggestions = document.getElementById('shelf-suggestions');
+    autoFit(shelfSuggestions);
 
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');

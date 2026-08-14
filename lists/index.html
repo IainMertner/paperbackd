@@ -202,6 +202,7 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { getProfileByUsername, getLists, ensureDefaultList, createList, deleteList, getFollowing, setListPrivate } from '../js/firebase.js';
+    import { fitDropdown, releaseDropdown } from '../js/dropdown.js';
 
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -257,8 +258,8 @@
             menu.appendChild(a);
           }
           btn.style.display = '';
-          btn.addEventListener('click', e => { e.stopPropagation(); const o = menu.hidden; menu.hidden = !o; btn.setAttribute('aria-expanded', String(o)); });
-          document.addEventListener('click', () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); });
+          btn.addEventListener('click', e => { e.stopPropagation(); const o = menu.hidden; menu.hidden = !o; btn.setAttribute('aria-expanded', String(o)); if (o) fitDropdown(menu); else releaseDropdown(); });
+          document.addEventListener('click', () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); releaseDropdown(); });
         })();
 
         let lists = await getLists(ownerUid, user.uid);

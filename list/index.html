@@ -173,6 +173,7 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { getProfileByUsername, getLists, addBookToList, removeBookFromList, deleteList, renameList, getBooks, setListPrivate } from '../js/firebase.js';
+    import { autoFit } from '../js/dropdown.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -326,6 +327,7 @@
 
         const searchInput = addEl.querySelector('#list-search');
         const suggestBox  = addEl.querySelector('#list-suggestions');
+        autoFit(suggestBox);
         let searchTimer;
 
         function showToast(msg) {

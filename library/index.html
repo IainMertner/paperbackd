@@ -153,6 +153,7 @@
     import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, undnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing, setBookPrivate } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { normalizeCountry } from '../js/utils.js';
+    import { fitDropdown, releaseDropdown } from '../js/dropdown.js';
     import { workIdForSlug, searchBooks } from '../js/hardcover.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
@@ -392,8 +393,8 @@
         menu.appendChild(a);
       }
       btn.style.display = '';
-      btn.addEventListener('click', e => { e.stopPropagation(); const o = menu.hidden; menu.hidden = !o; btn.setAttribute('aria-expanded', String(o)); });
-      document.addEventListener('click', () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); });
+      btn.addEventListener('click', e => { e.stopPropagation(); const o = menu.hidden; menu.hidden = !o; btn.setAttribute('aria-expanded', String(o)); if (o) fitDropdown(menu); else releaseDropdown(); });
+      document.addEventListener('click', () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); releaseDropdown(); });
     })();
 
     const readingList  = document.getElementById('reading-list');
@@ -3035,24 +3036,16 @@
         });
 
         // Dropdown open/close
-        const pageContent = document.querySelector('.page-content');
         function closeFilterDropdown() {
           filterDropdown.style.display = 'none';
-          pageContent.style.paddingBottom = '';
+          releaseDropdown();
         }
         filterDropdownBtn.addEventListener('click', e => {
           e.stopPropagation();
           const opening = filterDropdown.style.display === 'none';
           if (!opening) { closeFilterDropdown(); return; }
           filterDropdown.style.display = '';
-          requestAnimationFrame(() => {
-            const rect = filterDropdown.getBoundingClientRect();
-            const overflow = rect.bottom - window.innerHeight + 16;
-            if (overflow > 0) {
-              pageContent.style.paddingBottom = overflow + 'px';
-              filterDropdown.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-          });
+          fitDropdown(filterDropdown);
         });
         document.addEventListener('click', closeFilterDropdown);
         filterDropdown.addEventListener('click', e => e.stopPropagation());
@@ -3225,6 +3218,7 @@
     const saveBtn     = document.getElementById('save-btn');
     const searchInput = document.getElementById('book-search');
     const suggestBox  = document.getElementById('book-suggestions');
+    autoFit(suggestBox);
 
     let selectedBook = null;
     let searchTimer;

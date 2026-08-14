@@ -1,5 +1,6 @@
 import { searchUsers } from './firebase.js';
 import { searchBooks } from './hardcover.js';
+import { autoFit } from './dropdown.js';
 
 const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -128,6 +129,7 @@ export function initSearchWidget(container, { defaultTab = 'all', user } = {}) {
   dropdown.style.cssText = 'display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 4px 16px rgba(0,0,0,.18);z-index:200;max-height:420px;overflow-y:auto';
 
   wrap.append(input, dropdown);
+  autoFit(dropdown);
   container.append(tabRow, wrap);
 
   const show = () => { dropdown.style.display = ''; };

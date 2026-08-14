@@ -137,6 +137,7 @@
     import { requireAuth } from '../js/auth.js';
     import { getFollowing, getFeed, getProfile, getBookByGbid, removeActivityEvent, toggleReaction, db } from '../js/firebase.js';
     import { dayLabel, timeAgo } from '../js/utils.js';
+    import { fitDropdown, releaseDropdown } from '../js/dropdown.js';
     import { doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const { user } = await requireAuth();
@@ -195,8 +196,11 @@
       if (isOwn) addBtn.style.display = 'none';
 
 
+      // The one dropdown that stays capped: it is position:fixed, so it does not
+      // move when the page scrolls and growing the page could never reach it.
+      // Scrolling inside it is the only option here.
       const picker = document.createElement('div');
-      picker.style.cssText = 'display:none;position:fixed;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:.3rem .5rem;gap:.3rem;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:1000;white-space:nowrap';
+      picker.style.cssText = 'display:none;position:fixed;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:.3rem .5rem;gap:.3rem;box-shadow:0 4px 16px rgba(0,0,0,.15);max-height:70vh;overflow-y:auto;overscroll-behavior:contain;z-index:1000;white-space:nowrap';
 
       let pickerOpen = false;
       const closePicker = () => {
@@ -580,9 +584,12 @@ if (event.type === 'finished') {
         e.stopPropagation();
         panelOpen = !panelOpen;
         filterPanel.style.display = panelOpen ? 'flex' : 'none';
+        // The People column grows with everyone you follow, so this is the
+        // panel most likely to run off a phone screen.
+        if (panelOpen) fitDropdown(filterPanel); else releaseDropdown();
       });
       document.addEventListener('click', () => {
-        if (panelOpen) { panelOpen = false; filterPanel.style.display = 'none'; }
+        if (panelOpen) { panelOpen = false; filterPanel.style.display = 'none'; releaseDropdown(); }
       });
       filterPanel.addEventListener('click', e => e.stopPropagation());
 

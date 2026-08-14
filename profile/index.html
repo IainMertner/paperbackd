@@ -64,7 +64,7 @@
             <button id="profile-menu-btn" class="profile-action-btn profile-action-secondary profile-action-icon" aria-label="Settings" title="Settings">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             </button>
-            <div id="profile-menu" style="display:none;position:absolute;top:calc(100% + .35rem);left:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:50;min-width:140px;overflow:hidden">
+            <div id="profile-menu" style="display:none;position:absolute;top:calc(100% + .35rem);left:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:50;min-width:140px">
               <a href="../edit-profile/" style="display:block;padding:.5rem .85rem;font-size:.875rem;color:var(--text);text-decoration:none">Edit profile</a>
               <a href="../settings/"     style="display:block;padding:.5rem .85rem;font-size:.875rem;color:var(--text);text-decoration:none">Settings</a>
               <button id="dropdown-signout-btn" style="display:block;width:100%;padding:.5rem .85rem;font-size:.875rem;color:var(--error,#e05252);text-decoration:none;background:none;border:none;text-align:left;cursor:pointer;font-family:inherit;border-top:1px solid var(--border)">Sign out</button>
@@ -182,6 +182,7 @@
     import { requireAuth } from '../js/auth.js';
     import { getProfileByUsername, getFollowers, getProfile, getBookCount, getListCount, getReadingBooks, getRecentlyFinishedBooks, followUser, unfollowUser, logOut, ROOT, updateShelf, getBooks, updateAvatarUrl, updateAvatarBorderColor, updateDisplayName } from '../js/firebase.js';
     import { COUNTRY_ISO, ISO_CONTINENT } from '../js/stats-utils.js';
+    import { fitDropdown, releaseDropdown } from '../js/dropdown.js';
 
     const { user, profile: myProfile } = await requireAuth();
     const params      = new URLSearchParams(location.search);
@@ -846,9 +847,11 @@
         const profileMenu    = document.getElementById('profile-menu');
         profileMenuBtn.addEventListener('click', e => {
           e.stopPropagation();
-          profileMenu.style.display = profileMenu.style.display === 'none' ? 'block' : 'none';
+          const opening = profileMenu.style.display === 'none';
+          profileMenu.style.display = opening ? 'block' : 'none';
+          if (opening) fitDropdown(profileMenu); else releaseDropdown();
         });
-        document.addEventListener('click', () => { profileMenu.style.display = 'none'; });
+        document.addEventListener('click', () => { profileMenu.style.display = 'none'; releaseDropdown(); });
         document.getElementById('dropdown-signout-btn').addEventListener('click', async () => {
           await logOut();
           location.replace(ROOT + 'login/');

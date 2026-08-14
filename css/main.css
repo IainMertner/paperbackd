@@ -119,7 +119,11 @@ a { color: inherit; }
 
 /* ── Page content ──────────────────────────────────────────── */
 .page-content {
-  padding: 1.5rem 1rem calc(var(--nav-h) + 1.25rem);
+  /* --dropdown-gap is set by js/dropdown.js while a dropdown hangs below the
+     fold, so the page can scroll far enough to reach it. Added to the nav
+     clearance rather than replacing it — overwriting padding-bottom outright
+     would drop the space that keeps content clear of the bottom nav. */
+  padding: 1.5rem 1rem calc(var(--nav-h) + 1.25rem + var(--dropdown-gap, 0px));
   max-width: 640px;
   margin: 0 auto;
 }
@@ -167,6 +171,10 @@ a { color: inherit; }
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   z-index: 100;
+  /* Deliberately uncapped. A max-height would keep the menu on-screen, which
+     sounds right but means the page never needs to grow — so the tail is
+     reachable only by swiping inside the menu, which is the bug. Let it hang
+     below the fold and js/dropdown.js grows the page to meet it. */
   overflow: hidden;
 }
 #friends-menu a {
@@ -254,7 +262,7 @@ a { color: inherit; }
   .site-header { display: flex; }
   .mobile-nav { display: none; }
   .page-content {
-    padding: 2rem 1.5rem;
+    padding: 2rem 1.5rem calc(2rem + var(--dropdown-gap, 0px));
     max-width: 900px;
   }
 }
