@@ -121,7 +121,12 @@ And give the position in whichever unit you have:
 |---|---|
 | `page` | Used as-is |
 | `percent` | 0–100, converted using the book's page count |
-| `seconds` + `totalSeconds` | For audio, converted proportionally |
+| `seconds` + `totalSeconds` | Marks the book as an audiobook, stored as a percentage |
+
+Sending a duration is what makes something an audiobook. paperbackd stores
+audiobooks as a percentage with no page count, so a listening position is never
+turned into a page number — which also means it works for books that have no
+page count at all.
 
 A book that isn't in your library yet is looked up on Hardcover and added as
 currently reading, with its cover and page count, exactly as if you'd added it

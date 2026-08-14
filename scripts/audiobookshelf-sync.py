@@ -122,7 +122,9 @@ def run_once(args):
         status, body = push(args.endpoint, args.token, b)
         if status == 200:
             tag = "added" if body.get("added") else "ok"
-            print(f"  {tag:<11} {label}  -> page {body.get('currentPage')}")
+            pos = (f"{body['progressPct']}%" if body.get("progressPct") is not None
+                   else f"page {body.get('currentPage')}")
+            print(f"  {tag:<11} {label}  -> {pos}")
             sent += 1
         elif status == 404:
             print(f"  no match    {label}  (not found on Hardcover)")

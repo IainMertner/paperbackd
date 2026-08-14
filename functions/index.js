@@ -1,7 +1,7 @@
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const logger = require('firebase-functions/logger');
-const { matchBook, resolvePage } = require('./progress-utils');
+const { matchBook, resolveProgress, pickBestHit, normaliseTitle } = require('./progress-utils');
 
 admin.initializeApp();
 
@@ -45,7 +45,6 @@ exports.adminChangePassword = onCall({ cors: true }, async (request) => {
 
 const MIN_SECONDS_BETWEEN_PUSHES = 5;
 const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
-const STUDY_GUIDE_RE = /\b(sparknotes?|cliffsnotes?|shmoop|study guide|bookrags|novelguide|gradesaver|litcharts?|supersummary|a-level notes?)\b/i;
 
 async function hcQuery(query, variables) {
   const res = await fetch(HARDCOVER_PROXY, {
@@ -61,18 +60,16 @@ async function hcQuery(query, variables) {
 // cover and no page count — and with no page count a percentage cannot be
 // turned into a page at all, so the first push would add a book and then fail.
 async function lookupBook({ title, author }) {
-  const q = `${title} ${author || ''}`.trim();
+  // Title only, deliberately. Appending the author sinks the real book:
+  // companion editions are literally titled "<Title> by <Author>", so the
+  // author's name boosts them above the novel. The author is used to rank the
+  // results instead. 20 rather than 5 because the real edition can sit well
+  // down the list behind essays and study aids.
   const search = await hcQuery(
-    `query($q:String!){search(query:$q,query_type:"Book",per_page:5){results}}`, { q }
+    `query($q:String!){search(query:$q,query_type:"Book",per_page:20){results}}`,
+    { q: String(title).trim() }
   );
-  const hits = search?.data?.search?.results?.hits || [];
-  const doc = hits
-    .map(h => h?.document)
-    .find(d => {
-      if (!d?.slug) return false;
-      const names = Array.isArray(d.author_names) ? d.author_names.join(' ') : (d.author_names || '');
-      return !STUDY_GUIDE_RE.test(d.title || '') && !STUDY_GUIDE_RE.test(names);
-    });
+  const doc = pickBestHit(search?.data?.search?.results?.hits, title, author);
   if (!doc) return null;
 
   // Second call for canonical_id: the search index does not expose it, and it
@@ -103,7 +100,7 @@ async function lookupBook({ title, author }) {
 
 // Mirrors addBook() in js/firebase.js, including the 'started' activity event,
 // so a book that arrives by sync is indistinguishable from one added in the app.
-async function addReadingBook(db, uid, username, meta) {
+async function addReadingBook(db, uid, username, meta, pushedTitle) {
   const bookData = {
     title:            meta.title,
     author:           meta.author || '',
@@ -114,6 +111,9 @@ async function addReadingBook(db, uid, username, meta) {
     addedAt:          admin.firestore.FieldValue.serverTimestamp(),
     addedAtPrecision: 'day',
     language:         'English',
+    // What the device calls it. Hardcover's title is often longer, so without
+    // this the next push would fail to match and add the book all over again.
+    syncTitles:       [normaliseTitle(pushedTitle)],
   };
   if (meta.workId)      bookData.workId      = meta.workId;
   if (meta.coverUrl)    bookData.coverUrl    = meta.coverUrl;
@@ -185,28 +185,35 @@ exports.syncProgress = onRequest({ cors: false, region: REGION }, async (req, re
     if (!meta) {
       return res.status(404).json({ error: `No book found on Hardcover for "${body.title}".` });
     }
+    // Check the position is usable *before* creating anything, or a push with
+    // no usable position leaves a stray book behind and then reports failure.
+    if (resolveProgress(meta, body) === null) {
+      return res.status(400).json({
+        error: 'Could not work out a position, so nothing was added. Send page, or percent, or seconds with totalSeconds.',
+      });
+    }
     const userSnap = await db.collection('users').doc(uid).get();
-    book = await addReadingBook(db, uid, userSnap.data()?.username, meta);
+    book = await addReadingBook(db, uid, userSnap.data()?.username, meta, body.title);
     added = true;
   }
 
-  const currentPage = resolvePage(book.data, body);
-  if (currentPage === null) {
+  const progress = resolveProgress(book.data, body);
+  if (progress === null) {
     return res.status(400).json({
-      error: 'Could not work out a page. Send page, or percent, or seconds with totalSeconds — and the book needs a page count.',
+      error: 'Could not work out a position. Send page, or percent, or seconds with totalSeconds — and a percentage needs the book to have a page count.',
     });
   }
 
   // Progress only, never status: finishing a book writes activity and reads,
   // which should stay a deliberate action in the app.
-  await book.ref.update({ currentPage });
+  await book.ref.update(progress);
   await ref.update({ lastUsedAt: admin.firestore.FieldValue.serverTimestamp() });
 
   return res.json({
     ok: true,
     book: book.data.title || '(untitled)',
     added,
-    currentPage,
-    totalPages: book.data.totalPages || null,
+    ...progress,
+    totalPages: progress.progressPct === undefined ? (book.data.totalPages || null) : undefined,
   });
 });
