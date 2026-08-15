@@ -351,8 +351,19 @@ a { color: inherit; }
 }
 
 .book-info { flex: 1; min-width: 0; }
-.book-title { font-weight: 600; font-size: 0.9rem; }
-.book-author { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.1rem; }
+/* Modal book titles — the library's six and the home popover's — share one
+   rule so the two cannot drift apart. display:block because both render as
+   inline elements, which is also what makes .book-author's margin-top work. */
+.book-title,
+.quick-progress-title { display: block; font-family: 'Arvo', serif; font-size: .95rem; font-weight: 700; line-height: 1.3; }
+.book-author { display: block; font-size: 0.78rem; color: var(--text-muted); margin-top: 0.1rem; }
+
+/* Only when they are links — the same rows render as spans for a book with no
+   page to link to, and those should not look clickable. */
+a.book-title,
+a.book-author { text-decoration: none; transition: color .12s ease; }
+a.book-title:hover  { color: var(--accent); }
+a.book-author:hover { color: var(--text); }
 
 .progress-bar-track {
   height: 4px;
@@ -1046,6 +1057,18 @@ a { color: inherit; }
 .book-modal-inner { max-width: 480px; width: 100%; }
 .book-modal-inner .card { margin: 0; }
 
+/* Hover feedback for links that inherit their colour — the only cue that the
+   text is clickable, since they carry no underline. Book titles brighten to the
+   accent; authors and other muted text go to full contrast, which reads as the
+   same gesture against a dimmer starting point. */
+.link-hover-accent,
+.link-hover-text { color: inherit; text-decoration: none; transition: color .12s ease; }
+.link-hover-accent:hover { color: var(--accent); }
+.link-hover-text:hover   { color: var(--text); }
+
+.link-hover-lift { display: block; transition: transform .12s ease; }
+.link-hover-lift:hover { transform: translateY(-2px); }
+
 /* Quick progress popover (js/quick-progress.js) */
 .quick-progress-card { position: relative; }
 .quick-progress-close { position: absolute; top: .6rem; right: .75rem; background: none; border: none; font-size: 1.25rem; line-height: 1; color: var(--text-muted); cursor: pointer; padding: .1rem; z-index: 1; transition: color .15s; }
@@ -1056,7 +1079,7 @@ a { color: inherit; }
 .quick-progress-meta { flex: 1; min-width: 0; padding-right: 1.25rem; }
 .quick-progress-cover-link { display: block; flex-shrink: 0; border-radius: var(--radius-sm); transition: transform .12s ease; }
 .quick-progress-cover-link:hover { transform: translateY(-2px); }
-.quick-progress-title { display: block; font-family: 'Arvo', serif; font-size: .95rem; font-weight: 700; line-height: 1.3; text-decoration: none; color: inherit; }
+.quick-progress-title { text-decoration: none; color: inherit; }
 a.quick-progress-title:hover { color: var(--accent); }
 .quick-progress-author { display: block; font-size: .8rem; color: var(--text-muted); margin-top: .1rem; text-decoration: none; }
 a.quick-progress-author:hover { color: var(--text); }

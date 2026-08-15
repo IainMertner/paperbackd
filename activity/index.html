@@ -411,11 +411,11 @@
       card.className = 'card';
 
       const bookLink = event.gbid
-        ? `<a href="../book/?gbid=${esc(event.gbid)}" style="font-style:italic;color:inherit;text-decoration:none">${esc(event.bookTitle)}</a>`
+        ? `<a href="../book/?gbid=${esc(event.gbid)}" class="link-hover-accent" style="font-style:italic">${esc(event.bookTitle)}</a>`
         : `<em>${esc(event.bookTitle)}</em>`;
       const action = event.type === 'started' ? `started reading ${bookLink}` : `finished ${bookLink}`;
       const author = event.bookAuthor
-        ? `<span style="color:var(--text-muted)"> by <a href="../author/?slug=${toAuthorSlug(event.bookAuthor)}&name=${encodeURIComponent(event.bookAuthor)}" style="color:inherit;text-decoration:none">${esc(event.bookAuthor)}</a></span>`
+        ? `<span style="color:var(--text-muted)"> by <a href="../author/?slug=${toAuthorSlug(event.bookAuthor)}&name=${encodeURIComponent(event.bookAuthor)}" class="link-hover-text">${esc(event.bookAuthor)}</a></span>`
         : '';
       const reviewBtn = event.hasReview && event.gbid
         ? `<button class="review-btn" style="font-size:.75rem;color:var(--accent);background:none;border:none;padding:0;cursor:pointer;font-family:inherit">Read review</button>`

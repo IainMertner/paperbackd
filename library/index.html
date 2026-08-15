@@ -16,8 +16,41 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>library - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
+  <style>
+    /* Inked edge on the book modals, matching the popover on home.
+       Scoped to modal cards: the same treatment on the grid behind them would
+       put a rough edge on every tile at once. */
+    .book-modal-inner .card {
+      position: relative;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    .book-modal-inner .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      background: var(--bg-card);
+      box-shadow: var(--shadow);
+      filter: url(#ink-edge);
+      z-index: -1;
+    }
+  </style>
 </head>
 <body>
+
+  <!-- The filter the rule above references. A filter: url() pointing at an id
+       that does not exist stops the element rendering altogether, so the card
+       background would vanish rather than degrade. -->
+  <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <defs>
+      <filter id="ink-edge" x="-25%" y="-25%" width="150%" height="150%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" seed="5" result="noise"/>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
 
   <header class="site-header">
     <div class="header-inner">
@@ -1201,13 +1234,13 @@
       card.className  = 'card';
       card.dataset.id = book.id;
       const titleHtml = book.gbid
-        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
+        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
       card.innerHTML = `
         <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
           <div style="flex:1;min-width:0">
             ${titleHtml}
-            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}">${esc(book.author)}</a>` : ''}
           </div>
         </div>
         <div class="book-entry">
@@ -1745,13 +1778,13 @@
       card.className  = 'card';
       card.dataset.id = book.id;
       const titleHtml = book.gbid
-        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
+        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
       card.innerHTML = `
         <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
           <div style="flex:1;min-width:0">
             ${titleHtml}
-            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}">${esc(book.author)}</a>` : ''}
           </div>
         </div>
         <div class="book-entry">
@@ -2280,13 +2313,13 @@
       card.className  = 'card';
       card.dataset.id = book.id;
       const titleHtml = book.gbid
-        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
+        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
       card.innerHTML = `
         <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
           <div style="flex:1;min-width:0">
             ${titleHtml}
-            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}">${esc(book.author)}</a>` : ''}
           </div>
         </div>
         <div class="book-entry">
@@ -2372,13 +2405,13 @@
       card.className  = 'card';
       card.dataset.id = book.id;
       const titleHtml = book.gbid
-        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
+        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
       card.innerHTML = `
         <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem">
           <div style="flex:1;min-width:0">
             ${titleHtml}
-            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}">${esc(book.author)}</a>` : ''}
           </div>
         </div>
         <div class="book-entry">
@@ -2581,13 +2614,13 @@
       card.className  = 'card';
       card.dataset.id = book.id;
       const titleHtml = book.gbid
-        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
+        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
       card.innerHTML = `
         <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.75rem">
           <div style="flex:1;min-width:0">
             ${titleHtml}
-            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}">${esc(book.author)}</a>` : ''}
           </div>
         </div>
         <div class="book-entry">
@@ -2673,13 +2706,13 @@
       card.className  = 'card';
       card.dataset.id = book.id;
       const titleHtml = book.gbid
-        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}" style="text-decoration:none;color:inherit">${esc(book.title)}</a>`
+        ? `<a class="book-title" href="../book/?gbid=${esc(book.gbid)}">${esc(book.title)}</a>`
         : `<span class="book-title">${esc(book.title)}</span>`;
       card.innerHTML = `
         <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.75rem">
           <div style="flex:1;min-width:0">
             ${titleHtml}
-            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}" style="text-decoration:none">${esc(book.author)}</a>` : ''}
+            ${book.author ? `<a class="book-author" href="../author/?slug=${toAuthorSlug(book.author)}&name=${encodeURIComponent(book.author)}">${esc(book.author)}</a>` : ''}
           </div>
         </div>
         <div class="book-entry">

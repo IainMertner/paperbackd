@@ -1062,7 +1062,7 @@
           const row = document.createElement('div');
           row.className = 'summary-row';
           const valHtml = s.href
-            ? `<a href="${s.href}" class="summary-row-value" style="color:inherit;text-decoration:none">${s.value}</a>`
+            ? `<a href="${s.href}" class="summary-row-value link-hover-accent">${s.value}</a>`
             : `<span class="summary-row-value">${s.value}</span>`;
           row.innerHTML = `${valHtml}<span class="summary-row-label">${s.label}</span>`;
           grid.appendChild(row);
