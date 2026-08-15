@@ -1,6 +1,6 @@
 import { getHcCache, setHcCache, getBookRemaps } from './firebase.js';
 import { cleanTitle, cleanAuthor } from './utils.js';
-import { hardcoverWorkId, applyBookRemaps } from './book-utils.js';
+import { hardcoverWorkId, applyBookRemaps, pickIsbn13, collectIsbn13s } from './book-utils.js';
 
 export const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -71,6 +71,14 @@ export async function searchHardcover(q) {
 function toCacheEntry(hc, workId = null) {
   const entry = { slug: hc.slug, coverUrl: hc.image?.url || '', pages: hc.pages || 0, release_year: hc.release_year || null };
   if (workId) entry.workId = workId;
+  // Cached per slug rather than per user's copy: the same book added by a
+  // hundred people costs one lookup, and every copy already points at a slug.
+  //
+  // Always written, empty included. An absent key means "never looked up" and
+  // an empty array means "looked up, has none" — plenty of books genuinely have
+  // no ISBN, and without that distinction they would be re-queried on every
+  // single touch, which is exactly the traffic this cache exists to avoid.
+  entry.isbns = collectIsbn13s(hc.en, hc.any);
   return entry;
 }
 
@@ -78,6 +86,7 @@ function toCacheEntry(hc, workId = null) {
 function fromCacheEntry(c) {
   const hc = { slug: c.slug, pages: c.pages, release_year: c.release_year, image: { url: c.coverUrl || '' } };
   if (c.workId) hc.workId = c.workId;
+  if (c.isbns?.length) hc.isbn13 = c.isbns[0];
   return hc;
 }
 
@@ -207,7 +216,12 @@ export async function resolveWorkIds(books) {
   const misses = [];
   pending.forEach(([i, b], n) => {
     const hit = cached[n];
-    if (hit?.workId) books[i].workId = hit.workId;
+    if (hit?.isbns?.length) books[i].isbn13 = hit.isbns[0];
+    // Entries cached before ISBNs were collected have a workId but no isbns
+    // key at all. Re-querying those fills the back catalogue in as books are
+    // touched, instead of needing a migration of its own. An empty array is a
+    // completed lookup and is left alone.
+    if (hit?.workId && Array.isArray(hit.isbns)) books[i].workId = hit.workId;
     else misses.push([i, b.gbid]);
   });
   if (!misses.length) return books;
@@ -217,7 +231,10 @@ export async function resolveWorkIds(books) {
     const chunk = misses.slice(c, c + CHUNK);
     try {
       const data = await hcQuery(
-        `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:100){id slug canonical_id parent_book_id pages release_year image{url}}}`,
+        // en/any: editions come back in no useful order, so the English ones
+        // are asked for separately rather than filtered afterwards — an
+        // unfiltered list yields the German or Russian printing as often as not.
+        `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:100){id slug canonical_id parent_book_id pages release_year image{url} en:editions(where:{_and:[{isbn_13:{_is_null:false}},{language:{code2:{_eq:"en"}}}]},limit:3){isbn_13} any:editions(where:{isbn_13:{_is_null:false}},limit:3){isbn_13}}}`,
         { slugs: chunk.map(([, slug]) => slug) }
       );
       const bySlug = new Map((data?.data?.books || []).map(b => [b.slug, b]));
@@ -227,6 +244,8 @@ export async function resolveWorkIds(books) {
         const workId = hardcoverWorkId(hc);
         if (!workId) continue;
         books[i].workId = workId;
+        const isbn13 = pickIsbn13(hc.en, hc.any);
+        if (isbn13) books[i].isbn13 = isbn13;
         writes.push(setHcCache(slug, toCacheEntry(hc, workId)));
       }
       await Promise.all(writes);
@@ -235,18 +254,23 @@ export async function resolveWorkIds(books) {
   return books;
 }
 
-// Work id for a single Hardcover slug, for the add-a-book paths.
-// Cache-first, so this is usually one Firestore read and no Hardcover call.
+// Work id and ISBN for a single Hardcover slug, for the add-a-book paths.
+// Cache-first, so this is usually one Firestore read and no Hardcover call —
+// which is why capturing the ISBN here is free rather than a second round trip.
 // Never throws: a book must still be addable if the lookup fails.
-export async function workIdForSlug(slug) {
-  if (!slug) return null;
+export async function metaForSlug(slug) {
+  if (!slug) return { workId: null, isbn13: '' };
   try {
     const [out] = await resolveWorkIds([{ gbid: slug }]);
-    return out?.workId || null;
+    return { workId: out?.workId || null, isbn13: out?.isbn13 || '' };
   } catch (e) {
-    console.warn('Work id lookup failed for', slug, e);
-    return null;
+    console.warn('Book meta lookup failed for', slug, e);
+    return { workId: null, isbn13: '' };
   }
+}
+
+export async function workIdForSlug(slug) {
+  return (await metaForSlug(slug)).workId;
 }
 
 export async function enrichFromHardcover(book) {

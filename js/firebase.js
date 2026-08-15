@@ -481,7 +481,7 @@ export async function getRecentlyFinishedBooks(uid) {
     .sort((a, b) => (b.finishedAt?.seconds ?? 0) - (a.finishedAt?.seconds ?? 0));
 }
 
-export async function addFinishedBook(uid, { title, author, totalPages, gbid, workId, coverUrl, rating, review, releaseYear, country, authorGender, genres, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
+export async function addFinishedBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, rating, review, releaseYear, country, authorGender, genres, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
   const data = {
     title,
     author:      author || '',
@@ -496,6 +496,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, wo
   if (finishedAtPrecision) data.finishedAtPrecision = finishedAtPrecision;
   if (addedAt && addedAtPrecision) data.addedAtPrecision = addedAtPrecision;
   if (workId)         data.workId         = workId;
+  if (isbn13)         data.isbn13         = isbn13;
   if (coverUrl)       data.coverUrl       = coverUrl;
   if (rating != null) data.rating         = rating;
   if (review)         data.review         = review;
@@ -530,7 +531,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, wo
   return bookRef.id;
 }
 
-export async function addBook(uid, { title, author, totalPages, gbid, workId, coverUrl, releaseYear, country, authorGender, genres }, username) {
+export async function addBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, releaseYear, country, authorGender, genres }, username) {
   const bookData = {
     title,
     author:           author || '',
@@ -543,6 +544,9 @@ export async function addBook(uid, { title, author, totalPages, gbid, workId, co
     language:         'English'
   };
   if (workId)                bookData.workId       = workId;
+  // The one identifier here that means anything outside Hardcover, so it is
+  // worth a field of its own — see the ISBN notes in book-utils.js.
+  if (isbn13)                bookData.isbn13       = isbn13;
   if (coverUrl)              bookData.coverUrl     = coverUrl;
   if (releaseYear)           bookData.releaseYear  = releaseYear;
   if (country)               bookData.country      = country;

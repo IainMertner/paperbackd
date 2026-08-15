@@ -88,12 +88,16 @@ service cloud.firestore {
     match /hc_cache/{key} {
       function validCacheEntry() {
         let d = request.resource.data;
-        return d.keys().hasOnly(['slug', 'coverUrl', 'pages', 'release_year', 'workId', 'cachedAt'])
+        return d.keys().hasOnly(['slug', 'coverUrl', 'pages', 'release_year', 'workId', 'isbns', 'cachedAt'])
           && d.slug is string && d.slug.size() > 0 && d.slug.size() <= 300
           && d.coverUrl is string && d.coverUrl.size() <= 2000
           && d.pages is int && d.pages >= 0 && d.pages <= 100000
           && (d.release_year == null || (d.release_year is int && d.release_year >= 0 && d.release_year <= 3000))
           && (!('workId' in d) || (d.workId is string && d.workId.size() > 0 && d.workId.size() <= 100))
+          // Optional: entries cached before ISBNs were collected have no such
+          // key, and that absence is what marks them for re-lookup. An empty
+          // list is a completed lookup for a book that simply has no ISBN.
+          && (!('isbns' in d) || (d.isbns is list && d.isbns.size() <= 6))
           && d.cachedAt == request.time;
       }
       allow read:            if request.auth != null;

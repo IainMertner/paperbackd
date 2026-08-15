@@ -153,8 +153,9 @@
     import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, undnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing, setBookPrivate } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { normalizeCountry } from '../js/utils.js';
-    import { fitDropdown, releaseDropdown } from '../js/dropdown.js';
-    import { workIdForSlug, searchBooks } from '../js/hardcover.js';
+    import { fitDropdown, releaseDropdown, autoFit } from '../js/dropdown.js';
+    import { metaForSlug, searchBooks } from '../js/hardcover.js';
+    import { pickIsbn13 } from '../js/book-utils.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -264,10 +265,10 @@
       // Phase 2: fill gaps for already-matched book via slug query
       const gbid = updates.gbid || book.gbid;
 
-      if (gbid && !/^\d+$/.test(gbid) && (book.releaseYear == null || !book.totalPages || !book.author || !book.genres?.length)) {
+      if (gbid && !/^\d+$/.test(gbid) && (book.releaseYear == null || !book.totalPages || !book.author || !book.genres?.length || !book.isbn13)) {
         try {
           const data = await hcPost(
-            `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){slug pages release_year contributions{author{name}} cached_tags}}`,
+            `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){slug pages release_year contributions{author{name}} cached_tags en:editions(where:{_and:[{isbn_13:{_is_null:false}},{language:{code2:{_eq:"en"}}}]},limit:3){isbn_13} any:editions(where:{isbn_13:{_is_null:false}},limit:3){isbn_13}}}`,
             { slug: gbid }
           );
 
@@ -275,6 +276,12 @@
           if (hc) {
             if (book.releaseYear == null && hc.release_year) updates.releaseYear = hc.release_year;
             if (!book.totalPages  && hc.pages)               updates.totalPages  = hc.pages;
+            // Backfills the back catalogue through a path that already exists,
+            // rather than needing a migration for every book added before this.
+            if (!book.isbn13) {
+              const isbn13 = pickIsbn13(hc.en, hc.any);
+              if (isbn13) updates.isbn13 = isbn13;
+            }
             if (!book.author) {
               const name = hc.contributions?.[0]?.author?.name;
               if (name) updates.author = name;
@@ -1251,7 +1258,7 @@
             card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
           }
           const keys = Object.keys(updates);
-          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country' };
+          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country', isbn13: 'ISBN' };
           const toast = document.createElement('div');
           toast.style.cssText = 'position:absolute;bottom:.75rem;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:.7rem;padding:.25rem .65rem;border-radius:20px;white-space:nowrap;z-index:2;opacity:0;transition:opacity .2s;pointer-events:none';
           toast.textContent = keys.length ? `Updated: ${keys.map(k => LABELS[k] || k).join(', ')}` : 'Already up to date';
@@ -1791,7 +1798,7 @@
             card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
           }
           const keys = Object.keys(updates);
-          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country' };
+          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country', isbn13: 'ISBN' };
           const toast = document.createElement('div');
           toast.style.cssText = 'position:absolute;bottom:.75rem;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:.7rem;padding:.25rem .65rem;border-radius:20px;white-space:nowrap;z-index:2;opacity:0;transition:opacity .2s;pointer-events:none';
           toast.textContent = keys.length ? `Updated: ${keys.map(k => LABELS[k] || k).join(', ')}` : 'Already up to date';
@@ -3579,9 +3586,9 @@
         await Promise.race([selectedBook._countryFetch, new Promise(r => setTimeout(r, 5000))]);
       }
       const { title, author, pages, gbid, cover, releaseYear, country, authorGender, genres } = selectedBook;
-      const workId = await workIdForSlug(gbid);
+      const { workId, isbn13 } = await metaForSlug(gbid);
 
-      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, workId, coverUrl: cover, releaseYear, country, authorGender, genres }, profile.username);
+      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, workId, isbn13, coverUrl: cover, releaseYear, country, authorGender, genres }, profile.username);
       const isPrivate = privateCheck.checked;
       if (isPrivate) await setBookPrivate(user.uid, id, true);
       const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, authorGender, genres, addedAt: { toDate: () => new Date() }, addedAtPrecision: 'day', private: isPrivate || undefined };
@@ -3692,7 +3699,7 @@
           document.getElementById('library-filter')?.dispatchEvent(new Event('input'));
         } else {
           const id = await addFinishedBook(user.uid, {
-            title, author, totalPages: pages, gbid, workId: await workIdForSlug(gbid),
+            title, author, totalPages: pages, gbid, ...(await metaForSlug(gbid)),
             coverUrl: cover, rating, review, releaseYear, country, authorGender, genres,
             finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,
             addedAt,    addedAtPrecision:    addedAt    ? startedPrec  : undefined

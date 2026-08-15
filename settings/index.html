@@ -225,7 +225,7 @@
     import { requireAuth } from '../js/auth.js';
     import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary, addEmailToAccount, deleteAccountData, getSyncToken, createSyncToken, revokeSyncToken } from '../js/firebase.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, searchHardcover } from '../js/hardcover.js';
-    import { computeDupeGroups, planWorkMerge } from '../js/book-utils.js';
+    import { computeDupeGroups, planWorkMerge, normaliseIsbn13 } from '../js/book-utils.js';
     import { normalizeCountry } from '../js/utils.js';
     import { updatePassword, reauthenticateWithCredential, EmailAuthProvider, deleteUser } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
@@ -490,9 +490,15 @@
           importStatus.textContent = `Don't close this tab - searching ${i + 1}/${remaining}: ${title}…`;
         });
         const matched = enrichedRaw.filter(b => b._hardcoverMatched).length;
-        const enriched = source === 'goodreads'
-          ? enrichedRaw.map(({ _grId, _isbn13, _hardcoverMatched, ...b }) => b)
-          : enrichedRaw.map(({ _isbn13, _hardcoverMatched, ...b }) => b);
+        // The export's own ISBN is better than anything we could look up: it is
+        // the edition this reader actually logged, not a representative one
+        // picked off a work record. It was being used to match against
+        // Hardcover and then dropped — keep it instead.
+        const keepIsbn = ({ _grId, _isbn13, _hardcoverMatched, ...b }) => {
+          const isbn13 = normaliseIsbn13(_isbn13);
+          return isbn13 ? { ...b, isbn13 } : b;
+        };
+        const enriched = enrichedRaw.map(keepIsbn);
         importStatus.textContent = `Matched ${matched}/${total} books. Saving to library…`;
         await importBooks(currentUser.uid, enriched, (saved, tot) => {
           importStatus.textContent = `Saving to library - ${saved}/${tot} done…`;

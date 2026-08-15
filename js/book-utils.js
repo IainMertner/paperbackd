@@ -343,3 +343,49 @@ export function libraryLink({ username, gbid } = {}) {
   if (gbid) parts.push(`book=${encodeURIComponent(gbid)}`);
   return `../library/${parts.length ? `?${parts.join('&')}` : ''}`;
 }
+
+// ── ISBN ────────────────────────────────────────────────────────────────────
+//
+// The only book identifier that means anything outside the API it came from.
+// Everything else on a book here — the slug in `gbid`, `workId` — is a key into
+// Hardcover's namespace, so a second source, or none, leaves nothing to join
+// on. Captured on add because it is free at that moment and expensive later:
+// backfilling means re-querying the API for the whole back catalogue.
+
+// A valid ISBN-13 is 13 digits. Hyphens and spaces are common in exported data.
+export function normaliseIsbn13(raw) {
+  const digits = String(raw ?? '').replace(/[\s-]/g, '');
+  return /^\d{13}$/.test(digits) ? digits : '';
+}
+
+// Picks the ISBN to keep from the editions an API returned.
+//
+// English first, deliberately: a book's editions come back in no useful order,
+// so an unfiltered list hands you the German or Russian printing as often as
+// not. Which edition a reader actually owns is unknowable from a work-level
+// record, so this is a join hint rather than a fact about their copy — but a
+// hint that resolves to the right work is the whole point.
+export function pickIsbn13(preferred = [], fallback = []) {
+  for (const list of [preferred, fallback]) {
+    for (const entry of list || []) {
+      const isbn = normaliseIsbn13(typeof entry === 'string' ? entry : entry?.isbn_13);
+      if (isbn) return isbn;
+    }
+  }
+  return '';
+}
+
+// The set worth caching per book: enough to survive one of them being wrong or
+// unknown to whatever catalogue is being matched against, without storing every
+// printing ever made.
+export function collectIsbn13s(preferred = [], fallback = [], limit = 6) {
+  const seen = new Set();
+  for (const list of [preferred, fallback]) {
+    for (const entry of list || []) {
+      const isbn = normaliseIsbn13(typeof entry === 'string' ? entry : entry?.isbn_13);
+      if (isbn) seen.add(isbn);
+      if (seen.size >= limit) return [...seen];
+    }
+  }
+  return [...seen];
+}

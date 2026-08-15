@@ -343,7 +343,9 @@ describe('enrichBatch — Goodreads ID stage', () => {
     }));
     await enrichBatch([{ title: 'Dune', _grId: '5' }]);
     expect(setHcCache.mock.calls[0][1]).toEqual({
-      slug: 'dune', coverUrl: 'c.jpg', pages: 412, release_year: 1965,
+      // isbns is always written, empty included: its absence is what marks an
+      // entry as never-looked-up and sends it back to the API.
+      slug: 'dune', coverUrl: 'c.jpg', pages: 412, release_year: 1965, isbns: [],
     });
   });
 
@@ -689,11 +691,43 @@ describe('enrichBatch — work id resolution', () => {
 
   it('takes a work id from the cache without querying', async () => {
     getHcCache.mockImplementation(async key =>
-      key === 'dune' ? { slug: 'dune', pages: 1, coverUrl: '', release_year: null, workId: 'hc:99' } : null);
+      key === 'dune'
+        ? { slug: 'dune', pages: 1, coverUrl: '', release_year: null, workId: 'hc:99', isbns: ['9780441013593'] }
+        : null);
+    global.fetch.mockResolvedValueOnce(searchRes([{ slug: 'dune' }]));
+    const [book] = await enrichBatch([{ title: 'Dune' }]);
+    expect(book.workId).toBe('hc:99');
+    expect(book.isbn13).toBe('9780441013593');
+    expect(global.fetch.mock.calls.filter(c => c[1].body.includes('canonical_id'))).toHaveLength(0);
+  });
+
+  it('does not re-query a cached book that genuinely has no ISBN', async () => {
+    // The empty array is the record of a completed lookup. Treating it as
+    // "missing" would re-query every ISBN-less book on every single touch —
+    // exactly the traffic the cache exists to prevent, and all of it against a
+    // rate limit shared by every user at once.
+    getHcCache.mockImplementation(async key =>
+      key === 'dune'
+        ? { slug: 'dune', pages: 1, coverUrl: '', release_year: null, workId: 'hc:99', isbns: [] }
+        : null);
     global.fetch.mockResolvedValueOnce(searchRes([{ slug: 'dune' }]));
     const [book] = await enrichBatch([{ title: 'Dune' }]);
     expect(book.workId).toBe('hc:99');
     expect(global.fetch.mock.calls.filter(c => c[1].body.includes('canonical_id'))).toHaveLength(0);
+  });
+
+  it('re-queries an entry cached before ISBNs were collected', async () => {
+    // No isbns key at all — written by an older version. Re-querying these is
+    // how the back catalogue fills in as books are touched, instead of needing
+    // a migration of its own.
+    getHcCache.mockImplementation(async key =>
+      key === 'dune' ? { slug: 'dune', pages: 1, coverUrl: '', release_year: null, workId: 'hc:99' } : null);
+    global.fetch
+      .mockResolvedValueOnce(searchRes([{ slug: 'dune' }]))
+      .mockResolvedValueOnce(worksRes([{ id: 7, slug: 'dune', canonical_id: null, en: [{ isbn_13: '9780441013593' }] }]));
+    const [book] = await enrichBatch([{ title: 'Dune' }]);
+    expect(book.isbn13).toBe('9780441013593');
+    expect(global.fetch.mock.calls.filter(c => c[1].body.includes('canonical_id'))).toHaveLength(1);
   });
 
   it('repairs a cache entry written before work ids existed', async () => {

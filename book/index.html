@@ -87,7 +87,7 @@
     import { requireAuth } from '../js/auth.js';
     import { getFollowing, getBookByGbid, getFriendBookStatus, getFriendListStatus, addBook, addFinishedBook, getLists, ensureDefaultList, addBookToList, removeBookFromList, getBookRemaps } from '../js/firebase.js';
     import { initSearchWidget } from '../js/search-widget.js';
-    import { workIdForSlug } from '../js/hardcover.js';
+    import { metaForSlug } from '../js/hardcover.js';
     import { resolveRemappedSlug } from '../js/book-utils.js';
     import { autoFit } from '../js/dropdown.js';
 
@@ -380,7 +380,8 @@
           startBtn.disabled = alreadyBtn.disabled = true;
           startBtn.textContent = 'Adding…';
           try {
-            await addBook(user.uid, { title, author, totalPages: pages, gbid, workId: await workIdForSlug(gbid), coverUrl: cover, releaseYear }, profile.username);
+            const meta = await metaForSlug(gbid);
+            await addBook(user.uid, { title, author, totalPages: pages, gbid, workId: meta.workId, isbn13: meta.isbn13, coverUrl: cover, releaseYear }, profile.username);
             showDone('Added to your currently reading!');
           } catch (e) {
             startBtn.textContent = 'Start reading';
@@ -435,7 +436,7 @@
               const { date: addedAt,    precision: startedPrec  } = startedPicker.getDate();
               const { date: finishedAt, precision: finishedPrec } = finishedPicker.getDate();
               await addFinishedBook(user.uid, {
-                title, author, totalPages: pages, gbid, workId: await workIdForSlug(gbid),
+                title, author, totalPages: pages, gbid, ...(await metaForSlug(gbid)),
                 coverUrl: cover, releaseYear,
                 rating, review,
                 finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,
