@@ -156,6 +156,7 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { getFollowing, getReadingBooks } from '../js/firebase.js';
+    import { progressPercent, orderReaders } from '../js/book-utils.js';
 
     function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
@@ -169,20 +170,18 @@
     const allReaders = [selfReader, ...following];
 
     const rows = await Promise.all(
-      allReaders.map(f =>
-        getReadingBooks(f.uid)
-          .then(books => ({ reader: f, books: books.filter(b => b.coverUrl) }))
-          .catch(() => ({ reader: f, books: [] }))
-      )
+      allReaders.map(f => {
+        const own = f.uid === user.uid;
+        return getReadingBooks(f.uid)
+          // Book docs are readable by any signed-in user, so keeping other
+          // people's private books off this page is done here or not at all.
+          // Your own stay: they are private from everyone but you.
+          .then(books => ({ reader: f, books: books.filter(b => b.coverUrl && (own || !b.private)) }))
+          .catch(() => ({ reader: f, books: [] }));
+      })
     );
 
-    const withBooks = rows
-        .filter(r => r.books.length > 0)
-        .sort((a, b) => {
-          const latestA = Math.max(...a.books.map(bk => bk.addedAt?.seconds ?? 0));
-          const latestB = Math.max(...b.books.map(bk => bk.addedAt?.seconds ?? 0));
-          return latestB - latestA;
-        });
+    const withBooks = orderReaders(rows.filter(r => r.books.length > 0), user.uid);
 
       if (!withBooks.length) {
         listEl.innerHTML = '<p class="reading-empty">Nobody is currently reading anything.</p>';
@@ -227,8 +226,10 @@
             img.alt = book.title || '';
             coverWrap.appendChild(img);
 
-            if (book.totalPages > 0) {
-              const pct = Math.min(100, Math.round((book.currentPage || 0) / book.totalPages * 100));
+            // Audiobooks record progressPct and have no page count, so the old
+            // currentPage / totalPages sum showed every one of them as unstarted.
+            const pct = progressPercent(book);
+            if (pct != null) {
               const track = document.createElement('div');
               track.className = 'cover-progress-track';
               const bar = document.createElement('div');

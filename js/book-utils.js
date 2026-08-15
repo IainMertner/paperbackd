@@ -271,3 +271,75 @@ export function computeDupeGroups(bookList) {
   }
   return [...groups.values()].filter(g => g.length > 1);
 }
+
+// ── Reading progress ────────────────────────────────────────────────────────
+//
+// Audiobooks record a percentage in progressPct; everything else records a page
+// number in currentPage. Every read and write has to pick a side — writing
+// currentPage for an audiobook saves cleanly and then shows no progress at all.
+
+export const isAudiobook = book => book?.format === 'Audiobook';
+
+// Whole-percent progress, or null when there is nothing to go on (no page count
+// recorded, so a page number means nothing on its own).
+export function progressPercent(book) {
+  if (!book) return null;
+  if (isAudiobook(book)) return Math.max(0, Math.min(100, Math.round(book.progressPct || 0)));
+  const total = Number(book.totalPages) || 0;
+  if (!total) return null;
+  return Math.max(0, Math.min(100, Math.round(((Number(book.currentPage) || 0) / total) * 100)));
+}
+
+// What to write for a typed value, and what that leaves the book at: the
+// Firestore patch, the clamped value to put back in the input, and the
+// resulting percentage (null when it cannot be worked out).
+export function progressUpdate(book, raw) {
+  const typed = Math.max(0, Math.floor(Number(raw) || 0));
+  if (isAudiobook(book)) {
+    const pct = Math.min(100, typed);
+    return { updates: { progressPct: pct }, value: pct, pct };
+  }
+  const total = Number(book.totalPages) || 0;
+  const page = total ? Math.min(typed, total) : typed;
+  return {
+    updates: { currentPage: page },
+    value: page,
+    pct: total ? Math.round((page / total) * 100) : null,
+  };
+}
+
+// How far along someone is, as text: "141 / 272", or "40%" for an audiobook.
+// Used where progress is shown but not edited — somebody else's book.
+export function progressText(book) {
+  if (isAudiobook(book)) return `${Math.max(0, Math.min(100, Math.round(book.progressPct || 0)))}%`;
+  return `${book.currentPage || 0} / ${book.totalPages || '?'}`;
+}
+
+// Orders the currently-reading rows shown on home and on /reading/: you first,
+// then everyone else by whoever picked up a book most recently.
+//
+// Shared because the two pages have to agree. Rows are { reader, books }, and a
+// reader is identified by uid.
+export function orderReaders(rows, selfUid) {
+  const latest = books => (books || []).reduce((max, bk) => Math.max(max, bk.addedAt?.seconds ?? 0), 0);
+  return [...rows].sort((a, b) => {
+    const aSelf = a.reader?.uid === selfUid;
+    const bSelf = b.reader?.uid === selfUid;
+    if (aSelf !== bSelf) return aSelf ? -1 : 1;
+    return latest(b.books) - latest(a.books);
+  });
+}
+
+// Link into a library, optionally somebody else's and optionally opening a
+// particular book. The library reads ?u= to pick whose shelf to show and ?book=
+// to click the matching cell open.
+//
+// An empty gbid is left out entirely rather than sent as ?book=: the page turns
+// it into a [data-gbid=""] selector, which matches the first book that also
+// lacks a gbid and confidently opens the wrong one.
+export function libraryLink({ username, gbid } = {}) {
+  const parts = [];
+  if (username) parts.push(`u=${encodeURIComponent(username)}`);
+  if (gbid) parts.push(`book=${encodeURIComponent(gbid)}`);
+  return `../library/${parts.length ? `?${parts.join('&')}` : ''}`;
+}

@@ -140,6 +140,8 @@
       flex-shrink: 0;
     }
     .home-reading-username:hover { color: var(--text); }
+    .home-reading-you { color: var(--accent); }
+    .home-reading-you:hover { color: var(--accent); opacity: .8; }
     .home-reading-books {
       display: flex;
       gap: .2rem;
@@ -153,6 +155,26 @@
       display: block;
       box-shadow: 0 1px 4px rgba(0,0,0,.2);
     }
+    .home-reading-cover-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      background: var(--bg-alt);
+      box-shadow: none;
+    }
+    /* Covers are buttons, not links — they open the progress popover. */
+    .home-reading-book {
+      position: relative;
+      display: block;
+      padding: 0;
+      border: none;
+      background: none;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: transform .12s ease;
+    }
+    .home-reading-book:hover { transform: translateY(-2px); }
 
     /* Announcements */
     #announcements-list { display: flex; flex-direction: column; gap: .45rem; }
@@ -314,6 +336,8 @@
     import { requireAuth } from '../js/auth.js';
     import { getFollowing, getReadingBooks, getFeed, getAnnouncements, toggleReaction, toggleAnnouncementReaction, getBookByGbid } from '../js/firebase.js';
     import { timeAgo } from '../js/utils.js';
+    import { openQuickProgress } from '../js/quick-progress.js';
+    import { orderReaders } from '../js/book-utils.js';
 
     function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
     function toAuthorSlug(n) { return n.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,''); }
@@ -673,35 +697,81 @@
       .catch(() => { feedPreviewEl.innerHTML = '<p class="home-empty">Could not load feed.</p>'; });
 
     // — Currently reading —————————————————————————————————————————
+    function coverImage(book) {
+      if (!book.coverUrl) {
+        const ph = document.createElement('div');
+        ph.className = 'home-reading-cover home-reading-cover-empty';
+        ph.textContent = '📖';
+        return ph;
+      }
+      const img = document.createElement('img');
+      img.className = 'home-reading-cover';
+      img.src = book.coverUrl;
+      img.alt = book.title || '';
+      return img;
+    }
+
+    // Every cover in the strip opens the progress popover rather than
+    // navigating: yours editable, everyone else's read-only. The book and
+    // author pages are still one click away, from inside the card.
+    function stripCover(book, { own, reader }) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'home-reading-book';
+      btn.title = book.title || '';
+      btn.appendChild(coverImage(book));
+      if (own && book.private) {
+        const lock = document.createElement('div');
+        lock.className = 'library-cover-lock';
+        lock.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+        btn.appendChild(lock);
+      }
+      btn.addEventListener('click', () =>
+        openQuickProgress(book, own ? { uid: user.uid } : { readOnly: true, reader }));
+      return btn;
+    }
+
     const readingNowEl = document.getElementById('reading-now');
-    if (!following.length) {
-      readingNowEl.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:.4rem;padding:1.5rem 1rem;text-align:center">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="28" height="28" style="color:var(--text-muted);opacity:.4;margin-bottom:.1rem"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
-        <p class="home-empty" style="margin:0">Follow readers to see what they're reading.</p>
-        <a href="../network/" style="font-size:.8125rem;color:var(--accent);text-decoration:none">Find readers to follow →</a>
-      </div>`;
-    } else {
-      Promise.all(
+    {
+      // Your own shelf goes first, so the commonest thing anyone wants from
+      // this page — nudging a page number — does not start with a trip to the
+      // library. Unlike everyone else's, your own books are shown whether or
+      // not they have a cover and whether or not they are private: they are
+      // yours, and hiding them from your own row just looks broken.
+      const mineP = getReadingBooks(user.uid).catch(() => []);
+      const followedP = Promise.all(
         following.map(f =>
           getReadingBooks(f.uid)
             .then(books => ({ reader: f, books: books.filter(b => b.coverUrl && !b.private) }))
             .catch(() => ({ reader: f, books: [] }))
         )
-      ).then(rows => {
+      );
+      Promise.all([mineP, followedP]).then(([mine, rows]) => {
+        // The cap is on how many other people are shown, so your own row can
+        // never be the one pushed out.
         const withBooks = rows.filter(r => r.books.length > 0).slice(0, 10);
-        if (!withBooks.length) {
-          readingNowEl.innerHTML = '<p class="home-empty">Nobody you follow is currently reading.</p>';
+        if (!mine.length && !withBooks.length) {
+          readingNowEl.innerHTML = following.length
+            ? '<p class="home-empty">Nobody you follow is currently reading.</p>'
+            : `<div style="display:flex;flex-direction:column;align-items:center;gap:.4rem;padding:1.5rem 1rem;text-align:center">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="28" height="28" style="color:var(--text-muted);opacity:.4;margin-bottom:.1rem"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+                <p class="home-empty" style="margin:0">Follow readers to see what they're reading.</p>
+                <a href="../network/" style="font-size:.8125rem;color:var(--accent);text-decoration:none">Find readers to follow →</a>
+              </div>`;
           return;
         }
-        withBooks.sort((a, b) => {
-          const latestA = Math.max(...a.books.map(bk => bk.addedAt?.seconds ?? 0));
-          const latestB = Math.max(...b.books.map(bk => bk.addedAt?.seconds ?? 0));
-          return latestB - latestA;
-        });
+        mine.sort((a, b) => (b.addedAt?.seconds ?? 0) - (a.addedAt?.seconds ?? 0));
+
+        // Shared with /reading/ so the two pages cannot drift out of step.
+        const groups = orderReaders(
+          mine.length ? [{ reader: { uid: user.uid }, books: mine }, ...withBooks] : withBooks,
+          user.uid,
+        );
+
         const scroll = document.createElement('div');
         scroll.className = 'home-reading-scroll';
         const labelPairs = [];
-        withBooks.forEach(({ reader, books }, i) => {
+        groups.forEach(({ reader, books }, i) => {
           if (i > 0) {
             const sep = document.createElement('span');
             sep.className = 'home-reading-sep';
@@ -709,21 +779,23 @@
           }
           const group = document.createElement('div');
           group.className = 'home-reading-group';
+          const own = reader.uid === user.uid;
           const nameLink = document.createElement('a');
           nameLink.className = 'home-reading-username';
-          nameLink.href = `../profile/?u=${encodeURIComponent(reader.username)}`;
-          nameLink.textContent = reader.username;
+          if (own) {
+            // Not your username: this row is a shelf you can act on, and it
+            // should not read as just another person in the list.
+            nameLink.href = '../library/';
+            nameLink.textContent = 'you';
+            nameLink.classList.add('home-reading-you');
+          } else {
+            nameLink.href = `../profile/?u=${encodeURIComponent(reader.username)}`;
+            nameLink.textContent = reader.username;
+          }
           const booksDiv = document.createElement('div');
           booksDiv.className = 'home-reading-books';
           books.forEach(book => {
-            const a = document.createElement('a');
-            a.href = book.gbid ? `../book/?gbid=${encodeURIComponent(book.gbid)}` : '#';
-            const img = document.createElement('img');
-            img.className = 'home-reading-cover';
-            img.src = book.coverUrl;
-            img.alt = book.title || '';
-            a.appendChild(img);
-            booksDiv.appendChild(a);
+            booksDiv.appendChild(stripCover(book, { own, reader }));
           });
           group.append(booksDiv, nameLink);
           scroll.appendChild(group);
