@@ -1451,3 +1451,39 @@ body.auth-loading .mobile-nav { visibility: hidden; animation: auth-reveal 0s 8s
   text-align: center;
 }
 .global-toast.visible { opacity: 1; }
+
+/* ── No zoom-on-focus (trial: two fields) ───────────────────────
+   iOS zooms the page in when you focus a field whose text is under 16px, and
+   does not zoom back out. Every field here is smaller than that by design.
+
+   The check reads the field's *computed* font-size, not what ends up on
+   screen — so the fix is to compute at 16px and scale the whole element back
+   down. Every length below is the original divided by --s, which means scaling
+   by --s reproduces the field as it was.
+
+   A scaled element still occupies its full-size layout box, so the negative
+   margins give back exactly what the scale leaves behind. Heights are set
+   explicitly rather than left to padding, so that arithmetic has a known
+   number to work from; inputs centre their text vertically on their own.
+
+   Scoped to coarse pointers: a mouse never triggers the zoom, so desktop keeps
+   the real 13px and none of this applies. */
+@media (pointer: coarse) {
+  .page-input,
+  .quick-progress-input {
+    font-size: 16px;
+    line-height: calc(16px / var(--s));
+    width: calc(var(--w) / var(--s));
+    height: calc(var(--h) / var(--s));
+    padding: 0 calc(.45rem / var(--s));
+    border-width: calc(1px / var(--s));
+    border-radius: calc(var(--radius-sm) / var(--s));
+    transform: scale(var(--s));
+    margin-inline: calc(var(--w) * (var(--s) - 1) / var(--s) / 2);
+    margin-block: calc(var(--h) * (var(--s) - 1) / var(--s) / 2);
+  }
+
+  /* --s is the old font-size over 16px; --w and --h are the box it had. */
+  .page-input          { --s: .825; --w: 44px; --h: 27.4px; }  /* was .825rem */
+  .quick-progress-input { --s: .95; --w: 4rem; --h: 29.8px; }  /* was .95rem  */
+}
