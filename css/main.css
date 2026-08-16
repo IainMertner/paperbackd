@@ -697,7 +697,11 @@ a.book-author:hover { color: var(--text); }
 /* ── Add book card ─────────────────────────────────────────── */
 .add-book-card { margin-top: 1rem; }
 
-.add-book-toggle {
+/* :not([hidden]) so the display here does not beat the hidden attribute — the
+   JS sets toggle.hidden when the form opens, and an author display rule
+   overrides the browser's own [hidden] { display: none }. Same guard as
+   .profile-actions below. */
+.add-book-toggle:not([hidden]) {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -1027,6 +1031,12 @@ a.book-author:hover { color: var(--text); }
 .books-list-row { display: flex !important; align-items: center; padding: .35rem 0; border-bottom: 1px solid var(--border); cursor: pointer; min-width: 0; overflow: hidden; transition: background .12s ease; border-radius: var(--radius-sm); }
 .books-list-row:hover { background: var(--bg-alt); }
 .books-list-row.hidden { display: none !important; }
+/* Thumbnail in list view — small enough to keep the density that makes list
+   view worth using, big enough for a cover to be recognisable at a glance. */
+.books-list-cover { width: 20px; height: 30px; object-fit: cover; border-radius: 2px; flex-shrink: 0; margin-right: .5rem; display: block; box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+/* Books with no cover keep the same footprint, so the titles stay in one
+   column rather than jumping left wherever a cover is missing. */
+.books-list-cover-empty { background: var(--bg-alt); border: 1px solid var(--border); box-shadow: none; }
 .library-cover-cell { width: calc(25% - .375rem); position: relative; cursor: pointer; flex-shrink: 0; border-radius: var(--radius-sm); overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.12), 0 0 0 1px rgba(0,0,0,.07); }
 @media (min-width: 600px) {
   .library-cover-cell { width: calc(16.6667% - .4167rem); }
@@ -1400,6 +1410,9 @@ body.auth-loading .mobile-nav { visibility: hidden; animation: auth-reveal 0s 8s
   align-items: center;
   gap: .875rem;
   padding: .625rem 0;
+  /* Tallest media (a 60px cover) plus the padding, so a row holding a 40px
+     avatar is the same height as one holding a cover. */
+  min-height: 80px;
   border-bottom: 1px solid var(--border);
   text-decoration: none;
   color: var(--text);
@@ -1408,21 +1421,75 @@ body.auth-loading .mobile-nav { visibility: hidden; animation: auth-reveal 0s 8s
 }
 .search-result-row:last-child { border-bottom: none; }
 .search-result-row:hover { background: var(--bg-alt); padding-left: .5rem; padding-right: .5rem; margin: 0 -.5rem; }
-.search-result-cover {
-  width: 42px;
-  height: 63px;
+/* One media column for all three result types. Books, authors and users used
+   to be 42, 42 and 36 wide, so the text after them started in three different
+   places down a single list. Width is set once, here; only the heights differ. */
+.search-result-cover,
+.search-result-cover-placeholder,
+.search-result-row .friend-avatar { width: 40px; flex-shrink: 0; }
+
+.search-result-cover,
+.search-result-cover-placeholder { height: 60px; border-radius: 3px; }
+
+.search-result-row .friend-avatar { height: 40px; border-radius: 50%; }
+
+/* ── Hexagonal avatar (authors) ─────────────────────────────
+   Set --hex-w to resize; everything else follows from it, so the same shape
+   serves a 40px search row and a 72px author page header.
+
+   Height is width x 2/sqrt(3), because a regular pointy-top hexagon is taller
+   than it is wide. Fitting one into a square stretches it sideways by 15% and
+   it just reads as a squashed blob.
+
+   The border is a second hexagon behind the image rather than a border
+   property: a clip-path cuts through a border, leaving it drawn on some edges
+   and not others. The image sits at 87.5% of the box, which at 40px wide gives
+   the 2.5px ring .friend-avatar uses, and scales from there. Shrinking a
+   regular polygon about its centre keeps that ring even on every edge.
+
+   The shadow is a filter, not a box-shadow, for the same clipping reason — and
+   it lives on the wrapper, which is deliberately left unclipped so the shadow
+   survives. Clipping this element too would cut its own shadow off. */
+.hex-avatar {
+  --hex-w: 40px;
+  --hex: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  width: var(--hex-w);
+  height: calc(var(--hex-w) * 1.1547);
+  flex-shrink: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,.22));
+}
+.hex-avatar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--border);
+  clip-path: var(--hex);
+}
+.hex-avatar-img {
+  position: relative;
+  width: 87.5%;
+  height: 87.5%;
   object-fit: cover;
-  border-radius: 3px;
-  flex-shrink: 0;
+  clip-path: var(--hex);
 }
-.search-result-cover-placeholder {
-  width: 42px;
-  height: 63px;
+.hex-avatar-placeholder {
   background: var(--bg-alt);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  flex-shrink: 0;
+  /* Scales with the hexagon, so the initial fills it the same way at any size. */
+  font-size: calc(var(--hex-w) * .42);
+  color: var(--text-muted);
 }
+
+.search-result-cover,
+.search-result-cover-placeholder,
+.search-result-row .friend-avatar { box-shadow: 0 1px 3px rgba(0,0,0,.22); }
+
+/* No border on the hexagon's placeholder: a clip-path cuts straight through
+   one, leaving the edge drawn on some sides and not others. */
+.search-result-cover-placeholder { background: var(--bg-alt); border: 1px solid var(--border); }
 .search-result-title { font-size: .9rem; font-weight: 500; line-height: 1.3; }
 .search-result-meta  { font-size: .78rem; color: var(--text-muted); margin-top: .2rem; }
 

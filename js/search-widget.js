@@ -60,8 +60,8 @@ function makeAuthorRow(doc) {
   a.href = `../author/?slug=${encodeURIComponent(slug)}&name=${encodeURIComponent(name)}`;
   a.className = 'search-result-row';
   a.innerHTML = image
-    ? `<img class="search-result-cover" src="${esc(image)}" alt="" style="border-radius:50%;object-fit:cover">`
-    : `<div class="search-result-cover search-result-cover-placeholder" style="border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem">${esc((name[0] || '?').toUpperCase())}</div>`;
+    ? `<span class="hex-avatar"><img class="hex-avatar-img" src="${esc(image)}" alt=""></span>`
+    : `<span class="hex-avatar"><span class="hex-avatar-img hex-avatar-placeholder">${esc((name[0] || '?').toUpperCase())}</span></span>`;
   a.innerHTML += `<div class="search-result-info"><div class="search-result-title">${esc(name)}</div>${booksCount != null ? `<div class="search-result-meta">${booksCount} book${booksCount === 1 ? '' : 's'}</div>` : ''}</div>`;
   a.addEventListener('click', () => saveRecent({
     type: 'author', label: name, sublabel: booksCount != null ? `${booksCount} book${booksCount === 1 ? '' : 's'}` : '', coverUrl: image,
@@ -86,6 +86,9 @@ function makeUserRow(u) {
   a.addEventListener('click', () => saveRecent({
     type: 'user', label: u.username, sublabel: '', coverUrl: u.avatarUrl || '',
     href: a.href, initial, isRound: true, borderColor: u.avatarBorderColor || '',
+    // The search page renders recents and needs both: the uid to count
+    // followers with, the display name to show beside the username.
+    uid: u.uid, displayName: u.displayName || '',
   }));
   return a;
 }

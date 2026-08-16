@@ -36,6 +36,34 @@
       filter: url(#ink-edge);
       z-index: -1;
     }
+
+    /* Same treatment on the add-book card. Unlike the modal cards this one is
+       in normal page flow, so it needs isolation: without a stacking context
+       of its own the z-index:-1 layer falls behind the page background and
+       disappears.
+
+       That isolation then traps the search suggestions inside the card, and
+       the books grid below — later in the DOM — would paint over them. z-index
+       lifts the card clear of the grid while staying under the filter dropdown
+       above it, which is 100 and hangs down across this card. */
+    .add-book-card {
+      position: relative;
+      isolation: isolate;
+      z-index: 20;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    .add-book-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      background: var(--bg-card);
+      box-shadow: var(--shadow);
+      filter: url(#ink-edge);
+      z-index: -1;
+    }
   </style>
 </head>
 <body>
@@ -246,7 +274,12 @@
         const pct = book.format === 'Audiobook' ? book.progressPct : Math.round((book.currentPage / book.totalPages) * 100);
         rightHtml = `<span style="flex-shrink:0;margin-left:.5rem;font-size:.75rem;color:var(--text-muted)">${pct}%</span>`;
       }
-      el.innerHTML = `<div style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:.875rem;font-weight:600">${esc(book.title)}${author}</div>${rightHtml}`;
+      // lazy: a large library renders every row up front, and these are the
+      // only images in list view.
+      const coverHtml = book.coverUrl
+        ? `<img class="books-list-cover" src="${esc(book.coverUrl)}" alt="" loading="lazy">`
+        : `<div class="books-list-cover books-list-cover-empty"></div>`;
+      el.innerHTML = `${coverHtml}<div style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:.875rem;font-weight:600">${esc(book.title)}${author}</div>${rightHtml}`;
       return el;
     }
 

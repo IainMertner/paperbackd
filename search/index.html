@@ -94,7 +94,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { searchUsers } from '../js/firebase.js';
+    import { searchUsers, getFollowerCount } from '../js/firebase.js';
     import { searchBooks } from '../js/hardcover.js';
 
     const { user } = await requireAuth();
@@ -125,9 +125,26 @@
       list.unshift(item);
       localStorage.setItem(RECENTS_KEY, JSON.stringify(list.slice(0, RECENTS_MAX)));
     }
+    // Fills a row's meta line with the follower count, after the row is already
+    // on screen — results should not wait on a count query per user. Silent on
+    // failure: the row still works, and the row's min-height fixes its size
+    // either way. Shared by results and recents so the two rows stay identical.
+    function fillFollowerCount(row, uid) {
+      const metaEl = row.querySelector('.search-result-meta');
+      if (!metaEl || !uid) return;
+      getFollowerCount(uid)
+        .then(n => { metaEl.textContent = `${n} ${n === 1 ? 'follower' : 'followers'}`; })
+        .catch(() => {});
+    }
+
+    // Tab ids are plural, the type stored on a recent is singular.
+    const RECENT_TYPE_FOR_TAB = { users: 'user', books: 'book', authors: 'author' };
+
     function renderRecents() {
       results.innerHTML = '';
-      const list = getRecents();
+      // 'all' has no entry, so nothing is filtered out there.
+      const wanted = RECENT_TYPE_FOR_TAB[activeTab];
+      const list = getRecents().filter(r => !wanted || r.type === wanted);
       if (!list.length) return;
       const hdr = document.createElement('div');
       hdr.style.cssText = 'font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:.35rem';
@@ -147,17 +164,28 @@
           coverHtml = `<div class="friend-avatar" style="flex-shrink:0;${bs}">${inner}</div>`;
         } else if (item.isRound) {
           coverHtml = item.coverUrl
-            ? `<img class="search-result-cover" src="${esc(item.coverUrl)}" alt="" style="border-radius:50%;object-fit:cover">`
-            : `<div class="search-result-cover search-result-cover-placeholder" style="border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem">${esc(item.initial)}</div>`;
+            ? `<span class="hex-avatar"><img class="hex-avatar-img" src="${esc(item.coverUrl)}" alt=""></span>`
+            : `<span class="hex-avatar"><span class="hex-avatar-img hex-avatar-placeholder">${esc(item.initial)}</span></span>`;
         } else {
           coverHtml = item.coverUrl
             ? `<img class="search-result-cover" src="${esc(item.coverUrl)}" alt="">`
             : `<div class="search-result-cover search-result-cover-placeholder"></div>`;
         }
+        // Users get the same row as in results: display name beside the
+        // username, follower count beneath. Recents saved before those fields
+        // were stored simply have neither, and fall back to the plain row.
+        const isUser    = item.type === 'user';
+        const showName  = isUser && item.displayName
+                          && item.displayName.toLowerCase() !== String(item.label).toLowerCase();
+        const nameHtml  = showName ? ` <span class="network-row-handle">${esc(item.displayName)}</span>` : '';
+        const metaHtml  = isUser
+          ? (item.uid ? '<div class="search-result-meta"></div>' : '')
+          : (item.sublabel ? `<div class="search-result-meta">${esc(item.sublabel)}</div>` : '');
         a.innerHTML = `${coverHtml}<div class="search-result-info">
-          <div class="search-result-title" style="font-size:.9rem">${esc(item.label)}</div>
-          ${item.sublabel ? `<div class="search-result-meta">${esc(item.sublabel)}</div>` : ''}
+          <div class="search-result-title" style="font-size:.9rem">${esc(item.label)}${nameHtml}</div>
+          ${metaHtml}
         </div>`;
+        if (isUser) fillFollowerCount(a, item.uid);
         const xBtn = document.createElement('button');
         xBtn.type = 'button';
         xBtn.innerHTML = '&times;';
@@ -331,8 +359,8 @@
         a.href = `../author/?slug=${encodeURIComponent(slug)}`;
         a.className = 'search-result-row';
         a.innerHTML = image
-          ? `<img class="search-result-cover" src="${esc(image)}" alt="" style="border-radius:50%;object-fit:cover">`
-          : `<div class="search-result-cover search-result-cover-placeholder" style="border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem">${esc((name[0] || '?').toUpperCase())}</div>`;
+          ? `<span class="hex-avatar"><img class="hex-avatar-img" src="${esc(image)}" alt=""></span>`
+          : `<span class="hex-avatar"><span class="hex-avatar-img hex-avatar-placeholder">${esc((name[0] || '?').toUpperCase())}</span></span>`;
         a.innerHTML += `<div class="search-result-info"><div class="search-result-title">${esc(name)}</div>${booksCount != null ? `<div class="search-result-meta">${booksCount} book${booksCount === 1 ? '' : 's'}</div>` : ''}</div>`;
         a.addEventListener('click', () => saveRecent({
           type: 'author', label: name, sublabel: booksCount != null ? `${booksCount} book${booksCount === 1 ? '' : 's'}` : '', coverUrl: image,
@@ -405,12 +433,17 @@
         a.innerHTML = `<div class="friend-avatar" style="flex-shrink:0;${borderStyle}">${avatarInner}</div>
           <div class="search-result-info">
             <div class="search-result-title" style="font-size:.9rem">${esc(u.username)}${showName ? ` <span class="network-row-handle">${esc(u.displayName)}</span>` : ''}</div>
+            <div class="search-result-meta"></div>
           </div>`;
         a.addEventListener('click', () => saveRecent({
           type: 'user', label: u.username, sublabel: '', coverUrl: u.avatarUrl || '',
           href: a.href, initial, isRound: true, borderColor: u.avatarBorderColor || '',
+          // Kept so the recents list can render the same row: the uid to count
+          // followers with, and the display name to show beside the username.
+          uid: u.uid, displayName: u.displayName || '',
         }));
         results.appendChild(a);
+        fillFollowerCount(a, u.uid);
       });
     }
 

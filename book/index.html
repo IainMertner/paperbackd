@@ -16,8 +16,57 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>book - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
+  <style>
+    /* Inked edge on every card here — the book detail, the start/finish
+       actions, and each friend row. isolation:isolate because these sit in
+       normal page flow: with no stacking context of their own, the z-index:-1
+       layer falls behind the opaque page background and disappears. */
+    .card {
+      position: relative;
+      isolation: isolate;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      background: var(--bg-card);
+      box-shadow: var(--shadow);
+      filter: url(#ink-edge);
+      z-index: -1;
+    }
+    /* The Lists dropdown lives inside this card, and the isolate above traps
+       its z-index within the card's own stacking context — so the friend cards
+       rendered after it would paint straight over the open menu. Raising the
+       whole card puts that context above its later siblings.
+
+       1, not something larger: the search widget above is z-index 10 and its
+       suggestions hang down across these cards, so anything above that would
+       cover them instead. */
+    .book-actions-card { z-index: 1; }
+
+    /* A sibling of the year rather than its parent, so the year keeps the body
+       font instead of inheriting the slab serif. */
+    .book-detail-title { font-family: 'Arvo', serif; font-size: 1.1rem; font-weight: 700; line-height: 1.3; }
+    .book-detail-year  { font-size: .8rem; font-weight: 400; color: var(--text-muted); margin-left: .4rem; }
+  </style>
 </head>
 <body>
+
+  <!-- The filter the card rule references. filter: url() pointing at a missing
+       id stops the element rendering at all, so the card background would
+       disappear rather than simply lose its rough edge. -->
+  <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <defs>
+      <filter id="ink-edge" x="-25%" y="-25%" width="150%" height="150%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" seed="5" result="noise"/>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
 
   <header class="site-header">
     <div class="header-inner">
@@ -264,7 +313,7 @@
         ${cover?.startsWith('https://') ? `<img src="${cover}" alt="" style="width:80px;border-radius:var(--radius-sm);flex-shrink:0;display:block;box-shadow:0 1px 4px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.07)">` : ''}
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:flex-start;gap:.5rem">
-            <div style="font-size:1.1rem;font-weight:700;line-height:1.3;flex:1">${esc(title)}${releaseYear ? `<span style="font-size:.8rem;font-weight:400;color:var(--text-muted);margin-left:.4rem">${releaseYear}</span>` : ''}</div>
+            <div style="flex:1"><span class="book-detail-title">${esc(title)}</span>${releaseYear ? `<span class="book-detail-year">${releaseYear}</span>` : ''}</div>
             <div style="display:flex;gap:.3rem;align-items:center;padding-top:.2rem;flex-shrink:0">
               ${goodreadsHref ? `<a href="${goodreadsHref}" target="_blank" rel="noopener" title="View on Goodreads"><img src="https://www.google.com/s2/favicons?domain=goodreads.com&sz=32" width="16" height="16" alt="Goodreads" style="border-radius:2px;opacity:.75;display:block"></a>` : ''}
               ${gbid && !/^\d+$/.test(gbid) ? `<a href="https://hardcover.app/books/${gbid}" target="_blank" rel="noopener" title="View on Hardcover"><img src="https://www.google.com/s2/favicons?domain=hardcover.app&sz=32" width="16" height="16" alt="Hardcover" style="border-radius:2px;opacity:.75;display:block"></a>` : ''}
@@ -355,7 +404,7 @@
 
       if (!myBook) {
         const actionsCard = document.createElement('div');
-        actionsCard.className = 'card';
+        actionsCard.className = 'card book-actions-card';
 
         const btnRow = document.createElement('div');
         btnRow.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap';
@@ -451,7 +500,7 @@
         });
       } else {
         const actionsCard = document.createElement('div');
-        actionsCard.className = 'card';
+        actionsCard.className = 'card book-actions-card';
         const btnRow = document.createElement('div');
         btnRow.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap;align-items:center';
         const libLink = document.createElement('a');

@@ -250,6 +250,17 @@ export async function getFollowers(uid) {
   return snap.docs.map(d => ({ uid: d.id, ...d.data() }));
 }
 
+// How many people follow this uid, without pulling their profiles back.
+//
+// Same query as getFollowers, but a server-side count: a page of search results
+// asks for ten of these at once, and the follower documents are never used.
+export async function getFollowerCount(uid) {
+  const snap = await getCountFromServer(
+    query(collection(db, 'users'), where('following', 'array-contains', uid))
+  );
+  return snap.data().count;
+}
+
 export async function followUser(currentUid, targetUsername) {
   const lower = targetUsername.toLowerCase();
   const usernameSnap = await getDoc(doc(db, 'usernames', lower));

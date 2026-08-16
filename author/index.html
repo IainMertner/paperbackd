@@ -16,8 +16,44 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>author - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
+  <style>
+    /* Inked edge, matching home and feed. isolation:isolate is required here
+       and not in the library modals: a card in normal page flow has no
+       stacking context of its own, so the z-index:-1 layer would fall behind
+       the opaque page background and vanish. */
+    .card {
+      position: relative;
+      isolation: isolate;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      background: var(--bg-card);
+      box-shadow: var(--shadow);
+      filter: url(#ink-edge);
+      z-index: -1;
+    }
+    .author-name { font-family: 'Arvo', serif; font-size: 1.15rem; font-weight: 700; line-height: 1.3; }
+  </style>
 </head>
 <body>
+
+  <!-- The filter the card rule references. filter: url() pointing at a missing
+       id stops the element rendering at all, so the card background would
+       disappear rather than simply lose its rough edge. -->
+  <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <defs>
+      <filter id="ink-edge" x="-25%" y="-25%" width="150%" height="150%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" seed="5" result="noise"/>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
 
   <header class="site-header">
     <div class="header-inner">
@@ -180,9 +216,9 @@
       const headerCard = document.createElement('div');
       headerCard.className = 'card';
       headerCard.innerHTML = `<div style="display:flex;gap:1rem;align-items:flex-start">
-        ${photo ? `<img src="${esc(photo)}" alt="" style="width:72px;height:72px;border-radius:50%;object-fit:cover;flex-shrink:0">` : ''}
+        ${photo ? `<span class="hex-avatar" style="--hex-w:72px"><img class="hex-avatar-img" src="${esc(photo)}" alt=""></span>` : ''}
         <div style="flex:1;min-width:0">
-          <div style="font-size:1.15rem;font-weight:700;line-height:1.3">${esc(author.name)}</div>
+          <div class="author-name">${esc(author.name)}</div>
           ${bio ? `<div class="author-bio" style="font-size:.83rem;color:var(--text-muted);margin-top:.5rem;line-height:1.55">${esc(bio.slice(0, 350))}${bio.length > 350 ? '<span class="author-bio-more" style="cursor:pointer"> …</span>' : ''}</div>` : ''}
         </div>
       </div>`;
