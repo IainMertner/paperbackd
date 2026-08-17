@@ -269,3 +269,52 @@ export function normalizeCountry(raw) {
 
   return raw;
 }
+
+// How many overlapping spines fit a container of a given width.
+//
+// The first spine costs its full width; every one after it costs only
+// width - overlap, because they are pulled back over each other. Used by the
+// lists page, which shows as many book spines as the card can actually hold at
+// the current viewport rather than a fixed number.
+export function spineCapacity(containerWidth, spineWidth, overlap) {
+  const step = spineWidth - overlap;
+  if (!(containerWidth > 0) || !(step > 0)) return 1;
+  // Never returns zero: a card too narrow for even one spine still looks more
+  // sensible showing a clipped spine than showing an empty strip.
+  return Math.max(1, Math.floor((containerWidth - spineWidth) / step) + 1);
+}
+
+// ── List ordering ───────────────────────────────────────────────────────────
+
+// Orders a user's lists for display.
+//
+// The reading list is pinned first and outranks everything, including an
+// explicit sortIndex — a stale or hand-edited index cannot dislodge it, so the
+// UI never has to be the only thing enforcing that.
+//
+// Below it, an explicit sortIndex wins: once someone has arranged their lists by
+// hand, that arrangement is the answer. Lists with no sortIndex sort after those
+// that have one, keeping the original DNF-next rule, so a set nobody has
+// reordered looks exactly as it always did.
+export function compareLists(a, b) {
+  if (!!a?.isDefault !== !!b?.isDefault) return a?.isDefault ? -1 : 1;
+  const ai = Number.isFinite(a?.sortIndex) ? a.sortIndex : null;
+  const bi = Number.isFinite(b?.sortIndex) ? b.sortIndex : null;
+  if (ai !== null && bi !== null) return ai - bi;
+  if (ai !== null) return -1;
+  if (bi !== null) return 1;
+  if (!!a?.isDnf !== !!b?.isDnf) return a?.isDnf ? -1 : 1;
+  return 0;
+}
+
+// Moves the item at `from` by `delta` places, returning a new array. Out-of-range
+// moves return an unchanged copy rather than throwing or dropping the item, so a
+// button pressed at either end is a no-op.
+export function moveInArray(items, from, delta) {
+  const next = (items || []).slice();
+  const to = from + delta;
+  if (from < 0 || from >= next.length || to < 0 || to >= next.length) return next;
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}

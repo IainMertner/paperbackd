@@ -134,7 +134,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getFollowing, getBookByGbid, getFriendBookStatus, getFriendListStatus, addBook, addFinishedBook, getLists, ensureDefaultList, addBookToList, removeBookFromList, getBookRemaps } from '../js/firebase.js';
+    import { getFollowing, getBookByGbid, getFriendBookStatus, getFriendListStatus, addBook, addFinishedBook, getLists, ensureDefaultList, addBookToList, removeBookFromList, getBookRemaps, DEFAULT_LIST_NAME } from '../js/firebase.js';
     import { initSearchWidget } from '../js/search-widget.js';
     import { metaForSlug } from '../js/hardcover.js';
     import { resolveRemappedSlug } from '../js/book-utils.js';
@@ -377,7 +377,7 @@
                 check.style.cssText = 'color:var(--accent);width:1em;flex-shrink:0';
                 check.textContent = membership[l.id] ? '✓' : '';
                 const name = document.createElement('span');
-                name.textContent = l.isDefault ? 'Reading list' : l.name;
+                name.textContent = l.isDefault ? DEFAULT_LIST_NAME : l.name;
                 item.append(check, name);
                 item.addEventListener('click', async e => {
                   e.stopPropagation();

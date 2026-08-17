@@ -44,15 +44,20 @@
     .list-card + .list-card { margin-top: .55rem; }
     .list-card-head {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: .6rem;
+      align-items: baseline;
+      /* flex-start, not space-between: the count reads as part of the title
+         rather than as a column pinned to the far edge. */
+      justify-content: flex-start;
+      gap: .5rem;
     }
     .list-card-name {
       font-family: 'Arvo', serif;
       font-weight: 700;
       font-size: .95rem;
       overflow-wrap: anywhere;
+      /* A long name wraps rather than pushing the count off the card — the
+         count already refuses to shrink. */
+      min-width: 0;
     }
     .list-card-count {
       display: inline-flex;
@@ -92,10 +97,21 @@
 
     .list-actions {
       display: flex;
+      align-items: center;
       gap: .1rem;
       flex-shrink: 0;
       margin-left: .35rem;
+      /* Matches .list-card's top padding, so the count and buttons sit on the
+         same line as the list name rather than above it. */
+      padding-top: .8rem;
     }
+    /* Up over down. The tight vertical padding keeps the stacked pair about the
+       height of one ordinary action button, so it does not deepen the row. */
+    .list-move { display: flex; flex-direction: column; }
+    .list-move .list-action { padding: .05rem .25rem; }
+    /* An inline SVG sits on the text baseline and leaves a gap under each
+       button, which doubles up between two stacked ones. */
+    .list-move .list-action svg { display: block; }
     .list-action {
       background: none;
       border: none;
@@ -106,9 +122,24 @@
       border-radius: var(--radius-sm);
       transition: color .15s, background .15s;
     }
-    .list-action:hover { background: var(--bg-alt); color: var(--text); }
-    .list-action--danger:hover { color: #c84f4f; }
+    .list-action:hover:not(:disabled) { background: var(--bg-alt); color: var(--text); }
+    /* The arrows need their own hover: the generic one above tints the button
+       var(--bg-alt), which is the very colour .books-list-row:hover already
+       paints the whole row — so on a book row nothing appeared to change.
+       Accent reads against any background. */
+    .list-move .list-action:hover:not(:disabled) { background: var(--accent-dim); color: var(--accent); }
+    /* The move buttons are disabled at the ends of the list rather than hidden,
+       so the row of actions does not shift about as you reorder. */
+    .list-action:disabled { opacity: .28; cursor: default; }
+    /* :not(:disabled) matches the generic hover rule above; without it
+       that rule is more specific and wins, turning this plain instead of red. */
+    .list-action--danger:hover:not(:disabled) { color: #c84f4f; }
     .list-action--on { color: var(--accent); }
+
+    /* Same control as Add book in the library: an inked card holding a plain
+       accent-coloured toggle. It reuses .add-book-toggle rather than copying
+       its rules, so the two cannot drift apart. */
+    .new-list-card { margin-bottom: .75rem; }
 
     .list-row {
       display: flex;
@@ -201,7 +232,8 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getProfileByUsername, getLists, ensureDefaultList, createList, deleteList, getFollowing, setListPrivate } from '../js/firebase.js';
+    import { getProfileByUsername, getLists, getBooks, ensureDefaultList, createList, deleteList, getFollowing, setListPrivate, reorderLists } from '../js/firebase.js';
+    import { spineCapacity, moveInArray } from '../js/utils.js';
     import { fitDropdown, releaseDropdown } from '../js/dropdown.js';
 
     function esc(s) {
@@ -262,16 +294,63 @@
           document.addEventListener('click', () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); releaseDropdown(); });
         })();
 
-        let lists = await getLists(ownerUid, user.uid);
+        // The cover stored on a list entry is whatever the book had when it was
+        // added, so a cover the owner has since changed goes stale there. Their
+        // library is the source of truth, exactly as the single-list page treats
+        // it. Only read for books already visible in the list, so a private book
+        // is never revealed by this.
+        const [listsResult, libBooks] = await Promise.all([
+          getLists(ownerUid, user.uid),
+          getBooks(ownerUid).catch(() => []),
+        ]);
+        const libraryCovers = {};
+        for (const b of libBooks) if (b.gbid && b.coverUrl) libraryCovers[b.gbid] = b.coverUrl;
+
+        let lists = listsResult;
         if (isOwn) {
           const promises = [];
           if (!lists.find(l => l.isDefault)) promises.push(ensureDefaultList(ownerUid));
           if (promises.length) { await Promise.all(promises); lists = await getLists(ownerUid, user.uid); }
         }
+        // Must match .list-card-spines in the stylesheet: 30px wide, pulled 9px
+        // over each other.
+        const SPINE_W = 30, SPINE_OVERLAP = 9;
+        let spineTargets = [];
+
+        function paintSpines() {
+          for (const t of spineTargets) {
+            const fit   = spineCapacity(t.el.clientWidth, SPINE_W, SPINE_OVERLAP);
+            const shown = Math.min(t.count, fit);
+            // Repainting rebuilds the <img> elements, so skip it unless the
+            // count actually changed — otherwise every resize event refetches
+            // every cover.
+            if (t.el._shown === shown) continue;
+            t.el._shown = shown;
+            const art = t.covers.slice(0, shown);
+            // Books without a cover still occupy a spine, so the stack reflects
+            // the list's real size rather than only its art.
+            t.el.innerHTML = art.map(url => `<img src="${esc(url)}" alt="" loading="lazy">`).join('')
+              + '<div class="spine-blank"></div>'.repeat(shown - art.length);
+          }
+        }
+
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(paintSpines, 120);
+        });
+
+        // After the declarations above, not before: renderLists is hoisted and
+        // could be called earlier, but the `let` it reads would still be in its
+        // temporal dead zone and throw.
         renderLists(lists);
 
         function renderLists(lists) {
           container.innerHTML = '';
+          spineTargets = [];
+          // compareLists pins the reading list first, so anything movable sits
+          // below it. Computed once rather than per row.
+          const firstMovable = lists.findIndex(l => !l.isDefault);
           const wrap = document.createElement('div');
 
           lists.forEach((list, i) => {
@@ -284,16 +363,15 @@
             rowDiv.className = 'list-row card';
             if (i > 0) rowDiv.style.marginTop = '.55rem';
 
-            const covers = (list.books || []).map(b => b.coverUrl).filter(Boolean).slice(0, 6);
+            const covers = (list.books || [])
+              .map(b => (b.gbid && libraryCovers[b.gbid]) || b.coverUrl)
+              .filter(Boolean);
+            // Left empty: how many spines fit depends on the card's rendered
+            // width, which is not known until layout has run. paintSpines fills
+            // it in below, and again whenever the window is resized.
             const spines = count === 0
               ? `<div class="list-card-empty">Nothing in here yet</div>`
-              : `<div class="list-card-spines">${
-                  covers.map(url => `<img src="${esc(url)}" alt="" loading="lazy">`).join('')
-                }${
-                  // Books without a cover still occupy a spine, so the stack
-                  // reflects the list's real size rather than only its art.
-                  '<div class="spine-blank"></div>'.repeat(Math.max(0, Math.min(count, 6) - covers.length))
-                }</div>`;
+              : `<div class="list-card-spines"></div>`;
 
             const a = document.createElement('a');
             a.href = href;
@@ -304,10 +382,60 @@
               </div>${spines}`;
             rowDiv.appendChild(a);
 
+            const spineEl = a.querySelector('.list-card-spines');
+            if (spineEl) spineTargets.push({ el: spineEl, covers, count });
+
             let actions = null;
             if (isOwn) {
               actions = document.createElement('div');
               actions.className = 'list-actions';
+
+              // The reading list is pinned to the top, so it never moves and
+              // nothing can move above it — hence the movable range starts at 1.
+              const movable = lists.filter(l => !l.isDefault).length > 1 && !list.isDefault;
+              if (movable) {
+                const move = (delta, label, path) => {
+                  const btn = document.createElement('button');
+                  btn.type = 'button';
+                  btn.className = 'list-action';
+                  btn.title = label;
+                  btn.setAttribute('aria-label', `${label}: ${list.name}`);
+                  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">${path}</svg>`;
+                  // firstMovable, not 0: the pinned reading list occupies the
+                  // slot above and nothing may displace it.
+                  btn.disabled = delta < 0 ? i === firstMovable : i === lists.length - 1;
+                  btn.addEventListener('click', async e => {
+                    e.preventDefault();
+                    const previous = lists.slice();
+                    const next = moveInArray(lists, i, delta);
+                    // Keep the in-memory lists agreeing with what is about to be
+                    // written, so a later re-sort lands in the same order.
+                    next.forEach((l, idx) => { l.sortIndex = idx; });
+                    // Repaint first: the reorder should feel instant, and the
+                    // write is small enough that a failure is worth reverting
+                    // rather than blocking on.
+                    lists = next;
+                    renderLists(lists);
+                    try {
+                      await reorderLists(user.uid, next.map(l => l.id));
+                    } catch (err) {
+                      console.warn('Could not save list order', err);
+                      lists = previous;
+                      renderLists(lists);
+                    }
+                  });
+                  return btn;
+                };
+                // Stacked in their own column so the pair reads as one control
+                // and takes a single button's width in the row.
+                const moveCol = document.createElement('div');
+                moveCol.className = 'list-move';
+                moveCol.append(
+                  move(-1, 'Move up',   '<polyline points="18 15 12 9 6 15"/>'),
+                  move( 1, 'Move down', '<polyline points="6 9 12 15 18 9"/>'),
+                );
+                actions.appendChild(moveCol);
+              }
 
               const lockBtn = document.createElement('button');
               lockBtn.type = 'button';
@@ -350,33 +478,50 @@
           });
 
           container.appendChild(wrap);
+          // A frame later: clientWidth is 0 until the browser has laid the
+          // cards out.
+          requestAnimationFrame(paintSpines);
 
           if (isOwn) {
             const newTriggerRow = document.createElement('div');
-            newTriggerRow.style.cssText = 'padding:.85rem 0 .2rem';
+            newTriggerRow.className = 'card new-list-card';
 
-            const trigger = document.createElement('div');
+            const trigger = document.createElement('button');
+            trigger.type = 'button';
             trigger.id = 'new-list-trigger';
-            trigger.style.cssText = 'font-size:.875rem;color:var(--accent);cursor:pointer;display:inline-flex;align-items:center;gap:.35rem';
-            trigger.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New list`;
+            trigger.className = 'add-book-toggle';
+            trigger.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New list`;
 
             const form = document.createElement('div');
             form.id = 'new-list-form';
             form.style.cssText = 'display:none;gap:.5rem;margin-top:.5rem';
             form.innerHTML = `<input id="new-list-input" class="join-club-input" placeholder="List name…" maxlength="60" autocomplete="off" style="flex:1;font-size:.875rem">
-              <button class="join-club-btn" id="new-list-save" style="font-size:.8rem;padding:.35rem .75rem">Add</button>`;
+              <button class="join-club-btn" id="new-list-save" style="font-size:.8rem;padding:.35rem .75rem">Add</button>
+              <button type="button" class="btn-update" id="new-list-cancel" style="font-size:.8rem;padding:.35rem .75rem">Cancel</button>`;
 
             newTriggerRow.append(trigger, form);
-            container.appendChild(newTriggerRow);
+            container.insertBefore(newTriggerRow, container.firstChild);
 
-            const inp     = form.querySelector('#new-list-input');
-            const saveBtn = form.querySelector('#new-list-save');
+            const inp       = form.querySelector('#new-list-input');
+            const saveBtn   = form.querySelector('#new-list-save');
+            const cancelBtn = form.querySelector('#new-list-cancel');
+
+            function closeNewList() {
+              form.style.display = 'none';
+              // Cleared on the way out: reopening should not present whatever
+              // was abandoned last time.
+              inp.value = '';
+              trigger.style.display = '';
+            }
 
             trigger.addEventListener('click', () => {
               trigger.style.display = 'none';
               form.style.display = 'flex';
               inp.focus();
             });
+
+            cancelBtn.addEventListener('click', closeNewList);
+            inp.addEventListener('keydown', e => { if (e.key === 'Escape') closeNewList(); });
 
             saveBtn.addEventListener('click', async () => {
               const name = inp.value.trim();

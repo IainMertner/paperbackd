@@ -32,8 +32,10 @@ import {
   orderBy,
   where,
   limit,
-  startAfter
+  startAfter,
+  writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { compareLists } from './utils.js';
 import { viewerSeesOnlyPublic, planWorkMerge, dupeGroupsForSlug } from './book-utils.js';
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -910,9 +912,25 @@ export async function getListCount(uid, viewerUid) {
   return snap.data().count;
 }
 
+// Writes the display order for a user's lists, as sortIndex 0..n-1.
+//
+// Batched so the order can never land half-applied: a partial write would leave
+// some lists indexed and some not, which compareLists reads as "the indexed ones
+// come first" — a worse arrangement than either the old or the new one.
+//
+// Every list is written, not just the two that swapped, so one reorder makes the
+// whole ordering explicit rather than a mix of arranged and unarranged.
+export async function reorderLists(uid, orderedIds) {
+  const batch = writeBatch(db);
+  orderedIds.forEach((id, i) => batch.update(doc(db, 'users', uid, 'lists', id), { sortIndex: i }));
+  await batch.commit();
+}
+
 export async function setListPrivate(uid, listId, isPrivate) {
   return updateDoc(doc(db, 'users', uid, 'lists', listId), { private: isPrivate });
 }
+
+export const DEFAULT_LIST_NAME = 'Want to read';
 
 export async function getLists(uid, viewerUid) {
   const col = collection(db, 'users', uid, 'lists');
@@ -925,17 +943,15 @@ export async function getLists(uid, viewerUid) {
   const snap = await getDocs(q);
   const lists = snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => {
-      if (a.isDefault && !b.isDefault) return -1;
-      if (!a.isDefault && b.isDefault) return 1;
-      if (a.isDnf && !b.isDnf) return -1;
-      if (!a.isDnf && b.isDnf) return 1;
-      return 0;
-    });
-  const stale = lists.find(l => l.isDefault && (l.name === 'Want to Read' || l.name === 'Reading List'));
+    .sort(compareLists);
+  // Every name the default list has carried, corrected on read. Only the
+  // owner can write here, so a visitor sees the stored name until the owner
+  // next loads the page.
+  const OLD_DEFAULT_NAMES = ['Want to Read', 'Reading List', 'Reading list'];
+  const stale = lists.find(l => l.isDefault && OLD_DEFAULT_NAMES.includes(l.name));
   if (stale) {
-    await updateDoc(doc(db, 'users', uid, 'lists', stale.id), { name: 'Reading list' });
-    stale.name = 'Reading list';
+    await updateDoc(doc(db, 'users', uid, 'lists', stale.id), { name: DEFAULT_LIST_NAME });
+    stale.name = DEFAULT_LIST_NAME;
   }
   // Backfill lists predating the private flag. Only the owner can write here,
   // and only the owner's unfiltered read can see them, so this is the one place
@@ -961,7 +977,7 @@ export async function ensureDefaultList(uid) {
   const def = lists.find(l => l.isDefault);
   if (def) return def.id;
   const ref = await addDoc(collection(db, 'users', uid, 'lists'), {
-    name: 'Reading list',
+    name: DEFAULT_LIST_NAME,
     isDefault: true,
     private: false,
     createdAt: new Date().toISOString(),
@@ -992,6 +1008,17 @@ export async function addBookToList(uid, listId, book) {
   const books = snap.data().books || [];
   if (books.some(b => b.gbid === book.gbid)) return;
   await updateDoc(ref, { books: [...books, { gbid: book.gbid, title: book.title, author: book.author || '', coverUrl: book.coverUrl || '' }] });
+}
+
+// Replaces a list's books wholesale — used for both reordering and removal.
+//
+// Order is the array's own order, with no index field, so a reorder has to
+// rewrite the array regardless. Removal goes through here too because
+// removeBookFromList matches on gbid, and books added by hand have none: it
+// would take every hand-added book in the list with it. The caller already has
+// the array on screen and can drop the exact entry by identity.
+export async function setListBooks(uid, listId, books) {
+  await updateDoc(doc(db, 'users', uid, 'lists', listId), { books });
 }
 
 export async function removeBookFromList(uid, listId, gbid) {
