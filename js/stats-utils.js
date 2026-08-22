@@ -200,16 +200,98 @@ export function calcStats(bks, now = new Date()) {
   }
   // Counted per book rather than per unique author: five books by one author
   // count five times, so the breakdown reflects what was actually read.
+  const GENDERS = ['Male', 'Female', 'Non-binary', 'Other'];
   const genderCounts = { Male: 0, Female: 0, 'Non-binary': 0, Other: 0 };
   for (const b of bks) {
-    if (!b.authorGender) continue;
-    if (b.authorGender in genderCounts) genderCounts[b.authorGender]++;
+    // An explicit list rather than `in`, which walks the prototype chain: a
+    // gender of 'constructor' would pass that guard and then increment a
+    // function, leaving a junk key on the counts.
+    if (GENDERS.includes(b.authorGender)) genderCounts[b.authorGender]++;
   }
   const genderKnown = genderCounts.Male + genderCounts.Female + genderCounts['Non-binary'] + genderCounts.Other;
   const genderRatio = genderKnown > 0
     ? [Math.round(genderCounts.Male / genderKnown * 100), Math.round(genderCounts.Female / genderKnown * 100), Math.round(genderCounts['Non-binary'] / genderKnown * 100)].join('/')
     : '–';
+  // The three the library offers. Books added before the field existed, or
+  // never set, are counted in neither — formatKnown is what the caller checks
+  // before showing the breakdown at all.
+  const FORMATS = ['Physical', 'Digital', 'Audiobook'];
+  const formatCounts = { Physical: 0, Digital: 0, Audiobook: 0 };
+  for (const b of bks) {
+    // An explicit list, not : that walks the prototype chain, so a format of
+    // 'constructor' would pass the guard and then increment a function.
+    if (FORMATS.includes(b.format)) formatCounts[b.format]++;
+  }
+  const formatKnown = formatCounts.Physical + formatCounts.Digital + formatCounts.Audiobook;
+
   const fiveStars = rated.filter(b => b.rating === 5).length;
   const halfStars = rated.filter(b => b.rating === 0.5).length;
-  return { total, avgRating, stdDev, totalPages, avgPages, uniqueAuthors, uniqueCountries, uniqueLanguages, thisYear, thisMonth, continentCounts, genderCounts, genderKnown, genderRatio, fiveStars, halfStars };
+  return { formatCounts, formatKnown, total, avgRating, stdDev, totalPages, avgPages, uniqueAuthors, uniqueCountries, uniqueLanguages, thisYear, thisMonth, continentCounts, genderCounts, genderKnown, genderRatio, fiveStars, halfStars };
+}
+
+// ── Target history ──────────────────────────────────────────────────────────
+//
+// At the end of each month and year, what you were aiming for and how you did
+// is written down. Snapshots are taken lazily — the first time the owner opens
+// the page after a period ends — because there is no scheduled job to take them
+// on the stroke of midnight.
+//
+// The consequence, and the reason this is worth stating: the target recorded is
+// whatever it was when the snapshot was taken, not when the period ended. Visit
+// promptly and they are the same thing; leave it three months and a target you
+// have since changed is what gets written down.
+
+// "2026-07" for a month, "2026" for a year. Sorts correctly as a string, which
+// is what lets the history be ordered without parsing it back.
+export function periodKey(date, period) {
+  const y = date.getFullYear();
+  if (period === 'yearly') return String(y);
+  return `${y}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// Whether a date falls inside the period a key names.
+export function inPeriod(date, key) {
+  if (!date || !key) return false;
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return false;
+  if (!key.includes('-')) return String(d.getFullYear()) === key;
+  return periodKey(d, 'monthly') === key;
+}
+
+// Keys for every period of this kind that has fully ended and is not already
+// recorded, oldest first, back as far as fromKey.
+//
+// Walks backwards from the present rather than forwards from fromKey, so that
+// when the limit bites it keeps the most recent periods. Forwards, a long gap
+// would fill the quota with ancient months and never reach the ones anybody
+// cares about — and since each key is only offered once, those months would be
+// skipped for good.
+export function periodsToSnapshot(period, fromKey, now, have = [], limit = 240) {
+  const seen = new Set(have);
+  const out = [];
+  // Starts at the current period, which is unfinished; the first step back
+  // lands on the most recent finished one.
+  const cursor = new Date(now.getFullYear(), period === 'yearly' ? 0 : now.getMonth(), 1);
+
+  for (let i = 0; i < limit; i++) {
+    if (period === 'yearly') cursor.setFullYear(cursor.getFullYear() - 1);
+    else cursor.setMonth(cursor.getMonth() - 1);
+    const key = periodKey(cursor, period);
+    if (key <= fromKey) break;
+    if (!seen.has(key)) out.push(key);
+  }
+  return out.reverse();
+}
+
+// How a finished period went: one entry per target, with whether it was met.
+export function summariseSnapshot(entry) {
+  const targets = entry?.targets || {};
+  const results = entry?.results || {};
+  const rows = Object.keys(targets).map(type => ({
+    type,
+    target: targets[type],
+    result: results[type] ?? 0,
+    met: (results[type] ?? 0) >= targets[type],
+  }));
+  return { rows, met: rows.filter(r => r.met).length, total: rows.length };
 }

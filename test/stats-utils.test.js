@@ -497,3 +497,61 @@ describe('calcStats — gender counts', () => {
     expect(calcStats(books, NOW).genderKnown).toBe(1);
   });
 });
+
+// ── format breakdown ────────────────────────────────────────────────────────
+//
+// The library offers exactly Physical, Digital and Audiobook. Anything else —
+// an empty string, a value from before the field existed, a typo written
+// straight to Firestore — must not be counted as one of them or invented as a
+// new bucket, because the summary reads the three keys by name.
+
+describe('calcStats — formats', () => {
+  const of = (...formats) => calcStats(formats.map(format => ({ format })));
+
+  it('counts each of the three formats', () => {
+    const s = of('Physical', 'Physical', 'Digital', 'Audiobook');
+    expect(s.formatCounts).toEqual({ Physical: 2, Digital: 1, Audiobook: 1 });
+    expect(s.formatKnown).toBe(4);
+  });
+
+  it('ignores books with no format rather than counting them anywhere', () => {
+    const s = of('Physical', undefined, '', null);
+    expect(s.formatCounts).toEqual({ Physical: 1, Digital: 0, Audiobook: 0 });
+    expect(s.formatKnown).toBe(1);
+  });
+
+  it('does not invent a bucket for an unrecognised value', () => {
+    // `b.format in formatCounts` is the guard; a plain assignment would add a
+    // key the summary never reads and the total would stop adding up.
+    const s = of('Physical', 'Paperback', 'ebook', 'AUDIOBOOK');
+    expect(Object.keys(s.formatCounts)).toEqual(['Physical', 'Digital', 'Audiobook']);
+    expect(s.formatKnown).toBe(1);
+  });
+
+  it('is not confused by inherited property names', () => {
+    // `in` walks the prototype chain, so 'constructor' would otherwise pass the
+    // guard and then fail the increment.
+    const s = of('constructor', 'toString');
+    expect(s.formatCounts).toEqual({ Physical: 0, Digital: 0, Audiobook: 0 });
+    expect(s.formatKnown).toBe(0);
+  });
+
+  it('reports nothing known for an empty library', () => {
+    expect(calcStats([]).formatKnown).toBe(0);
+  });
+});
+
+describe('calcStats — gender guard', () => {
+  // Same prototype-chain trap as the format counts, in code that predates them.
+  it('does not count an inherited property name as a gender', () => {
+    const s = calcStats([{ authorGender: 'constructor' }, { authorGender: 'toString' }]);
+    expect(s.genderCounts).toEqual({ Male: 0, Female: 0, 'Non-binary': 0, Other: 0 });
+    expect(s.genderKnown).toBe(0);
+  });
+
+  it('still counts the real ones', () => {
+    const s = calcStats([{ authorGender: 'Female' }, { authorGender: 'Non-binary' }, { authorGender: 'Female' }]);
+    expect(s.genderCounts).toMatchObject({ Female: 2, 'Non-binary': 1 });
+    expect(s.genderKnown).toBe(3);
+  });
+});

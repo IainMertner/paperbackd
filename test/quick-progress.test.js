@@ -196,3 +196,37 @@ describe('libraryLink', () => {
     expect(libraryLink({ gbid: 'a/b?c' })).toBe('../library/?book=a%2Fb%3Fc');
   });
 });
+
+describe('progressPercent — the undefined% bug', () => {
+  // Reported: an audiobook was just added and the library showed "undefined%".
+  //
+  // The old call sites guarded on `totalPages || (isAudiobook && progressPct > 0)`
+  // and then read progressPct for audiobooks. A freshly added audiobook has a
+  // page count from the catalogue but no progressPct yet, so the guard passed on
+  // totalPages and the read produced undefined.
+  const freshAudiobook = { format: 'Audiobook', totalPages: 320, currentPage: 0 };
+
+  it('is 0 for a new audiobook that carries a page count', () => {
+    expect(progressPercent(freshAudiobook)).toBe(0);
+  });
+
+  it('never returns undefined for an audiobook, whatever it is missing', () => {
+    for (const book of [
+      { format: 'Audiobook' },
+      { format: 'Audiobook', totalPages: 320 },
+      { format: 'Audiobook', progressPct: undefined },
+      { format: 'Audiobook', progressPct: null, totalPages: 100, currentPage: 50 },
+    ]) {
+      expect(progressPercent(book)).toBe(0);
+    }
+  });
+
+  it('ignores currentPage on an audiobook even when a page count is present', () => {
+    // Left over from before the format was set, or from the sync endpoint bug.
+    expect(progressPercent({ format: 'Audiobook', totalPages: 320, currentPage: 160 })).toBe(0);
+  });
+
+  it('still returns null for a page book with no page count, so nothing renders', () => {
+    expect(progressPercent({ currentPage: 40 })).toBe(null);
+  });
+});

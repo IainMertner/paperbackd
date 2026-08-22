@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash('/c/Program Files/nodejs/node.exe' -e ' *)"
+      "Bash('/c/Program Files/nodejs/node.exe' -e ' *)",
+      "WebFetch(domain:www.fasthosts.co.uk)"
     ]
   }
 }

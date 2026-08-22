@@ -216,7 +216,7 @@
     import { normalizeCountry } from '../js/utils.js';
     import { fitDropdown, releaseDropdown, autoFit } from '../js/dropdown.js';
     import { metaForSlug, searchBooks } from '../js/hardcover.js';
-    import { pickIsbn13 } from '../js/book-utils.js';
+    import { pickIsbn13, progressPercent } from '../js/book-utils.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -270,8 +270,8 @@
           else                          s += '<span class="star-char">★</span>';
         }
         rightHtml = `<span style="flex-shrink:0;margin-left:.5rem;display:inline-flex;gap:.05rem;line-height:1">${s}</span>`;
-      } else if (book.status === 'reading' && (book.totalPages || (book.format === 'Audiobook' && book.progressPct > 0))) {
-        const pct = book.format === 'Audiobook' ? book.progressPct : Math.round((book.currentPage / book.totalPages) * 100);
+      } else if (book.status === 'reading' && progressPercent(book) != null) {
+        const pct = progressPercent(book);
         rightHtml = `<span style="flex-shrink:0;margin-left:.5rem;font-size:.75rem;color:var(--text-muted)">${pct}%</span>`;
       }
       // lazy: a large library renders every row up front, and these are the
@@ -617,8 +617,8 @@
         ph.textContent = '📖';
         cell.appendChild(ph);
       }
-      if (book.status === 'reading' && (book.totalPages || (book.format === 'Audiobook' && book.progressPct > 0))) {
-        const pct = book.format === 'Audiobook' ? book.progressPct : Math.round((book.currentPage / book.totalPages) * 100);
+      if (book.status === 'reading' && progressPercent(book) != null) {
+        const pct = progressPercent(book);
         const strip = document.createElement('div');
         strip.className = 'library-progress-strip';
         const fill = document.createElement('div');

@@ -230,6 +230,37 @@
     }
     .summary-row-value { font-weight: 700; margin-right: .6em; }
     .summary-row-label { color: var(--text-muted); }
+
+    /* Target history */
+    .history-card { padding: .7rem .85rem; }
+    .history-card + .history-card { margin-top: .5rem; }
+    .history-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: .6rem;
+      margin-bottom: .45rem;
+    }
+    .history-period { font-family: 'Arvo', serif; font-weight: 700; font-size: .9rem; }
+    .history-score { font-size: .78rem; color: var(--text-muted); white-space: nowrap; }
+    .history-score--all { color: var(--accent); font-weight: 600; }
+    .history-rows { display: flex; flex-direction: column; gap: .2rem; }
+    .history-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: .6rem;
+      font-size: .8rem;
+      color: var(--text-muted);
+    }
+    /* Met targets take the accent; missed ones stay muted rather than going red,
+       since a missed reading target is not an error. */
+    .history-row--met { color: var(--text); }
+    .history-row--met .history-value { color: var(--accent); font-weight: 600; }
+    .history-type { min-width: 0; overflow-wrap: anywhere; }
+    .history-value { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+    .history-empty { font-size: .82rem; color: var(--text-muted); padding: .1rem 0 .3rem; }
   </style>
 </head>
 <body>
@@ -414,8 +445,8 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { getProfileByUsername, getProfile, getFinishedBooks, getFollowing, db } from '../js/firebase.js';
-    import { doc, updateDoc, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-    import { COUNTRY_ISO, ISO_CONTINENT, calcStats } from '../js/stats-utils.js';
+    import { doc, updateDoc, setDoc, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { COUNTRY_ISO, ISO_CONTINENT, calcStats, periodKey, inPeriod, periodsToSnapshot, summariseSnapshot } from '../js/stats-utils.js';
     import { fitDropdown, releaseDropdown } from '../js/dropdown.js';
 
     const NOW  = new Date();
@@ -985,6 +1016,7 @@
         uniqueAuthors, uniqueCountries, uniqueLanguages,
         thisYear, thisMonth, continentCounts,
         genderCounts, genderKnown, genderRatio, fiveStars, halfStars,
+        formatCounts, formatKnown,
       } = calcStats(books);
 
       const pl = (n, s, p) => n === 1 ? s : p;
@@ -1004,6 +1036,11 @@
           { label: pl(fiveStars, '5 star review', '5 star reviews'), value: cv(fiveStars, me ? me.fiveStars : '') },
           { label: pl(halfStars, '½ star review', '½ star reviews'), value: cv(halfStars, me ? me.halfStars : '') },
         ]},
+        ...((formatKnown > 0 || (me && me.formatKnown > 0)) ? [{ title: 'format', stats: [
+          { label: pl(formatCounts.Physical,  'physical book', 'physical books'), value: cv(formatCounts.Physical,  me ? me.formatCounts.Physical  : '') },
+          { label: pl(formatCounts.Digital,   'digital book',  'digital books'),  value: cv(formatCounts.Digital,   me ? me.formatCounts.Digital   : '') },
+          { label: pl(formatCounts.Audiobook, 'audiobook',     'audiobooks'),     value: cv(formatCounts.Audiobook, me ? me.formatCounts.Audiobook : '') },
+        ]}] : []),
         { title: 'countries', stats: [
           { label: pl(uniqueCountries,    'country',             'countries'),            value: cv(uniqueCountries || '–',    me ? me.uniqueCountries || '–' : '') },
           { label: pl(uniqueLanguages,    'language',            'languages'),            value: cv(uniqueLanguages || '–',    me ? me.uniqueLanguages || '–' : '') },
@@ -1078,16 +1115,9 @@
 
     let targetsData = { ...(targetProfile.targets || {}) };
 
-    function computeProgress(type, period) {
-      const finished = books.filter(b => {
-        if (period === 'overall') return true;
-        const ts = b.finishedAt;
-        if (!ts) return false;
-        const d = ts.toDate ? ts.toDate() : new Date(ts);
-        if (period === 'yearly')  return d.getFullYear() === CY;
-        if (period === 'monthly') return d.getFullYear() === CY && d.getMonth() === CM;
-        return true;
-      });
+    // The metric itself, given whichever finished books are in scope. Split out
+    // so the current period and a past one are measured by identical code.
+    function metricFor(type, finished) {
       if (type === 'books')     return finished.length;
       if (type === 'pages')     return finished.reduce((s, b) => s + (b.totalPages || 0), 0);
       if (type === 'languages') return new Set(finished.map(b => b.language).filter(Boolean)).size;
@@ -1108,6 +1138,29 @@
       return 0;
     }
 
+    const finishedDate = b => {
+      const ts = b.finishedAt;
+      if (!ts) return null;
+      return ts.toDate ? ts.toDate() : new Date(ts);
+    };
+
+    function computeProgress(type, period) {
+      const finished = books.filter(b => {
+        if (period === 'overall') return true;
+        const d = finishedDate(b);
+        if (!d) return false;
+        if (period === 'yearly')  return d.getFullYear() === CY;
+        if (period === 'monthly') return d.getFullYear() === CY && d.getMonth() === CM;
+        return true;
+      });
+      return metricFor(type, finished);
+    }
+
+    // The same measurement for a period that has already ended.
+    function computeProgressIn(type, key) {
+      return metricFor(type, books.filter(b => inPeriod(finishedDate(b), key)));
+    }
+
     async function saveTarget(type, period, value) {
       const k = `${type}_${period}`;
       if (value > 0) {
@@ -1122,6 +1175,7 @@
 
     const targetsContent = document.getElementById('targets-content');
     const sectionsEl = document.createElement('div');
+    const historyEl  = document.createElement('div');
 
     function updateTargetsTab() {
       const total = Object.keys(targetsData).length;
@@ -1260,10 +1314,146 @@
         sectionsEl.querySelectorAll('.target-remove-btn').forEach(b => { b.style.display = editMode ? 'block' : 'none'; });
         sectionsEl.querySelectorAll('.target-input-row').forEach(r => { r.style.display = editMode ? 'flex' : 'none'; });
       });
+
+    // ── Target history ────────────────────────────────────────────────────────
+    //
+    // Written lazily: the first time the owner opens this page after a month or
+    // year has ended, that period gets recorded. Nothing runs at midnight, so
+    // the target saved is the one in force when the snapshot is taken. Open the
+    // page in the first days of a month and those are the same thing; leave it
+    // half a year and a target changed since is what gets written down.
+    //
+    // History starts from the first visit rather than being backfilled. Past
+    // results are recomputable, but past targets are not — filling them in from
+    // today's values would record goals that were never actually set.
+    let targetHistory = { ...(targetProfile.targetHistory || {}) };
+    const HISTORY_PERIODS = ['monthly', 'yearly'];
+
+    function snapshotFor(period, key) {
+      const targets = {}, results = {};
+      for (const [k, value] of Object.entries(targetsData)) {
+        const cut = k.lastIndexOf('_');
+        if (k.slice(cut + 1) !== period) continue;
+        const type = k.slice(0, cut);
+        targets[type] = value;
+        results[type] = computeProgressIn(type, key);
+      }
+      return Object.keys(targets).length ? { period, targets, results } : null;
+    }
+
+    async function recordFinishedPeriods() {
+      if (!isOwn) return;
+      const have = Object.keys(targetHistory);
+      // The marker is what stops a new account inventing years of history: it is
+      // set on the first visit, and nothing before it is ever looked at.
+      const from = targetProfile.targetHistoryFrom || periodKey(NOW, 'monthly');
+      const pending = {};
+
+      for (const period of HISTORY_PERIODS) {
+        const fromKey = period === 'yearly' ? from.slice(0, 4) : from;
+        for (const key of periodsToSnapshot(period, fromKey, NOW, have)) {
+          const entry = snapshotFor(period, key);
+          // A period with no targets is left unrecorded rather than stored
+          // empty, so it can still be captured if targets are added later.
+          if (entry) pending[key] = entry;
+        }
+      }
+
+      const needsMarker = !targetProfile.targetHistoryFrom;
+      if (!Object.keys(pending).length && !needsMarker) return;
+
+      Object.assign(targetHistory, pending);
+      try {
+        const patch = { targetHistory: pending };
+        if (needsMarker) patch.targetHistoryFrom = periodKey(NOW, 'monthly');
+        // merge rather than a dotted path: a key like "2026-07" starts with a
+        // digit and contains a hyphen, so it would need backtick-quoting as a
+        // Firestore field path.
+        await setDoc(doc(db, 'users', targetProfile.uid), patch, { merge: true });
+      } catch (e) {
+        console.warn('Could not save target history', e);
+      }
+    }
+
+    function periodLabel(key) {
+      if (!key.includes('-')) return key;
+      const d = new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1);
+      return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    }
+
+    function renderHistory() {
+      historyEl.innerHTML = '';
+      // Newest first. The keys sort as plain strings, which is the whole reason
+      // month numbers are zero-padded.
+      const keys = Object.keys(targetHistory).sort().reverse();
+      const cards = [];
+
+      for (const key of keys) {
+        const { rows, met, total } = summariseSnapshot(targetHistory[key]);
+        if (!total) continue;
+
+        const card = document.createElement('div');
+        card.className = 'card history-card';
+        // textContent rather than innerHTML: esc() on this page is declared far
+        // below and inside another function, and building the nodes avoids
+        // needing it at all.
+        const head = document.createElement('div');
+        head.className = 'history-head';
+        const periodEl = document.createElement('span');
+        periodEl.className = 'history-period';
+        periodEl.textContent = periodLabel(key);
+        const scoreEl = document.createElement('span');
+        scoreEl.className = 'history-score' + (met === total ? ' history-score--all' : '');
+        scoreEl.textContent = `${met}/${total}`;
+        head.append(periodEl, scoreEl);
+        card.appendChild(head);
+
+        const list = document.createElement('div');
+        list.className = 'history-rows';
+        for (const r of rows) {
+          const suffix = PCT_TYPES.has(r.type) ? '%' : '';
+          const fmt = COMPACT_TYPES.has(r.type) ? fmtTargetNum : String;
+          const row = document.createElement('div');
+          row.className = 'history-row' + (r.met ? ' history-row--met' : '');
+          const typeEl = document.createElement('span');
+          typeEl.className = 'history-type';
+          typeEl.textContent = TARGET_TYPES[r.type] || r.type;
+          const valueEl = document.createElement('span');
+          valueEl.className = 'history-value';
+          valueEl.textContent = `${fmt(r.result)}${suffix} / ${fmt(r.target)}${suffix}`;
+          row.append(typeEl, valueEl);
+          list.appendChild(row);
+        }
+        card.appendChild(list);
+        cards.push(card);
+      }
+
+      const heading = document.createElement('p');
+      heading.className = 'section-title';
+      heading.textContent = 'History';
+      historyEl.appendChild(heading);
+
+      // The section is drawn even when there is nothing in it: an absent
+      // heading reads as a broken feature, where an explained empty one reads
+      // as a feature that has not filled up yet.
+      if (!cards.length) {
+        const empty = document.createElement('div');
+        empty.className = 'history-empty';
+        empty.textContent = 'Nothing here yet.';
+        historyEl.appendChild(empty);
+        return;
+      }
+
+      cards.forEach(c => historyEl.appendChild(c));
+    }
+
       targetsContent.appendChild(headerRow);
       targetsContent.appendChild(addForm);
       targetsContent.appendChild(sectionsEl);
+      targetsContent.appendChild(historyEl);
       rebuildSections();
+      // Records anything finished since the last visit, then draws it.
+      recordFinishedPeriods().then(renderHistory);
 
     } else if (targetProfile.targetsPrivate === true) {
       const msg = document.createElement('div');
@@ -1278,7 +1468,10 @@
       targetsContent.appendChild(msg);
     } else {
       targetsContent.appendChild(sectionsEl);
+      targetsContent.appendChild(historyEl);
       rebuildSections();
+      // A visitor sees the stored history but never writes to it.
+      renderHistory();
     }
 
     // ── Charts ─────────────────────────────────────────────────────────────────

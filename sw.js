@@ -1,6 +1,6 @@
 // Bump on any release that changes what a JS module exports — activate() drops
 // every older cache, which is what clears a stale module out of existing clients.
-const CACHE = 'paperbackd-v60';
+const CACHE = 'paperbackd-v67';
 
 // Firebase API hosts — never intercept these
 const PASS_THROUGH = [
@@ -12,6 +12,11 @@ const PASS_THROUGH = [
 
 // HTML shells to pre-cache on install
 const PRECACHE = [
+  // Requested by every page; without these the first load of each is a network
+  // round trip, and offline they were the requests that used to crash the worker.
+  '/favicon.svg',
+  '/favicon.png',
+  '/apple-touch-icon.png',
   '/library/',
   '/library/index.html',
   '/',
@@ -74,63 +79,81 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
+// respondWith demands a Response. A fetch that rejects with nothing in the
+// cache would otherwise leave the handler resolving to undefined, which the
+// browser reports as "Failed to convert value to 'Response'" — the request then
+// fails with no status and no explanation. Ending every path in a real response
+// turns a crash into an ordinary error the page can handle.
+function offlineResponse(request) {
+  if (request.mode === 'navigate') {
+    return new Response(
+      '<!doctype html><meta charset="utf-8"><title>Offline</title>'
+      + '<body style="font-family:system-ui;padding:2rem;color:#33302B">'
+      + '<p>You appear to be offline.</p>',
+      { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+    );
+  }
+  return new Response('', { status: 504, statusText: 'Offline' });
+}
+
+// Only successful responses are worth keeping. Caching a 404 or a 500 would
+// serve it back indefinitely — and for a JS module, an error page cached under
+// a module URL breaks the import with a syntax error rather than a 404.
+function cachePut(request, response) {
+  if (!response || !response.ok) return;
+  caches.open(CACHE).then(c => c.put(request, response.clone())).catch(() => {});
+}
+
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
   // Let Firebase API traffic through untouched
   if (PASS_THROUGH.some(h => url.hostname.includes(h))) return;
 
+  // Cache.put rejects for anything that is not a GET.
+  if (event.request.method !== 'GET') return;
+
   // Firebase/Google CDN scripts — cache first (URLs are versioned, safe to cache)
   if (url.hostname === 'www.gstatic.com') {
     event.respondWith(
       caches.match(event.request).then(cached =>
         cached || fetch(event.request).then(response => {
-          const clone = response.clone();
-          caches.open(CACHE).then(c => c.put(event.request, clone));
+          cachePut(event.request, response);
           return response;
-        })
+        }).catch(() => offlineResponse(event.request))
       )
     );
     return;
   }
 
   if (url.origin === self.location.origin) {
-    if (event.request.mode === 'navigate') {
-      // HTML page navigations — network-first so updates are always visible immediately.
-      // Falls back to cache only when offline.
+    // HTML navigations and JS modules are both network-first, so an update is
+    // visible immediately. Stale-while-revalidate cannot be used for modules:
+    // a fresh page importing a stale one fails on any export added since it was
+    // cached ("does not provide an export named ..."), and keeping the two in
+    // step matters more than the milliseconds.
+    const networkFirst = event.request.mode === 'navigate' || url.pathname.endsWith('.js');
+
+    if (networkFirst) {
       event.respondWith(
         fetch(event.request).then(response => {
-          caches.open(CACHE).then(c => c.put(event.request, response.clone()));
+          cachePut(event.request, response);
           return response;
-        }).catch(() => caches.match(event.request))
-      );
-    } else if (url.pathname.endsWith('.js')) {
-      // JS modules — network-first, like navigations.
-      //
-      // Stale-while-revalidate cannot be used here: pages are network-first, so
-      // a fresh page would import a stale module and fail on any export added
-      // since it was cached ("does not provide an export named ..."). The
-      // modules are small and this keeps page and script versions in step.
-      // Falls back to cache when offline.
-      event.respondWith(
-        fetch(event.request).then(response => {
-          const clone = response.clone();
-          caches.open(CACHE).then(c => c.put(event.request, clone));
-          return response;
-        }).catch(() => caches.match(event.request))
+        }).catch(() =>
+          caches.match(event.request).then(cached => cached || offlineResponse(event.request))
+        )
       );
     } else {
-      // CSS/assets — stale-while-revalidate (instant from cache, updates in background)
+      // CSS and assets — stale-while-revalidate: instant from cache, refreshed
+      // in the background.
       event.respondWith(
-        caches.open(CACHE).then(cache =>
-          cache.match(event.request).then(cached => {
-            const fresh = fetch(event.request).then(response => {
-              cache.put(event.request, response.clone());
-              return response;
-            }).catch(() => cached);
-            return cached || fresh;
-          })
-        )
+        caches.match(event.request).then(cached => {
+          const fresh = fetch(event.request).then(response => {
+            cachePut(event.request, response);
+            return response;
+          }).catch(() => cached || offlineResponse(event.request));
+          return cached || fresh;
+        })
       );
     }
   }
