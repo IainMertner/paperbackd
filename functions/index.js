@@ -100,7 +100,7 @@ async function lookupBook({ title, author }) {
 
 // Mirrors addBook() in js/firebase.js, including the 'started' activity event,
 // so a book that arrives by sync is indistinguishable from one added in the app.
-async function addReadingBook(db, uid, username, meta, pushedTitle) {
+async function addReadingBook(db, uid, username, meta, pushedTitle, defaultLanguage) {
   const bookData = {
     title:            meta.title,
     author:           meta.author || '',
@@ -110,7 +110,9 @@ async function addReadingBook(db, uid, username, meta, pushedTitle) {
     gbid:             meta.gbid || '',
     addedAt:          admin.firestore.FieldValue.serverTimestamp(),
     addedAtPrecision: 'day',
-    language:         'English',
+    // ?? not ||: an empty string is a reader who has chosen to have no default
+    // language, which is different from having never set one.
+    language:         defaultLanguage ?? 'English',
     // What the device calls it. Hardcover's title is often longer, so without
     // this the next push would fail to match and add the book all over again.
     syncTitles:       [normaliseTitle(pushedTitle)],
@@ -193,7 +195,7 @@ exports.syncProgress = onRequest({ cors: false, region: REGION }, async (req, re
       });
     }
     const userSnap = await db.collection('users').doc(uid).get();
-    book = await addReadingBook(db, uid, userSnap.data()?.username, meta, body.title);
+    book = await addReadingBook(db, uid, userSnap.data()?.username, meta, body.title, userSnap.data()?.defaultLanguage);
     added = true;
   }
 

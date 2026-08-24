@@ -449,13 +449,19 @@ async function activityDocsForBook(uid, { bookId, gbid, title, author }) {
   });
 }
 
-export async function importBooks(uid, books, onProgress) {
+// language: the importer's default, applied to rows that carry none of their
+// own. Undefined falls back to English, matching every book added before the
+// setting existed.
+export async function importBooks(uid, books, onProgress, language) {
   const col = collection(db, 'users', uid, 'books');
   for (let i = 0; i < books.length; i += 20) {
     await Promise.all(books.slice(i, i + 20).map(b => {
       const data = { ...b };
       if (!data.addedAt)  data.addedAt  = serverTimestamp();
-      if (!data.language) data.language = 'English';
+      if (!data.language) {
+        const fallback = language ?? DEFAULT_BOOK_LANGUAGE;
+        if (fallback) data.language = fallback;
+      }
       return addDoc(col, data);
     }));
     if (onProgress) onProgress(Math.min(i + 20, books.length), books.length);
@@ -494,7 +500,7 @@ export async function getRecentlyFinishedBooks(uid) {
     .sort((a, b) => (b.finishedAt?.seconds ?? 0) - (a.finishedAt?.seconds ?? 0));
 }
 
-export async function addFinishedBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, rating, review, releaseYear, country, authorGender, genres, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
+export async function addFinishedBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, rating, review, releaseYear, country, authorGender, genres, language, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
   const data = {
     title,
     author:      author || '',
@@ -503,7 +509,9 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, wo
     status:      'finished',
     gbid:        gbid || '',
     addedAt:     addedAt || serverTimestamp(),
-    language:    'English'
+    // ?? not ||: the caller passing '' is someone who has chosen to have no
+    // default language, which is different from not passing one at all.
+    language:    language ?? DEFAULT_BOOK_LANGUAGE
   };
   if (finishedAt)          data.finishedAt          = finishedAt;
   if (finishedAtPrecision) data.finishedAtPrecision = finishedAtPrecision;
@@ -544,7 +552,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, wo
   return bookRef.id;
 }
 
-export async function addBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, releaseYear, country, authorGender, genres }, username) {
+export async function addBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, releaseYear, country, authorGender, genres, language }, username) {
   const bookData = {
     title,
     author:           author || '',
@@ -554,7 +562,7 @@ export async function addBook(uid, { title, author, totalPages, gbid, workId, is
     gbid:             gbid || '',
     addedAt:          serverTimestamp(),
     addedAtPrecision: 'day',
-    language:         'English'
+    language:         language ?? DEFAULT_BOOK_LANGUAGE
   };
   if (workId)                bookData.workId       = workId;
   // The one identifier here that means anything outside Hardcover, so it is
@@ -926,11 +934,22 @@ export async function reorderLists(uid, orderedIds) {
   await batch.commit();
 }
 
+// The reader's default book language. An empty string is meaningful — it says
+// they want new books to carry no language — so it is stored rather than
+// treated as "unset".
+export async function setDefaultLanguage(uid, language) {
+  await updateDoc(doc(db, 'users', uid), { defaultLanguage: language });
+}
+
 export async function setListPrivate(uid, listId, isPrivate) {
   return updateDoc(doc(db, 'users', uid, 'lists', listId), { private: isPrivate });
 }
 
 export const DEFAULT_LIST_NAME = 'Want to read';
+
+// What a book's language is set to when the reader has expressed no preference.
+// An explicit empty string means they want none, and is honoured as-is.
+export const DEFAULT_BOOK_LANGUAGE = 'English';
 
 export async function getLists(uid, viewerUid) {
   const col = collection(db, 'users', uid, 'lists');

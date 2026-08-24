@@ -96,6 +96,19 @@
 
 
     <div class="settings-group">
+      <div class="settings-group-label">Preferences</div>
+      <div class="settings-list">
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.5rem;padding:.875rem 1rem">
+          <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+            <span class="settings-row-label" style="white-space:nowrap">Default book language</span>
+            <select class="settings-select" id="default-language"></select>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
       <div class="settings-group-label">Community</div>
       <div class="settings-list">
         <div class="settings-row">
@@ -223,17 +236,21 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary, addEmailToAccount, deleteAccountData, getSyncToken, createSyncToken, revokeSyncToken } from '../js/firebase.js';
+    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary, addEmailToAccount, deleteAccountData, getSyncToken, createSyncToken, revokeSyncToken, setDefaultLanguage, DEFAULT_BOOK_LANGUAGE } from '../js/firebase.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, searchHardcover } from '../js/hardcover.js';
-    import { computeDupeGroups, planWorkMerge, normaliseIsbn13 } from '../js/book-utils.js';
+    import { computeDupeGroups, planWorkMerge, normaliseIsbn13, BOOK_LANGUAGES } from '../js/book-utils.js';
     import { normalizeCountry } from '../js/utils.js';
     import { updatePassword, reauthenticateWithCredential, EmailAuthProvider, deleteUser } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
     let currentUser = null;
+    // Module-scope, because requireAuth is destructured inside a try block and
+    // code further down — the default-language control — runs outside it.
+    let currentProfile = null;
 
     try {
       const { user, profile } = await requireAuth();
       currentUser = user;
+      currentProfile = profile;
       if (profile) document.getElementById('settings-username').textContent = profile.username;
       if (user.email && !user.email.endsWith('@readinglog.local')) {
         document.getElementById('email-row').style.display = '';
@@ -413,6 +430,57 @@
       importPreview.style.display = 'none';
       importStatus.style.display = 'none';
       importBtn.disabled = false;
+    }
+
+    // ── Default book language ────────────────────────────────────────────────
+    //
+    // Stored as a plain string on the profile. Absent means the reader has never
+    // touched it and books keep defaulting to English; an empty string means
+    // they have deliberately chosen no language, which is why the two are not
+    // collapsed into one falsy check anywhere downstream.
+    {
+      const langSelect = document.getElementById('default-language');
+
+      const LANGUAGES = BOOK_LANGUAGES;
+
+      const current = currentProfile?.defaultLanguage ?? DEFAULT_BOOK_LANGUAGE;
+      // Anything already stored that is not on the list keeps its place, so a
+      // language set before this was a select is never silently replaced.
+      const options = LANGUAGES.includes(current) || current === '' ? LANGUAGES : [current, ...LANGUAGES];
+
+      for (const [value, label] of [['', 'No language'], ...options.map(l => [l, l])]) {
+        const o = document.createElement('option');
+        o.value = value;
+        o.textContent = label;
+        if (value === current) o.selected = true;
+        langSelect.appendChild(o);
+      }
+
+      async function saveLanguage() {
+        const value = langSelect.value;
+        if (value === (currentProfile?.defaultLanguage ?? DEFAULT_BOOK_LANGUAGE)) return;
+        const previous = currentProfile?.defaultLanguage;
+        if (currentProfile) currentProfile.defaultLanguage = value;
+        try {
+          await setDefaultLanguage(currentUser.uid, value);
+          // requireAuth resolves from the rl_profile cache before refreshing it
+          // in the background, so without this the next load would still show
+          // the old value and only correct itself on the one after.
+          try {
+            const cached = JSON.parse(localStorage.getItem('rl_profile') || 'null');
+            if (cached && cached.uid === currentUser.uid) {
+              cached.defaultLanguage = value;
+              localStorage.setItem('rl_profile', JSON.stringify(cached));
+            }
+          } catch { /* a corrupt cache is rebuilt on the next load anyway */ }
+        } catch (e) {
+          console.warn('Could not save default language', e);
+          currentProfile.defaultLanguage = previous;
+          langSelect.value = previous ?? DEFAULT_BOOK_LANGUAGE;
+        }
+      }
+
+      langSelect.addEventListener('change', saveLanguage);
     }
 
     importSource.addEventListener('change', () => {

@@ -430,7 +430,7 @@
           startBtn.textContent = 'Adding…';
           try {
             const meta = await metaForSlug(gbid);
-            await addBook(user.uid, { title, author, totalPages: pages, gbid, workId: meta.workId, isbn13: meta.isbn13, coverUrl: cover, releaseYear }, profile.username);
+            await addBook(user.uid, { title, author, totalPages: pages, gbid, workId: meta.workId, isbn13: meta.isbn13, coverUrl: cover, releaseYear, language: profile.defaultLanguage }, profile.username);
             showDone('Added to your currently reading!');
           } catch (e) {
             startBtn.textContent = 'Start reading';
@@ -486,7 +486,7 @@
               const { date: finishedAt, precision: finishedPrec } = finishedPicker.getDate();
               await addFinishedBook(user.uid, {
                 title, author, totalPages: pages, gbid, ...(await metaForSlug(gbid)),
-                coverUrl: cover, releaseYear,
+                coverUrl: cover, releaseYear, language: profile.defaultLanguage,
                 rating, review,
                 finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,
                 addedAt,    addedAtPrecision:    addedAt    ? startedPrec  : undefined,
