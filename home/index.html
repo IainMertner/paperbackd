@@ -167,6 +167,7 @@
     .home-reading-book {
       position: relative;
       display: block;
+      overflow: hidden;
       padding: 0;
       border: none;
       background: none;
@@ -175,6 +176,7 @@
       transition: transform .12s ease;
     }
     .home-reading-book:hover { transform: translateY(-2px); }
+    .home-reading-book .cover-progress-track { height: 3px; }
 
     /* Announcements */
     #announcements-list { display: flex; flex-direction: column; gap: .45rem; }
@@ -337,7 +339,7 @@
     import { getFollowing, getReadingBooks, getFeed, getAnnouncements, toggleReaction, toggleAnnouncementReaction, getBookByGbid } from '../js/firebase.js';
     import { timeAgo } from '../js/utils.js';
     import { openQuickProgress } from '../js/quick-progress.js';
-    import { orderReaders } from '../js/book-utils.js';
+    import { orderReaders, progressBarPercent } from '../js/book-utils.js';
 
     function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
     function toAuthorSlug(n) { return n.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,''); }
@@ -390,6 +392,12 @@
     let openPickerClose = null;
     document.addEventListener('click', () => { if (openPickerClose) { openPickerClose(); openPickerClose = null; } });
 
+    // The feed preview scrolls inside its own box. The picker sits on <body>
+    // in document coordinates, so that inner scroll would strand it — close it
+    // instead of letting it drift.
+    document.getElementById('feed-preview')?.addEventListener('scroll', () => {
+      if (openPickerClose) { openPickerClose(); openPickerClose = null; }
+    }, { passive: true });
     let avatarMap = {}, borderColorMap = {}, usernameMap = {};
     let currentUser = null;
 
@@ -414,7 +422,23 @@
       if (isOwn) addBtn.style.display = 'none';
 
       const picker = document.createElement('div');
-      picker.style.cssText = 'display:none;position:fixed;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:.3rem .5rem;gap:.3rem;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:1000;white-space:nowrap';
+      picker.style.cssText = 'display:none;position:absolute;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:.3rem .5rem;gap:.3rem;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:1000;white-space:nowrap';
+
+      // Places the picker under an anchor, in document coordinates so it stays
+      // attached while the page scrolls. position:fixed pinned it to the viewport,
+      // so the page scrolled out from under it. Right edges are aligned by
+      // computing a left offset, which needs the rendered width — hence showing
+      // it hidden for a moment rather than positioning blind.
+      function placePicker(anchor) {
+        picker.style.right = '';
+        picker.style.visibility = 'hidden';
+        picker.style.display = 'flex';
+        document.body.appendChild(picker);
+        const rect = anchor.getBoundingClientRect();
+        picker.style.top  = `${rect.bottom + window.scrollY + 6}px`;
+        picker.style.left = `${rect.right + window.scrollX - picker.offsetWidth}px`;
+        picker.style.visibility = '';
+      }
 
       let pickerOpen = false;
       const closePicker = () => {
@@ -444,11 +468,7 @@
               pickerOpen = !pickerOpen;
               if (pickerOpen) {
                 renderPicker();
-                const rect = wrap.getBoundingClientRect();
-                picker.style.top = `${rect.bottom + 6}px`;
-                picker.style.right = `${window.innerWidth - rect.right}px`;
-                picker.style.display = 'flex';
-                document.body.appendChild(picker);
+                placePicker(wrap);
                 openPickerClose = closePicker;
               } else { closePicker(); }
             });
@@ -542,11 +562,7 @@
         pickerOpen = !pickerOpen;
         if (pickerOpen) {
           renderPicker();
-          const rect = addBtn.getBoundingClientRect();
-          picker.style.top = `${rect.bottom + 6}px`;
-          picker.style.right = `${window.innerWidth - rect.right}px`;
-          picker.style.display = 'flex';
-          document.body.appendChild(picker);
+          placePicker(addBtn);
           openPickerClose = closePicker;
         } else { closePicker(); openPickerClose = null; }
       });
@@ -720,14 +736,39 @@
       btn.className = 'home-reading-book';
       btn.title = book.title || '';
       btn.appendChild(coverImage(book));
+      // Same track as /reading/ uses. null means there is nothing to show — a
+      // page book with no page count — rather than zero progress, which an
+      // audiobook that has not been started legitimately has.
+      const pct = progressBarPercent(book);
+      if (pct != null) {
+        const track = document.createElement('div');
+        track.className = 'cover-progress-track';
+        const bar = document.createElement('div');
+        bar.className = 'cover-progress';
+        bar.style.width = `${pct}%`;
+        // The reader's own theme colour, as /reading/ does it. borderColorMap
+        // covers you as well as everyone you follow, so this works for your own
+        // row too — where `reader` is a stand-in carrying just the uid.
+        bar.style.background = borderColorMap[reader?.uid] || 'var(--accent)';
+        track.appendChild(bar);
+        btn.appendChild(track);
+      }
       if (own && book.private) {
         const lock = document.createElement('div');
         lock.className = 'library-cover-lock';
         lock.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
         btn.appendChild(lock);
       }
-      btn.addEventListener('click', () =>
-        openQuickProgress(book, own ? { uid: user.uid } : { readOnly: true, reader }));
+      btn.addEventListener('click', () => openQuickProgress(book, own
+        ? { uid: user.uid, onSaved: updated => {
+            const fill = btn.querySelector('.cover-progress');
+            const now = progressBarPercent(updated);
+            // Back to nothing if an edit takes it to zero.
+            if (!fill) return;
+            fill.parentElement.style.display = now == null ? 'none' : '';
+            if (now != null) fill.style.width = `${now}%`;
+          } }
+        : { readOnly: true, reader }));
       return btn;
     }
 

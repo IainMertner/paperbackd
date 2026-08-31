@@ -713,9 +713,9 @@
         );
 
         // Phase 3: books missing country (computed early so the guard below sees it)
-        let needsCountry = books.filter(b => !b.country && b.author);
+        let needsAuthorFacts = books.filter(b => b.author && (!b.country || !b.authorGender));
 
-        if (!dupeGroups.length && !unmatched.length && !incomplete.length && !needsCountry.length) {
+        if (!dupeGroups.length && !unmatched.length && !incomplete.length && !needsAuthorFacts.length) {
           repairStatus.textContent = 'Nothing to repair - all books are matched and complete.';
           repairStatus.style.color = 'var(--accent)';
           repairBtn.disabled = false;
@@ -812,7 +812,7 @@
           books        = await getBooks(currentUser.uid);
           unmatched    = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
           incomplete   = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author));
-          needsCountry = books.filter(b => !b.country && b.author);
+          needsAuthorFacts = books.filter(b => b.author && (!b.country || !b.authorGender));
         }
 
         // ── Phase 1: match unmatched books via Hardcover ──────────────────
@@ -879,12 +879,17 @@
         }
 
         // ── Phase 3: fill country via Wikidata for books missing it ─────────
-        if (needsCountry.length) {
-          repairStatus.textContent = `Looking up countries for ${needsCountry.length} book${needsCountry.length === 1 ? '' : 's'}…`;
+        if (needsAuthorFacts.length) {
+          repairStatus.textContent = `Looking up authors for ${needsAuthorFacts.length} book${needsAuthorFacts.length === 1 ? '' : 's'}…`;
 
           // One Wikidata lookup per unique author name
-          const authorMap = new Map(); // authorName → country string
-          const uniqueAuthors = [...new Set(needsCountry.map(b => b.author))];
+          // Wikidata P21 (sex or gender) values, mapped to what the app stores.
+          const WIKIDATA_GENDERS = {
+            Q6581072: 'Female', Q6581097: 'Male', Q1097630: 'Intersex',
+            Q48270: 'Non-binary', Q2449503: 'Transgender female', Q1052281: 'Transgender male',
+          };
+          const authorMap = new Map(); // authorName → { country?, authorGender? }
+          const uniqueAuthors = [...new Set(needsAuthorFacts.map(b => b.author))];
 
           for (const authorName of uniqueAuthors) {
             try {
@@ -897,31 +902,48 @@
               const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
               if (!er.ok) continue;
               const ed = await er.json();
-              const p27 = ed.entities?.[qid]?.claims?.P27 || [];
+              const claims = ed.entities?.[qid]?.claims || {};
+              const facts = {};
+
+              // Gender comes from the same response as country, so reading it
+              // costs nothing extra — it was simply never looked at.
+              const p21 = claims.P21 || [];
+              const bestP21 = p21.find(c => c.rank === 'preferred') || p21.find(c => c.rank === 'normal') || p21[0];
+              const genderQid = bestP21?.mainsnak?.datavalue?.value?.id;
+              if (genderQid && WIKIDATA_GENDERS[genderQid]) facts.authorGender = WIKIDATA_GENDERS[genderQid];
+
+              const p27 = claims.P27 || [];
               const bestP27 = p27.find(c => c.rank === 'preferred') || p27.find(c => c.rank === 'normal') || p27[0];
               const countryQid = bestP27?.mainsnak?.datavalue?.value?.id;
-              if (!countryQid) continue;
+              if (!countryQid) { if (Object.keys(facts).length) authorMap.set(authorName, facts); continue; }
               const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
-              if (!lr.ok) continue;
+              // Keep the gender already parsed even if the country label lookup fails.
+              if (!lr.ok) { if (Object.keys(facts).length) authorMap.set(authorName, facts); continue; }
               const ld = await lr.json();
               const country = ld.entities?.[countryQid]?.labels?.en?.value;
-              if (country) authorMap.set(authorName, normalizeCountry(country));
+              if (country) facts.country = normalizeCountry(country);
+              if (Object.keys(facts).length) authorMap.set(authorName, facts);
             } catch (e) { /* skip author */ }
           }
 
-          for (const book of needsCountry) {
-            const country = authorMap.get(book.author);
-            if (country) {
-              await updateBookMeta(currentUser.uid, book.id, { country });
-              fixed++;
-            }
+          for (const book of needsAuthorFacts) {
+            const facts = authorMap.get(book.author);
+            if (!facts) continue;
+            // Only what is actually missing — a stored value is never overwritten
+            // by a lookup, since it may have been corrected by hand.
+            const patch = {};
+            if (!book.country && facts.country) patch.country = facts.country;
+            if (!book.authorGender && facts.authorGender) patch.authorGender = facts.authorGender;
+            if (!Object.keys(patch).length) continue;
+            await updateBookMeta(currentUser.uid, book.id, patch);
+            fixed++;
           }
         }
 
         repairStatus.textContent = 'Merging duplicate lists…';
         await mergeListsByName(currentUser.uid);
 
-        const total = mergedGroupsCount + unmatched.length + incomplete.length + needsCountry.length;
+        const total = mergedGroupsCount + unmatched.length + incomplete.length + needsAuthorFacts.length;
         repairStatus.textContent = `Done - updated ${fixed} of ${total} book${total === 1 ? '' : 's'}.`;
         repairStatus.style.color = 'var(--accent)';
       } catch (err) {

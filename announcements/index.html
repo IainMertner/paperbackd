@@ -183,7 +183,23 @@
       addBtn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
 
       const picker = document.createElement('div');
-      picker.style.cssText = 'display:none;position:fixed;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:.3rem .5rem;gap:.3rem;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:1000;white-space:nowrap';
+      picker.style.cssText = 'display:none;position:absolute;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:.3rem .5rem;gap:.3rem;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:1000;white-space:nowrap';
+
+      // Places the picker under an anchor, in document coordinates so it stays
+      // attached while the page scrolls. position:fixed pinned it to the viewport,
+      // so the page scrolled out from under it. Right edges are aligned by
+      // computing a left offset, which needs the rendered width — hence showing
+      // it hidden for a moment rather than positioning blind.
+      function placePicker(anchor) {
+        picker.style.right = '';
+        picker.style.visibility = 'hidden';
+        picker.style.display = 'flex';
+        document.body.appendChild(picker);
+        const rect = anchor.getBoundingClientRect();
+        picker.style.top  = `${rect.bottom + window.scrollY + 6}px`;
+        picker.style.left = `${rect.right + window.scrollX - picker.offsetWidth}px`;
+        picker.style.visibility = '';
+      }
 
       let pickerOpen = false;
       const closePicker = () => {
@@ -213,11 +229,7 @@
               pickerOpen = !pickerOpen;
               if (pickerOpen) {
                 renderPicker();
-                const rect = wrap.getBoundingClientRect();
-                picker.style.top = `${rect.bottom + 6}px`;
-                picker.style.right = `${window.innerWidth - rect.right}px`;
-                picker.style.display = 'flex';
-                document.body.appendChild(picker);
+                placePicker(wrap);
                 openPickerClose = closePicker;
               } else { closePicker(); }
             });
@@ -311,11 +323,7 @@
         pickerOpen = !pickerOpen;
         if (pickerOpen) {
           renderPicker();
-          const rect = addBtn.getBoundingClientRect();
-          picker.style.top = `${rect.bottom + 6}px`;
-          picker.style.right = `${window.innerWidth - rect.right}px`;
-          picker.style.display = 'flex';
-          document.body.appendChild(picker);
+          placePicker(addBtn);
           openPickerClose = closePicker;
         } else { closePicker(); openPickerClose = null; }
       });

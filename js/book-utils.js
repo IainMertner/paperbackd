@@ -393,3 +393,14 @@ export function collectIsbn13s(preferred = [], fallback = [], limit = 6) {
 // Languages offered wherever a book language is chosen — the per-book editors
 // in the library and the default in settings. Shared so the two never drift.
 export const BOOK_LANGUAGES = ['Afrikaans','Albanian','Arabic','Armenian','Azerbaijani','Basque','Belarusian','Bengali','Bosnian','Bulgarian','Catalan','Chinese (Simplified)','Chinese (Traditional)','Croatian','Czech','Danish','Dutch','English','Estonian','Finnish','French','Galician','Georgian','German','Greek','Gujarati','Hebrew','Hindi','Hungarian','Icelandic','Indonesian','Irish','Italian','Japanese','Kannada','Kazakh','Korean','Latvian','Lithuanian','Macedonian','Malay','Malayalam','Maltese','Marathi','Mongolian','Norwegian','Persian','Polish','Portuguese','Punjabi','Romanian','Russian','Serbian','Slovak','Slovenian','Spanish','Swahili','Swedish','Tamil','Telugu','Thai','Turkish','Ukrainian','Urdu','Uzbek','Vietnamese','Welsh'];
+
+// Progress worth drawing an indicator for, or null.
+//
+// Zero is deliberately excluded: an empty track says nothing that no track does
+// not, and it makes an untouched book look like one being tracked. Kept separate
+// from progressPercent because zero is still a real answer to "how far in are
+// they" — the popover shows 0%, and progressText shows "0 / 272".
+export function progressBarPercent(book) {
+  const pct = progressPercent(book);
+  return pct ? pct : null;
+}

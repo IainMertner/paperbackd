@@ -137,6 +137,7 @@
     import { getFollowing, getBookByGbid, getFriendBookStatus, getFriendListStatus, addBook, addFinishedBook, getLists, ensureDefaultList, addBookToList, removeBookFromList, getBookRemaps, DEFAULT_LIST_NAME } from '../js/firebase.js';
     import { initSearchWidget } from '../js/search-widget.js';
     import { metaForSlug } from '../js/hardcover.js';
+    import { fetchBookMeta, awaitMeta } from '../js/enrich.js';
     import { resolveRemappedSlug } from '../js/book-utils.js';
     import { autoFit } from '../js/dropdown.js';
 
@@ -425,12 +426,17 @@
           actionsCard.innerHTML = `<div style="font-size:.85rem;color:var(--accent);font-weight:500">${msg}</div>`;
         }
 
+        // Genres, author country and gender — started now, awaited on save.
+        // Without this a book added here arrived with none of them, unlike one
+        // added from the library.
+        const metaPromise = fetchBookMeta(gbid, author);
+
         startBtn.addEventListener('click', async () => {
           startBtn.disabled = alreadyBtn.disabled = true;
           startBtn.textContent = 'Adding…';
           try {
-            const meta = await metaForSlug(gbid);
-            await addBook(user.uid, { title, author, totalPages: pages, gbid, workId: meta.workId, isbn13: meta.isbn13, coverUrl: cover, releaseYear, language: profile.defaultLanguage }, profile.username);
+            const [meta, extra] = await Promise.all([metaForSlug(gbid), awaitMeta(metaPromise)]);
+            await addBook(user.uid, { title, author, totalPages: pages, gbid, workId: meta.workId, isbn13: meta.isbn13, coverUrl: cover, releaseYear, language: profile.defaultLanguage, ...extra }, profile.username);
             showDone('Added to your currently reading!');
           } catch (e) {
             startBtn.textContent = 'Start reading';
@@ -486,6 +492,7 @@
               const { date: finishedAt, precision: finishedPrec } = finishedPicker.getDate();
               await addFinishedBook(user.uid, {
                 title, author, totalPages: pages, gbid, ...(await metaForSlug(gbid)),
+                ...(await awaitMeta(metaPromise)),
                 coverUrl: cover, releaseYear, language: profile.defaultLanguage,
                 rating, review,
                 finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,

@@ -216,7 +216,8 @@
     import { normalizeCountry } from '../js/utils.js';
     import { fitDropdown, releaseDropdown, autoFit } from '../js/dropdown.js';
     import { metaForSlug, searchBooks } from '../js/hardcover.js';
-    import { pickIsbn13, progressPercent, BOOK_LANGUAGES as LANGUAGES } from '../js/book-utils.js';
+    import { pickIsbn13, progressBarPercent, BOOK_LANGUAGES as LANGUAGES } from '../js/book-utils.js';
+    import { fetchBookMeta } from '../js/enrich.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -270,8 +271,8 @@
           else                          s += '<span class="star-char">★</span>';
         }
         rightHtml = `<span style="flex-shrink:0;margin-left:.5rem;display:inline-flex;gap:.05rem;line-height:1">${s}</span>`;
-      } else if (book.status === 'reading' && progressPercent(book) != null) {
-        const pct = progressPercent(book);
+      } else if (book.status === 'reading' && progressBarPercent(book) != null) {
+        const pct = progressBarPercent(book);
         rightHtml = `<span style="flex-shrink:0;margin-left:.5rem;font-size:.75rem;color:var(--text-muted)">${pct}%</span>`;
       }
       // lazy: a large library renders every row up front, and these are the
@@ -617,8 +618,8 @@
         ph.textContent = '📖';
         cell.appendChild(ph);
       }
-      if (book.status === 'reading' && progressPercent(book) != null) {
-        const pct = progressPercent(book);
+      if (book.status === 'reading' && progressBarPercent(book) != null) {
+        const pct = progressBarPercent(book);
         const strip = document.createElement('div');
         strip.className = 'library-progress-strip';
         const fill = document.createElement('div');
@@ -1344,7 +1345,7 @@
             card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
           }
           const keys = Object.keys(updates);
-          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country', isbn13: 'ISBN' };
+          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country', isbn13: 'ISBN', authorGender: 'Gender', genres: 'Genres' };
           const toast = document.createElement('div');
           toast.style.cssText = 'position:absolute;bottom:.75rem;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:.7rem;padding:.25rem .65rem;border-radius:20px;white-space:nowrap;z-index:2;opacity:0;transition:opacity .2s;pointer-events:none';
           toast.textContent = keys.length ? `Updated: ${keys.map(k => LABELS[k] || k).join(', ')}` : 'Already up to date';
@@ -1567,6 +1568,13 @@
             book.currentPage = clamped;
             if (total != null) book.totalPages = total;
             pct = total ? Math.round((clamped / total) * 100) : null;
+          }
+          // Zero draws nothing, for audiobooks as well as page books — an empty
+          // strip makes an unopened book look like one in progress.
+          if (pct === 0) pct = null;
+          if (coverCell && pct == null) {
+            coverCell.querySelector('.library-progress-strip')?.remove();
+            coverCell.querySelector('.library-progress-pct')?.remove();
           }
           if (coverCell && pct != null) {
             let strip = coverCell.querySelector('.library-progress-strip');
@@ -1874,7 +1882,7 @@
             card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
           }
           const keys = Object.keys(updates);
-          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country', isbn13: 'ISBN' };
+          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country', isbn13: 'ISBN', authorGender: 'Gender', genres: 'Genres' };
           const toast = document.createElement('div');
           toast.style.cssText = 'position:absolute;bottom:.75rem;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:.7rem;padding:.25rem .65rem;border-radius:20px;white-space:nowrap;z-index:2;opacity:0;transition:opacity .2s;pointer-events:none';
           toast.textContent = keys.length ? `Updated: ${keys.map(k => LABELS[k] || k).join(', ')}` : 'Already up to date';
@@ -2935,7 +2943,11 @@
       let reRenderFinishedFn = () => {};
       let renderDnfFn        = () => {};
 
+      // Progress bars take the theme colour of whoever's library this is.
+      const themeColour = c => { if (c) document.documentElement.style.setProperty('--ring-color', c); };
+
       if (isOwn) {
+        themeColour(profile.avatarBorderColor);
         const [booksData, lists] = await Promise.all([
           getBooks(user.uid).then(sortBooks),
           getLists(user.uid).catch(() => [])
@@ -3007,6 +3019,7 @@
 
         const target = await getProfileByUsername(viewUser);
         if (target) {
+          themeColour(target.avatarBorderColor);
           document.getElementById('page-title').innerHTML = `<a href="../profile/?u=${encodeURIComponent(target.username)}" style="color:var(--accent);text-decoration:none">${esc(target.username)}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>library<span class="title-dot">.</span>`;
           const { reading, finished, dnf } = sortBooks((await getBooks(target.uid)).filter(b => !b.private));
           allBooks = [...reading, ...finished, ...dnf];
@@ -3567,66 +3580,11 @@
             showBookPreview(selectedBook);
             privateRow.style.display = 'flex';
             setAddEnabled(true);
-            // Background meta fetch — genres (Hardcover) + country + gender (Wikidata)
+            // Genres, author country and gender. Shared with the book page so
+            // the two add paths cannot fill in different things.
             const capturedBook = selectedBook;
-            capturedBook._countryFetch = (async () => {
-              await Promise.all([
-                // Genres from Hardcover
-                (async () => {
-                  if (!slug) return;
-                  try {
-                    const q = /^\d+$/.test(slug)
-                      ? `query($id:Int!){books(where:{id:{_eq:$id}},limit:1){cached_tags}}`
-                      : `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){cached_tags}}`;
-                    const vars = /^\d+$/.test(slug) ? { id: parseInt(slug, 10) } : { slug };
-                    const data = await hcPost(q, vars);
-                    const genres = (data?.data?.books?.[0]?.cached_tags?.Genre || []).map(t => t.tag).filter(Boolean);
-                    if (genres.length) capturedBook.genres = genres;
-                  } catch { /* ignore */ }
-                })(),
-                // Country + gender from Wikidata
-                (async () => {
-                  if (!author) return;
-                  try {
-                    const overrides = await getOverrides();
-                    const overrideKey = author.toLowerCase().trim();
-                    if (overrides[overrideKey]) capturedBook.country = overrides[overrideKey];
-                    if (capturedBook.country && capturedBook.authorGender) return;
-                    const base = 'https://www.wikidata.org/w/api.php';
-                    const sr = await fetch(`${base}?action=wbsearchentities&search=${encodeURIComponent(author)}&language=en&type=item&format=json&origin=*&limit=1`);
-                    if (!sr.ok) return;
-                    const sd = await sr.json();
-                    const qid = sd.search?.[0]?.id;
-                    if (!qid) return;
-                    const er = await fetch(`${base}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
-                    if (!er.ok) return;
-                    const ed = await er.json();
-                    const claims = ed.entities?.[qid]?.claims || {};
-                    if (!capturedBook.country) {
-                      const p27 = claims.P27 || [];
-                      const bestP27 = p27.find(c => c.rank === 'preferred') || p27.find(c => c.rank === 'normal') || p27[0];
-                      const countryQid = bestP27?.mainsnak?.datavalue?.value?.id;
-                      if (countryQid) {
-                        const lr = await fetch(`${base}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
-                        if (lr.ok) {
-                          const ld = await lr.json();
-                          const countryName = ld.entities?.[countryQid]?.labels?.en?.value;
-                          if (countryName) capturedBook.country = normalizeCountry(countryName);
-                        }
-                      }
-                    }
-                    const GENDER_MAP = {
-                      Q6581072: 'Female', Q6581097: 'Male', Q1097630: 'Intersex',
-                      Q48270: 'Non-binary', Q2449503: 'Transgender female', Q1052281: 'Transgender male',
-                    };
-                    const p21 = claims.P21 || [];
-                    const bestP21 = p21.find(c => c.rank === 'preferred') || p21.find(c => c.rank === 'normal') || p21[0];
-                    const genderQid = bestP21?.mainsnak?.datavalue?.value?.id;
-                    if (genderQid && GENDER_MAP[genderQid]) capturedBook.authorGender = GENDER_MAP[genderQid];
-                  } catch { /* ignore */ }
-                })(),
-              ]);
-            })();
+            capturedBook._countryFetch = fetchBookMeta(slug, author)
+              .then(meta => Object.assign(capturedBook, meta));
           }, 150);
         });
 

@@ -6,7 +6,7 @@
 // endpoint, so both branches are pinned.
 
 import { describe, it, expect } from 'vitest';
-import { isAudiobook, libraryLink, orderReaders, progressPercent, progressText, progressUpdate } from '../js/book-utils.js';
+import { isAudiobook, libraryLink, orderReaders, progressPercent, progressBarPercent, progressText, progressUpdate } from '../js/book-utils.js';
 
 const paper = (over = {}) => ({ id: 'b1', title: 'Piranesi', totalPages: 272, currentPage: 136, ...over });
 const audio = (over = {}) => ({ id: 'b2', title: 'Piranesi', format: 'Audiobook', progressPct: 40, ...over });
@@ -228,5 +228,38 @@ describe('progressPercent — the undefined% bug', () => {
 
   it('still returns null for a page book with no page count, so nothing renders', () => {
     expect(progressPercent({ currentPage: 40 })).toBe(null);
+  });
+});
+
+describe('progressBarPercent — zero draws nothing', () => {
+  // A bar at 0% is an empty track that says nothing a missing bar does not, and
+  // it makes an untouched book look like one being tracked.
+  it('is null at zero, for both kinds of book', () => {
+    expect(progressBarPercent({ totalPages: 300, currentPage: 0 })).toBe(null);
+    expect(progressBarPercent({ format: 'Audiobook', progressPct: 0 })).toBe(null);
+    expect(progressBarPercent({ format: 'Audiobook' })).toBe(null);
+  });
+
+  it('is null when there is nothing to measure', () => {
+    expect(progressBarPercent({ currentPage: 40 })).toBe(null);
+    expect(progressBarPercent(null)).toBe(null);
+  });
+
+  it('passes real progress through unchanged', () => {
+    expect(progressBarPercent({ totalPages: 300, currentPage: 150 })).toBe(50);
+    expect(progressBarPercent({ format: 'Audiobook', progressPct: 3 })).toBe(3);
+  });
+
+  it('keeps the smallest non-zero reading rather than rounding it away', () => {
+    // 1 page of 300 rounds to 0% and must not be mistaken for unstarted... it is
+    // genuinely indistinguishable at this precision, so it draws nothing — but
+    // 1% must survive.
+    expect(progressBarPercent({ totalPages: 100, currentPage: 1 })).toBe(1);
+  });
+
+  it('leaves progressPercent alone, which still reports zero as a real answer', () => {
+    // The popover shows 0%, and progressText shows "0 / 272" — those are not
+    // the same question as "is there a bar to draw".
+    expect(progressPercent({ totalPages: 300, currentPage: 0 })).toBe(0);
   });
 });

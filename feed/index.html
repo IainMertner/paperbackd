@@ -196,11 +196,26 @@
       if (isOwn) addBtn.style.display = 'none';
 
 
-      // The one dropdown that stays capped: it is position:fixed, so it does not
-      // move when the page scrolls and growing the page could never reach it.
-      // Scrolling inside it is the only option here.
+      // Capped rather than left to grow: it is appended to <body> and placed
+      // by hand, so the page-growth trick the other dropdowns use does not
+      // reach it. Scrolling inside it is the fallback.
       const picker = document.createElement('div');
-      picker.style.cssText = 'display:none;position:fixed;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:.3rem .5rem;gap:.3rem;box-shadow:0 4px 16px rgba(0,0,0,.15);max-height:70vh;overflow-y:auto;overscroll-behavior:contain;z-index:1000;white-space:nowrap';
+      picker.style.cssText = 'display:none;position:absolute;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:.3rem .5rem;gap:.3rem;box-shadow:0 4px 16px rgba(0,0,0,.15);max-height:70vh;overflow-y:auto;overscroll-behavior:contain;z-index:1000;white-space:nowrap';
+
+      // Places the picker under an anchor, in document coordinates so it stays
+      // attached while the page scrolls. Right edges are aligned by computing a
+      // left offset, which needs the rendered width — hence showing it hidden
+      // for a moment rather than positioning blind.
+      function placePicker(anchor) {
+        picker.style.right = '';
+        picker.style.visibility = 'hidden';
+        picker.style.display = 'flex';
+        document.body.appendChild(picker);
+        const rect = anchor.getBoundingClientRect();
+        picker.style.top  = `${rect.bottom + window.scrollY + 6}px`;
+        picker.style.left = `${rect.right + window.scrollX - picker.offsetWidth}px`;
+        picker.style.visibility = '';
+      }
 
       let pickerOpen = false;
       const closePicker = () => {
@@ -230,11 +245,7 @@
               pickerOpen = !pickerOpen;
               if (pickerOpen) {
                 renderPicker();
-                const rect = wrap.getBoundingClientRect();
-                picker.style.top = `${rect.bottom + 6}px`;
-                picker.style.right = `${window.innerWidth - rect.right}px`;
-                picker.style.display = 'flex';
-                document.body.appendChild(picker);
+                placePicker(wrap);
                 openPickerClose = closePicker;
               } else { closePicker(); }
             });
@@ -328,11 +339,7 @@
         pickerOpen = !pickerOpen;
         if (pickerOpen) {
           renderPicker();
-          const rect = addBtn.getBoundingClientRect();
-          picker.style.top = `${rect.bottom + 6}px`;
-          picker.style.right = `${window.innerWidth - rect.right}px`;
-          picker.style.display = 'flex';
-          document.body.appendChild(picker);
+          placePicker(addBtn);
           openPickerClose = closePicker;
         } else {
           closePicker();

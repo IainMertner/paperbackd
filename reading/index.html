@@ -156,7 +156,7 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { getFollowing, getReadingBooks } from '../js/firebase.js';
-    import { progressPercent, orderReaders } from '../js/book-utils.js';
+    import { progressBarPercent, orderReaders } from '../js/book-utils.js';
 
     function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
@@ -228,7 +228,7 @@
 
             // Audiobooks record progressPct and have no page count, so the old
             // currentPage / totalPages sum showed every one of them as unstarted.
-            const pct = progressPercent(book);
+            const pct = progressBarPercent(book);
             if (pct != null) {
               const track = document.createElement('div');
               track.className = 'cover-progress-track';
