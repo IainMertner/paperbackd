@@ -36,7 +36,7 @@ import {
   writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { compareLists } from './utils.js';
-import { viewerSeesOnlyPublic, planWorkMerge, dupeGroupsForSlug } from './book-utils.js';
+import { viewerSeesOnlyPublic, planWorkMerge, dupeGroupsForSlug, sameBook } from './book-utils.js';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const firebaseConfig = {
@@ -549,6 +549,9 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, wo
       timestamp:  finishedAt
     });
   }
+  // Added as already read, so it is off the want-to-read list too.
+  try { await removeFromDefaultList(uid, { gbid, title }); }
+  catch (e) { console.error('want-to-read cleanup:', e); }
   return bookRef.id;
 }
 
@@ -645,6 +648,11 @@ export async function finishBook(uid, bookId, { title, author, gbid, rating, rev
     }),
     ...startedDocs.map(d => updateDoc(d.ref, { currentPage: 0 })),
   ]);
+
+  // Started does not do this — only finished. Kept out of the write above so a
+  // failure here cannot leave a finished book looking unfinished.
+  try { await removeFromDefaultList(uid, { gbid, title }); }
+  catch (e) { console.error('want-to-read cleanup:', e); }
 }
 
 async function upsertActivityTimestamp(uid, type, date, { bookId, title, author, gbid, rating, review, username }) {
@@ -1045,6 +1053,23 @@ export async function removeBookFromList(uid, listId, gbid) {
   const snap = await getDoc(ref);
   if (!snap.exists()) return;
   await updateDoc(ref, { books: (snap.data().books || []).filter(b => b.gbid !== gbid) });
+}
+
+// Finishing a book answers the question the want-to-read list was asking, so
+// the book comes off it. The default list only: every other list is a curation
+// the reader made, and not ours to edit.
+//
+// Reads the collection directly rather than through getLists, which repairs and
+// writes as it goes — far too much to set off as a side effect of finishing.
+export async function removeFromDefaultList(uid, { gbid, title } = {}) {
+  if (!gbid && !title) return;
+  const snap = await getDocs(collection(db, 'users', uid, 'lists'));
+  const def  = snap.docs.find(d => d.data().isDefault);
+  if (!def) return;
+  const books = def.data().books || [];
+  const kept  = books.filter(b => !sameBook(b, { gbid, title }));
+  if (kept.length === books.length) return;
+  await updateDoc(def.ref, { books: kept });
 }
 
 // ── Backup / restore ──────────────────────────────────────────────────────────

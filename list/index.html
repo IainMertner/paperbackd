@@ -232,6 +232,7 @@
     import { getProfileByUsername, getLists, addBookToList, setListBooks, deleteList, renameList, getBooks, setListPrivate } from '../js/firebase.js';
     import { autoFit } from '../js/dropdown.js';
     import { moveInArray } from '../js/utils.js';
+    import { sameBook, wantToReadBlock } from '../js/book-utils.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -389,6 +390,16 @@
         autoFit(suggestBox);
         let searchTimer;
 
+        // The reader's own shelf, for the want-to-read check. Fetched once and
+        // only for that list: every other list takes any book, and should not
+        // pay for a read it has no use for.
+        let ownBooks = null;
+        const loadOwnBooks = async () => {
+          if (!list.isDefault) return [];
+          if (!ownBooks) ownBooks = await getBooks(user.uid).catch(() => []);
+          return ownBooks;
+        };
+
         function showToast(msg) {
           let t = document.getElementById('global-toast');
           if (!t) { t = document.createElement('div'); t.id = 'global-toast'; t.className = 'global-toast'; document.body.appendChild(t); }
@@ -415,6 +426,9 @@
               if (res.status === 429) { showToast('Our servers are busy — give it a moment and try again.'); return; }
               const data = res.ok ? await res.json() : {};
               const hits = data?.data?.search?.results?.hits || [];
+              // Loaded before anything renders, so both the results and the
+              // manual form below can say why a book is not on offer.
+              const mine = await loadOwnBooks();
               suggestBox.innerHTML = '';
               if (!hits.length) {
                 suggestBox.style.display = '';
@@ -462,6 +476,8 @@
                   addBtn.addEventListener('click', async () => {
                     const title = titleInp.value.trim();
                     if (!title) { titleInp.style.outline = '1px solid var(--danger, #d44)'; return; }
+                    const blocked = wantToReadBlock(mine.find(b => sameBook(b, { title })));
+                    if (blocked) { showToast(`${blocked} — ${list.name} is for books you have not started.`); return; }
                     const author = authorInp.value.trim();
                     suggestBox.style.display = 'none';
                     searchInput.value = '';
@@ -490,6 +506,9 @@
                 const author   = doc.author_names?.[0] || '';
                 const coverUrl = doc.image?.url || '';
                 if (!gbid || !title) return;
+                // Shown greyed with the reason rather than dropped from the
+                // results, so a book missing from the list is never a mystery.
+                const blocked = wantToReadBlock(mine.find(b => sameBook(b, { gbid, title })));
                 const item = document.createElement('div');
                 item.className = 'book-suggestion-item';
                 item.innerHTML = `<div class="suggestion-inner">
@@ -499,6 +518,15 @@
                     <div class="suggestion-meta">${esc(author)}</div>
                   </div>
                 </div>`;
+                if (blocked) {
+                  item.style.cssText = 'opacity:.55;cursor:default';
+                  const why = document.createElement('div');
+                  why.style.cssText = 'font-size:.72rem;color:var(--text-muted);padding:0 .75rem .55rem 3.5rem';
+                  why.textContent = blocked;
+                  item.appendChild(why);
+                  suggestBox.appendChild(item);
+                  return;
+                }
                 item.addEventListener('click', async () => {
                   suggestBox.style.display = 'none';
                   searchInput.value = '';
@@ -562,6 +590,8 @@
                 addBtn.addEventListener('click', async () => {
                   const title = titleInp.value.trim();
                   if (!title) { titleInp.style.outline = '1px solid var(--danger, #d44)'; return; }
+                  const blocked = wantToReadBlock(mine.find(b => sameBook(b, { title })));
+                  if (blocked) { showToast(`${blocked} — ${list.name} is for books you have not started.`); return; }
                   const author = authorInp.value.trim();
                   suggestBox.style.display = 'none';
                   searchInput.value = '';

@@ -404,3 +404,29 @@ export function progressBarPercent(book) {
   const pct = progressPercent(book);
   return pct ? pct : null;
 }
+
+// ── The want-to-read list ─────────────────────────────────────────────────────
+
+// Whether two records are the same book. gbid is the join key, so two records
+// that both carry one are judged on that alone and separate editions stay
+// separate. A book added by hand has no gbid, and there the title is all there
+// is to go on — within one reader's own shelf that is a safe enough match.
+export function sameBook(a, b) {
+  if (!a || !b) return false;
+  if (a.gbid && b.gbid) return a.gbid === b.gbid;
+  const title = x => (x.title || '').trim().toLowerCase();
+  return !!title(a) && title(a) === title(b);
+}
+
+// Why a book cannot go on the want-to-read list, or null if it can. Takes the
+// reader's own copy of the book, or nothing when they have not got one.
+//
+// A book being read, or already read, is not a book to read next. 'dnf'
+// deliberately does not count: setting a book aside is exactly the moment
+// planning another run at it makes sense.
+export function wantToReadBlock(ownCopy) {
+  if (!ownCopy) return null;
+  if (ownCopy.status === 'finished') return 'Already read';
+  if (ownCopy.status === 'reading')  return 'Reading now';
+  return null;
+}

@@ -216,7 +216,7 @@
     import { normalizeCountry } from '../js/utils.js';
     import { fitDropdown, releaseDropdown, autoFit } from '../js/dropdown.js';
     import { metaForSlug, searchBooks } from '../js/hardcover.js';
-    import { pickIsbn13, progressBarPercent, BOOK_LANGUAGES as LANGUAGES } from '../js/book-utils.js';
+    import { pickIsbn13, progressBarPercent, wantToReadBlock, BOOK_LANGUAGES as LANGUAGES } from '../js/book-utils.js';
     import { fetchBookMeta } from '../js/enrich.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
@@ -1249,16 +1249,31 @@
       function buildDrop() {
         drop.innerHTML = '';
         allLists.forEach(l => {
+          // The want-to-read list will not take a book you are reading or have
+          // read. Only adding is blocked — a book already on the list stays
+          // removable, which is how one you have since started comes off.
+          const blocked = l.isDefault && !membership[l.id] ? wantToReadBlock(book) : null;
           const item = document.createElement('div');
-          item.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.4rem .75rem;cursor:pointer;font-size:.85rem';
-          item.addEventListener('mouseenter', () => item.style.background = 'var(--bg-alt)');
-          item.addEventListener('mouseleave', () => item.style.background = '');
+          item.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.4rem .75rem;font-size:.85rem;cursor:' + (blocked ? 'default' : 'pointer');
           const check = document.createElement('span');
           check.style.cssText = 'color:var(--accent);width:1em;flex-shrink:0';
           check.textContent = membership[l.id] ? '✓' : '';
           const name = document.createElement('span');
           name.textContent = l.name;
           item.append(check, name);
+          if (blocked) {
+            // Greyed with the reason rather than hidden: a list that silently
+            // vanishes reads as a bug.
+            item.style.opacity = '.55';
+            const why = document.createElement('span');
+            why.style.cssText = 'margin-left:auto;padding-left:.5rem;font-size:.72rem;color:var(--text-muted)';
+            why.textContent = blocked;
+            item.appendChild(why);
+            drop.appendChild(item);
+            return;
+          }
+          item.addEventListener('mouseenter', () => item.style.background = 'var(--bg-alt)');
+          item.addEventListener('mouseleave', () => item.style.background = '');
           item.addEventListener('click', async e => {
             e.stopPropagation();
             item.style.opacity = '.5';

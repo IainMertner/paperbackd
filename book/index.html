@@ -138,7 +138,7 @@
     import { initSearchWidget } from '../js/search-widget.js';
     import { metaForSlug } from '../js/hardcover.js';
     import { fetchBookMeta, awaitMeta } from '../js/enrich.js';
-    import { resolveRemappedSlug } from '../js/book-utils.js';
+    import { resolveRemappedSlug, wantToReadBlock } from '../js/book-utils.js';
     import { autoFit } from '../js/dropdown.js';
 
     const params = new URLSearchParams(location.search);
@@ -367,19 +367,35 @@
             ];
             const membership = {};
             sortedLists.forEach(l => { membership[l.id] = (l.books || []).some(b => b.gbid === gbid); });
+            const wtrBlock = wantToReadBlock(myBook);
             function buildDrop() {
               drop.innerHTML = '';
               sortedLists.forEach(l => {
+                // The want-to-read list will not take a book you are reading or have
+                // read. Only adding is blocked — a book already on the list stays
+                // removable, which is how one you have since started comes off.
+                const blocked = l.isDefault && !membership[l.id] ? wtrBlock : null;
                 const item = document.createElement('div');
-                item.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.4rem .75rem;cursor:pointer;font-size:.85rem';
-                item.addEventListener('mouseenter', () => item.style.background = 'var(--bg-alt)');
-                item.addEventListener('mouseleave', () => item.style.background = '');
+                item.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.4rem .75rem;font-size:.85rem;cursor:' + (blocked ? 'default' : 'pointer');
                 const check = document.createElement('span');
                 check.style.cssText = 'color:var(--accent);width:1em;flex-shrink:0';
                 check.textContent = membership[l.id] ? '✓' : '';
                 const name = document.createElement('span');
                 name.textContent = l.isDefault ? DEFAULT_LIST_NAME : l.name;
                 item.append(check, name);
+                if (blocked) {
+                  // Greyed with the reason rather than hidden: a list that silently
+                  // vanishes reads as a bug.
+                  item.style.opacity = '.55';
+                  const why = document.createElement('span');
+                  why.style.cssText = 'margin-left:auto;padding-left:.5rem;font-size:.72rem;color:var(--text-muted)';
+                  why.textContent = blocked;
+                  item.appendChild(why);
+                  drop.appendChild(item);
+                  return;
+                }
+                item.addEventListener('mouseenter', () => item.style.background = 'var(--bg-alt)');
+                item.addEventListener('mouseleave', () => item.style.background = '');
                 item.addEventListener('click', async e => {
                   e.stopPropagation();
                   item.style.opacity = '.5';
