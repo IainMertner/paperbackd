@@ -460,3 +460,41 @@ export const DEFAULT_BOOK_LANGUAGE = 'English';
 export function resolveBookLanguage(preference) {
   return preference ?? DEFAULT_BOOK_LANGUAGE;
 }
+
+// Roles in Hardcover's `contributions` that belong to someone other than the
+// person who wrote the book.
+//
+// Prefix-matched rather than exact, so "Translator (from the French)" and the
+// like still land. Deliberately not exhaustive: anything unrecognised is
+// treated as a writing credit, which keeps "Co-Author", "Writer" and the
+// oddities working.
+const NON_WRITING_ROLE = /^(translat|narrat|illustrat|read(er)?\b|foreword|introduction|afterword|preface|annotat|commentat|cover artist|photograph|designer|adapt|compil|contributor)/i;
+
+// The name of whoever actually wrote a book, given Hardcover's contributions.
+//
+// The list arrives in no dependable order — on "Are Prisons Obsolete?" the
+// audiobook narrator comes before Angela Y. Davis — so taking the first entry
+// credits the narrator, or the translator, as the author. That is what this
+// exists to stop.
+export function primaryAuthor(contributions) {
+  const list = (contributions || []).filter(c => c?.author?.name);
+  if (!list.length) return '';
+  const role = c => String(c.contribution || '').trim();
+
+  // An explicit Author credit settles it.
+  const authored = list.find(c => /^author$/i.test(role(c)));
+  if (authored) return authored.author.name;
+
+  // Records that predate the roles leave the field empty for the author.
+  const unlabelled = list.find(c => !role(c));
+  if (unlabelled) return unlabelled.author.name;
+
+  // Otherwise anyone not doing one of the jobs above.
+  const writer = list.find(c => !NON_WRITING_ROLE.test(role(c)));
+  if (writer) return writer.author.name;
+
+  // Everyone listed is a helper — an audiobook with only a narrator, say. Falls
+  // back to the old behaviour rather than showing nothing, since an anthology
+  // credited solely to its editor should still name them.
+  return list[0].author.name;
+}

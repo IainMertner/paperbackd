@@ -1,6 +1,6 @@
 // Bump on any release that changes what a JS module exports — activate() drops
 // every older cache, which is what clears a stale module out of existing clients.
-const CACHE = 'paperbackd-v85';
+const CACHE = 'paperbackd-v87';
 
 // Firebase API hosts — never intercept these
 const PASS_THROUGH = [
@@ -66,7 +66,15 @@ const PRECACHE = [
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(PRECACHE))
+    // cache: 'reload' so each file comes from the server rather than the
+    // browser's own HTTP cache. Without it a new worker can precache a stale
+    // copy of a module it just bumped the version for — the page loads fresh,
+    // imports a firebase.js from before the export it needs, and dies with
+    // "does not provide an export named ...". Pages are served with a max-age,
+    // so this is not hypothetical.
+    caches.open(CACHE).then(cache => cache.addAll(
+      PRECACHE.map(url => new Request(url, { cache: 'reload' }))
+    ))
   );
   self.skipWaiting();
 });

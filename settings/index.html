@@ -236,9 +236,9 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { logOut, ROOT, importBooks, getBooks, getCountryRemaps, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary, addEmailToAccount, deleteAccountData, getSyncToken, createSyncToken, revokeSyncToken, setDefaultLanguage, DEFAULT_BOOK_LANGUAGE } from '../js/firebase.js';
+    import { logOut, ROOT, importBooks, getBooks, getCountryRemaps, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary, addEmailToAccount, deleteAccountData, getSyncToken, createSyncToken, revokeSyncToken, setDefaultLanguage, resolveBookLanguage } from '../js/firebase.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, searchHardcover } from '../js/hardcover.js';
-    import { computeDupeGroups, planWorkMerge, normaliseIsbn13, BOOK_LANGUAGES } from '../js/book-utils.js';
+    import { computeDupeGroups, planWorkMerge, normaliseIsbn13, primaryAuthor, BOOK_LANGUAGES } from '../js/book-utils.js';
     import { normalizeCountry } from '../js/utils.js';
     import { updatePassword, reauthenticateWithCredential, EmailAuthProvider, deleteUser } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
@@ -443,7 +443,7 @@
 
       const LANGUAGES = BOOK_LANGUAGES;
 
-      const current = currentProfile?.defaultLanguage ?? DEFAULT_BOOK_LANGUAGE;
+      const current = resolveBookLanguage(currentProfile?.defaultLanguage);
       // Anything already stored that is not on the list keeps its place, so a
       // language set before this was a select is never silently replaced.
       const options = LANGUAGES.includes(current) || current === '' ? LANGUAGES : [current, ...LANGUAGES];
@@ -458,7 +458,7 @@
 
       async function saveLanguage() {
         const value = langSelect.value;
-        if (value === (currentProfile?.defaultLanguage ?? DEFAULT_BOOK_LANGUAGE)) return;
+        if (value === resolveBookLanguage(currentProfile?.defaultLanguage)) return;
         const previous = currentProfile?.defaultLanguage;
         if (currentProfile) currentProfile.defaultLanguage = value;
         try {
@@ -476,7 +476,7 @@
         } catch (e) {
           console.warn('Could not save default language', e);
           currentProfile.defaultLanguage = previous;
-          langSelect.value = previous ?? DEFAULT_BOOK_LANGUAGE;
+          langSelect.value = resolveBookLanguage(previous);
         }
       }
 
@@ -845,7 +845,7 @@
             const slugs = chunk.map(b => b.gbid);
             try {
               const data = await hcQuery(
-                `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:${CHUNK}){slug pages release_year contributions{author{name}}}}`,
+                `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:${CHUNK}){slug pages release_year contributions{contribution author{name}}}}`,
                 { slugs }
               );
               const bySlug = new Map((data?.data?.books || []).map(b => [b.slug, b]));
@@ -856,7 +856,7 @@
                 if (book.releaseYear == null && hc.release_year) updates.releaseYear = hc.release_year;
                 if (!book.totalPages && hc.pages)                updates.totalPages  = hc.pages;
                 if (!book.author) {
-                  const name = hc.contributions?.[0]?.author?.name;
+                  const name = primaryAuthor(hc.contributions);
                   if (name) updates.author = name;
                 }
                 if (Object.keys(updates).length) {

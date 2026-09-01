@@ -221,7 +221,7 @@
     import { ROOT, db, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, backfillWorkIds, backfillWorkIdsForAllUsers, setBookRemap, deleteBookRemap, getBookRemaps, getCountryRemaps, setCountryRemap, deleteCountryRemap, mergeDuplicatesForSlug, remapActivityForSlug } from '../js/firebase.js';
     import { deleteField, collection, doc, getDocs, query as fsQuery, where, updateDoc, Timestamp, limit, getCountFromServer, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, resolveWorkIds, workIdForSlug } from '../js/hardcover.js';
-    import { computeDupeGroups, planWorkMerge } from '../js/book-utils.js';
+    import { computeDupeGroups, planWorkMerge, primaryAuthor } from '../js/book-utils.js';
     import { COUNTRY_ISO } from '../js/stats-utils.js';
     import { normalizeCountry, esc } from '../js/utils.js';
 
@@ -687,7 +687,7 @@
             const slugs = chunk.map(b => b.gbid);
             try {
               const data = await hcQuery(
-                `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:${CHUNK}){slug pages release_year contributions{author{name}} cached_tags}}`,
+                `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:${CHUNK}){slug pages release_year contributions{contribution author{name}} cached_tags}}`,
                 { slugs }
               );
               const bySlug = new Map((data?.data?.books || []).map(b => [b.slug, b]));
@@ -697,7 +697,7 @@
                 const updates = {};
                 if (book.releaseYear == null && hc.release_year) updates.releaseYear = hc.release_year;
                 if (!book.totalPages && hc.pages)                updates.totalPages  = hc.pages;
-                if (!book.author) { const name = hc.contributions?.[0]?.author?.name; if (name) updates.author = name; }
+                if (!book.author) { const name = primaryAuthor(hc.contributions); if (name) updates.author = name; }
                 if (!book.genres?.length) {
                   const genres = (hc.cached_tags?.Genre || []).map(t => t.tag).filter(Boolean);
                   if (genres.length) updates.genres = genres;
@@ -898,7 +898,7 @@
       remapPreviewEl.style.display = '';
       try {
         const hcData = await hcQuery(
-          `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){slug title pages release_year image{url} contributions{author{name}}}}`,
+          `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){slug title pages release_year image{url} contributions{contribution author{name}}}}`,
           { slug: toSlug }
         );
         const hcBook = hcData?.data?.books?.[0];
@@ -907,7 +907,7 @@
           return;
         }
         const targetTitle  = hcBook.title || toSlug;
-        const targetAuthor = hcBook.contributions?.[0]?.author?.name || '';
+        const targetAuthor = primaryAuthor(hcBook.contributions);
         remapTargetMeta = {
           gbid:        toSlug,
           coverUrl:    hcBook.image?.url || '',

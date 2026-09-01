@@ -138,7 +138,7 @@
     import { initSearchWidget } from '../js/search-widget.js';
     import { metaForSlug } from '../js/hardcover.js';
     import { fetchBookMeta, awaitMeta } from '../js/enrich.js';
-    import { resolveRemappedSlug, wantToReadBlock } from '../js/book-utils.js';
+    import { resolveRemappedSlug, wantToReadBlock, primaryAuthor } from '../js/book-utils.js';
     import { autoFit } from '../js/dropdown.js';
 
     const params = new URLSearchParams(location.search);
@@ -264,7 +264,7 @@
                 release_year
                 description
                 cached_image
-                contributions { author { name slug } }
+                contributions { contribution author { name slug } }
                 editions { isbn_10 isbn_13 language { code2 } }
                 enPrintEditions: editions(where: { _and: [{ language: { code2: { _eq: "en" } } }, { _or: [{ isbn_13: { _is_null: false } }, { isbn_10: { _is_null: false } }] }] }) { id }
                 book_mappings { external_id edition_id platform { id } }
@@ -282,7 +282,11 @@
       const hcBook = hcData.data?.books?.[0] || {};
 
       const title       = hcBook.title  || myBook?.title  || 'Unknown title';
-      const authorData  = hcBook.contributions?.find(c => c.author)?.author;
+      // find(c => c.author) took whoever was listed first, which on an audiobook
+      // is the narrator. The slug has to come from the same contribution as the
+      // name, or the author link points at a different person than it names.
+      const authorName  = primaryAuthor(hcBook.contributions);
+      const authorData  = hcBook.contributions?.find(c => c.author?.name === authorName)?.author;
       const author      = authorData?.name || myBook?.author || '';
       const authorSlug  = authorData?.slug || author.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       const pages       = hcBook.pages  || myBook?.totalPages || 0;

@@ -543,7 +543,7 @@ export async function getRecentlyFinishedBooks(uid) {
     .sort((a, b) => (b.finishedAt?.seconds ?? 0) - (a.finishedAt?.seconds ?? 0));
 }
 
-export async function addFinishedBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, rating, review, releaseYear, country, authorGender, genres, language, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
+export async function addFinishedBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, rating, review, releaseYear, country, authorGender, genres, language, format, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
   const data = {
     title,
     author:      author || '',
@@ -568,6 +568,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, wo
   if (country)        data.country        = country;
   if (authorGender)   data.authorGender   = authorGender;
   if (genres?.length) data.genres         = genres;
+  if (format)         data.format         = format;
   data.reads = [{
     startedAt:           addedAt instanceof Date ? Timestamp.fromDate(addedAt) : (addedAt?.toDate ? Timestamp.fromDate(addedAt.toDate()) : null),
     startedAtPrecision:  addedAt ? (addedAtPrecision || null) : null,

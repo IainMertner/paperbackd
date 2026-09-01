@@ -216,7 +216,7 @@
     import { normalizeCountry } from '../js/utils.js';
     import { fitDropdown, releaseDropdown, autoFit } from '../js/dropdown.js';
     import { metaForSlug, searchBooks } from '../js/hardcover.js';
-    import { parseReleaseYear, pickIsbn13, progressBarPercent, wantToReadBlock, BOOK_LANGUAGES as LANGUAGES } from '../js/book-utils.js';
+    import { parseReleaseYear, pickIsbn13, primaryAuthor, progressBarPercent, wantToReadBlock, BOOK_LANGUAGES as LANGUAGES } from '../js/book-utils.js';
     import { fetchBookMeta } from '../js/enrich.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
@@ -335,7 +335,7 @@
       if (gbid && !/^\d+$/.test(gbid) && (book.releaseYear == null || !book.totalPages || !book.author || !book.genres?.length || !book.isbn13)) {
         try {
           const data = await hcPost(
-            `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){slug pages release_year contributions{author{name}} cached_tags en:editions(where:{_and:[{isbn_13:{_is_null:false}},{language:{code2:{_eq:"en"}}}]},limit:3){isbn_13} any:editions(where:{isbn_13:{_is_null:false}},limit:3){isbn_13}}}`,
+            `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){slug pages release_year contributions{contribution author{name}} cached_tags en:editions(where:{_and:[{isbn_13:{_is_null:false}},{language:{code2:{_eq:"en"}}}]},limit:3){isbn_13} any:editions(where:{isbn_13:{_is_null:false}},limit:3){isbn_13}}}`,
             { slug: gbid }
           );
 
@@ -350,7 +350,7 @@
               if (isbn13) updates.isbn13 = isbn13;
             }
             if (!book.author) {
-              const name = hc.contributions?.[0]?.author?.name;
+              const name = primaryAuthor(hc.contributions);
               if (name) updates.author = name;
             }
             if (!book.genres?.length) {
