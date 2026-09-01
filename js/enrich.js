@@ -9,7 +9,7 @@
 // saved regardless, so a Wikidata outage must never stop someone logging a book.
 
 import { hcQuery } from './hardcover.js';
-import { getAuthorCountryOverrides } from './firebase.js';
+import { getAuthorCountryOverrides, getCountryRemaps } from './firebase.js';
 import { normalizeCountry } from './utils.js';
 
 const WIKIDATA = 'https://www.wikidata.org/w/api.php';
@@ -70,7 +70,7 @@ async function fetchAuthorFacts(author) {
       const labels = await fetch(`${WIKIDATA}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
       if (labels.ok) {
         const name = (await labels.json()).entities?.[countryQid]?.labels?.en?.value;
-        if (name) out.country = normalizeCountry(name);
+        if (name) out.country = normalizeCountry(name, await getCountryRemaps());
       }
     }
   }

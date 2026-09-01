@@ -119,8 +119,17 @@ export function aggregateFollows(events, myUid, getDayKey = () => '') {
   return out;
 }
 
-export function normalizeCountry(raw) {
+export function normalizeCountry(raw, remaps = null) {
   if (!raw) return raw;
+
+  // Admin remaps come first, so a name the table below has never heard of
+  // ("Castile") can be taught without a deploy, and so one of its rules can be
+  // overridden when it turns out to be wrong.
+  const custom = remaps && remaps[String(raw).trim().toLowerCase()];
+  // Not a plain truthiness check: remaps['constructor'] finds the one on
+  // Object.prototype and would hand back a function as the country name.
+  // Requiring a non-empty string rules that out, and an empty target with it.
+  if (typeof custom === 'string' && custom) return custom;
 
   const overrides = {
     'Soviet Union': 'Russia',
@@ -199,7 +208,9 @@ export function normalizeCountry(raw) {
     'State of Qatar': 'Qatar',
   };
 
-  if (overrides[raw]) return overrides[raw];
+  // Same string test as above, and for the same reason: raw could be
+  // 'constructor', which every object literal inherits.
+  if (typeof overrides[raw] === 'string') return overrides[raw];
 
   const prefixes = [
     'Kingdom of the ', 'Kingdom of ',

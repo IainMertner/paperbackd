@@ -430,3 +430,33 @@ export function wantToReadBlock(ownCopy) {
   if (ownCopy.status === 'reading')  return 'Reading now';
   return null;
 }
+
+// A release year as stored on a book, or null if the input is not usable as one.
+//
+// Negative years are BCE — the library's year editor deliberately allows them
+// (every other number field is floored at 0, that one is not) and the stats page
+// prints them as "800 BCE". There is no year zero in that reckoning, so 0 is
+// rejected along with anything unparseable. The lower bound is generous enough
+// for the oldest thing anyone will log and still tight enough to reject a page
+// count typed into the wrong box.
+export function parseReleaseYear(value) {
+  const y = parseInt(value, 10);
+  if (!Number.isFinite(y) || y === 0) return null;
+  return y >= -4000 && y <= 2100 ? y : null;
+}
+
+// What a book's language is set to when the reader has expressed no preference.
+// An explicit empty string means they want none, and is honoured as-is.
+export const DEFAULT_BOOK_LANGUAGE = 'English';
+
+// The language a book gets, given the reader's stored preference.
+//
+// ?? not ||: an empty string is someone who has chosen to have no language, and
+// is honoured; undefined is someone who has never touched the setting.
+//
+// Exported because a caller that adds a book to its own on-screen list needs the
+// same answer the write just used. Rebuilding it there by hand is how the two
+// drifted apart, and a card rendered with no language reads as a lost setting.
+export function resolveBookLanguage(preference) {
+  return preference ?? DEFAULT_BOOK_LANGUAGE;
+}

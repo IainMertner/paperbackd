@@ -446,7 +446,7 @@
     import { requireAuth } from '../js/auth.js';
     import { getProfileByUsername, getProfile, getFinishedBooks, getFollowing, db } from '../js/firebase.js';
     import { doc, updateDoc, setDoc, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-    import { COUNTRY_ISO, ISO_CONTINENT, calcStats, periodKey, inPeriod, periodsToSnapshot, summariseSnapshot } from '../js/stats-utils.js';
+    import { COUNTRY_ISO, ISO_CONTINENT, calcStats, bookAgeYears, periodKey, inPeriod, periodsToSnapshot, summariseSnapshot } from '../js/stats-utils.js';
     import { fitDropdown, releaseDropdown } from '../js/dropdown.js';
 
     const NOW  = new Date();
@@ -2298,8 +2298,11 @@
 
       const thisYear = new Date().getFullYear();
       const ptsAge = finished
-        .filter(b => b.releaseYear > 0)
-        .map(b => ({ x: Math.max(1, thisYear - b.releaseYear), y: b.rating, label: b.title, gbid: b.gbid }));
+        // Computed before filtering, so a book whose year cannot be used drops
+        // out for that reason rather than for being BCE — a negative year is a
+        // real year, and the old `releaseYear > 0` test threw every one away.
+        .map(b => ({ x: bookAgeYears(b.releaseYear, thisYear), y: b.rating, label: b.title, gbid: b.gbid }))
+        .filter(p => p.x != null);
 
       const countriesCanvas = document.getElementById('chart-countries');
       const countriesLegend = document.getElementById('chart-countries-legend');

@@ -236,7 +236,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { logOut, ROOT, importBooks, getBooks, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary, addEmailToAccount, deleteAccountData, getSyncToken, createSyncToken, revokeSyncToken, setDefaultLanguage, DEFAULT_BOOK_LANGUAGE } from '../js/firebase.js';
+    import { logOut, ROOT, importBooks, getBooks, getCountryRemaps, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary, addEmailToAccount, deleteAccountData, getSyncToken, createSyncToken, revokeSyncToken, setDefaultLanguage, DEFAULT_BOOK_LANGUAGE } from '../js/firebase.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, searchHardcover } from '../js/hardcover.js';
     import { computeDupeGroups, planWorkMerge, normaliseIsbn13, BOOK_LANGUAGES } from '../js/book-utils.js';
     import { normalizeCountry } from '../js/utils.js';
@@ -570,7 +570,7 @@
         importStatus.textContent = `Matched ${matched}/${total} books. Saving to library…`;
         await importBooks(currentUser.uid, enriched, (saved, tot) => {
           importStatus.textContent = `Saving to library - ${saved}/${tot} done…`;
-        });
+        }, currentProfile?.defaultLanguage);
         importStatus.innerHTML = `All done! Imported ${total} books (${matched} matched with Hardcover). <span style="color:var(--text-muted)">Run <strong>Repair library</strong> below to fill in missing covers and metadata.</span>`;
         importStatus.style.color = 'var(--accent)';
         importPreview.style.display = 'none';
@@ -869,11 +869,12 @@
         }
 
         // ── Phase 2.5: re-normalize stored country values ────────────────────
-        const toRenormalize = books.filter(b => b.country && normalizeCountry(b.country) !== b.country);
+        const cRemaps = await getCountryRemaps();
+        const toRenormalize = books.filter(b => b.country && normalizeCountry(b.country, cRemaps) !== b.country);
         if (toRenormalize.length) {
           repairStatus.textContent = `Normalizing ${toRenormalize.length} countr${toRenormalize.length === 1 ? 'y' : 'ies'}…`;
           for (const book of toRenormalize) {
-            await updateBookMeta(currentUser.uid, book.id, { country: normalizeCountry(book.country) });
+            await updateBookMeta(currentUser.uid, book.id, { country: normalizeCountry(book.country, cRemaps) });
             fixed++;
           }
         }
@@ -921,7 +922,7 @@
               if (!lr.ok) { if (Object.keys(facts).length) authorMap.set(authorName, facts); continue; }
               const ld = await lr.json();
               const country = ld.entities?.[countryQid]?.labels?.en?.value;
-              if (country) facts.country = normalizeCountry(country);
+              if (country) facts.country = normalizeCountry(country, await getCountryRemaps());
               if (Object.keys(facts).length) authorMap.set(authorName, facts);
             } catch (e) { /* skip author */ }
           }

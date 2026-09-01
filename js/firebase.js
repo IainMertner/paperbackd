@@ -36,7 +36,7 @@ import {
   writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { compareLists } from './utils.js';
-import { viewerSeesOnlyPublic, planWorkMerge, dupeGroupsForSlug, sameBook } from './book-utils.js';
+import { viewerSeesOnlyPublic, planWorkMerge, dupeGroupsForSlug, sameBook, resolveBookLanguage } from './book-utils.js';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const firebaseConfig = {
@@ -429,6 +429,49 @@ export async function deleteBookRemap(fromSlug) {
   remapCache = null;
 }
 
+// Country name remaps, e.g. "Castile" -> "Spain". Historic and regional names
+// that normalizeCountry's built-in table does not know, editable by an admin
+// without a deploy.
+//
+// Applied where a country is written rather than where it is read, which is how
+// normalizeCountry is already used — so a new remap takes effect on books added
+// from then on, and on existing ones the next time Repair runs.
+
+const COUNTRY_REMAPS_DOC = () => doc(db, 'config', 'countryRemaps');
+
+let countryRemapCache = null;
+
+export async function getCountryRemaps({ force = false } = {}) {
+  if (countryRemapCache && !force) return countryRemapCache;
+  try {
+    const snap = await getDoc(COUNTRY_REMAPS_DOC());
+    countryRemapCache = snap.exists() ? (snap.data().remaps || {}) : {};
+  } catch {
+    countryRemapCache = {};   // adding a book must not fail on a config read
+  }
+  return countryRemapCache;
+}
+
+export async function setCountryRemap(from, to) {
+  const key    = String(from).trim().toLowerCase();
+  const target = String(to).trim();
+  if (!key || !target) throw new Error('A country remap needs both a name and a target.');
+  // Nested data, not a field path, so a dot in the name is just a character.
+  await setDoc(COUNTRY_REMAPS_DOC(), { remaps: { [key]: target } }, { merge: true });
+  countryRemapCache = null;
+}
+
+export async function deleteCountryRemap(from) {
+  const key    = String(from).trim().toLowerCase();
+  const snap   = await getDoc(COUNTRY_REMAPS_DOC());
+  const remaps = snap.exists() ? { ...(snap.data().remaps || {}) } : {};
+  delete remaps[key];
+  // Rewritten whole rather than with deleteField(): a country name can carry a
+  // dot ("St. Kitts"), and a dotted key in a field path means something else.
+  await setDoc(COUNTRY_REMAPS_DOC(), { remaps });
+  countryRemapCache = null;
+}
+
 export async function updateBookCover(uid, bookId, coverUrl, { gbid, title } = {}) {
   await updateDoc(doc(db, 'users', uid, 'books', bookId), { coverUrl });
   const docs = await activityDocsForBook(uid, { bookId, gbid, title });
@@ -459,7 +502,7 @@ export async function importBooks(uid, books, onProgress, language) {
       const data = { ...b };
       if (!data.addedAt)  data.addedAt  = serverTimestamp();
       if (!data.language) {
-        const fallback = language ?? DEFAULT_BOOK_LANGUAGE;
+        const fallback = resolveBookLanguage(language);
         if (fallback) data.language = fallback;
       }
       return addDoc(col, data);
@@ -511,7 +554,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, wo
     addedAt:     addedAt || serverTimestamp(),
     // ?? not ||: the caller passing '' is someone who has chosen to have no
     // default language, which is different from not passing one at all.
-    language:    language ?? DEFAULT_BOOK_LANGUAGE
+    language:    resolveBookLanguage(language)
   };
   if (finishedAt)          data.finishedAt          = finishedAt;
   if (finishedAtPrecision) data.finishedAtPrecision = finishedAtPrecision;
@@ -530,6 +573,11 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, wo
     startedAtPrecision:  addedAt ? (addedAtPrecision || null) : null,
     finishedAt:          finishedAt instanceof Date ? Timestamp.fromDate(finishedAt) : Timestamp.fromDate(new Date()),
     finishedAtPrecision: finishedAt ? (finishedAtPrecision || null) : null,
+    // updateBookReads rebuilds the book's language from its most recent read and
+    // deletes the field when that read has none — so leaving it off here meant a
+    // finished book lost its language the first time its dates were edited.
+    language: resolveBookLanguage(language),
+    format:   format || null,
     rating: rating ?? null,
     review: review || null,
   }];
@@ -565,7 +613,7 @@ export async function addBook(uid, { title, author, totalPages, gbid, workId, is
     gbid:             gbid || '',
     addedAt:          serverTimestamp(),
     addedAtPrecision: 'day',
-    language:         language ?? DEFAULT_BOOK_LANGUAGE
+    language:         resolveBookLanguage(language)
   };
   if (workId)                bookData.workId       = workId;
   // The one identifier here that means anything outside Hardcover, so it is
@@ -955,9 +1003,9 @@ export async function setListPrivate(uid, listId, isPrivate) {
 
 export const DEFAULT_LIST_NAME = 'Want to read';
 
-// What a book's language is set to when the reader has expressed no preference.
-// An explicit empty string means they want none, and is honoured as-is.
-export const DEFAULT_BOOK_LANGUAGE = 'English';
+// Both live in book-utils so they can be unit-tested: this module imports the
+// Firebase SDK over https, which the Node test runner cannot resolve.
+export { DEFAULT_BOOK_LANGUAGE, resolveBookLanguage } from './book-utils.js';
 
 export async function getLists(uid, viewerUid) {
   const col = collection(db, 'users', uid, 'lists');

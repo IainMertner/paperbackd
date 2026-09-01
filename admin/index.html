@@ -75,6 +75,25 @@
     </div>
 
     <div class="settings-group">
+      <div class="settings-group-label">Remap country (global)</div>
+      <div class="settings-list">
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.75rem;padding:.875rem 1rem">
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Teach the app a country name it does not know &mdash; historic or regional, e.g. Castile &rarr; Spain. Applied to books as they are added; books already saved pick it up the next time Repair runs.</p>
+          <div style="display:flex;gap:.5rem;width:100%;flex-wrap:wrap">
+            <input type="text" id="country-remap-from" class="join-club-input" placeholder="Name to remap (Castile)" autocomplete="off" spellcheck="false" style="flex:1;min-width:10rem">
+            <input type="text" id="country-remap-to"   class="join-club-input" placeholder="Country (Spain)" autocomplete="off" spellcheck="false" style="flex:1;min-width:10rem">
+            <button class="btn-update" id="country-remap-btn" type="button">Add</button>
+          </div>
+          <div id="country-remap-status" style="display:none;font-size:.85rem"></div>
+          <details style="width:100%">
+            <summary style="font-size:.82rem;color:var(--text-muted);cursor:pointer;user-select:none;padding:.15rem 0">Existing remaps <span id="country-remap-count"></span></summary>
+            <div id="country-remap-list" style="width:100%;display:flex;flex-direction:column;gap:.35rem;margin-top:.5rem"></div>
+          </details>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
       <div class="settings-group-label">Admin console</div>
       <div class="settings-list">
 
@@ -199,10 +218,11 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { ROOT, db, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, backfillWorkIds, backfillWorkIdsForAllUsers, setBookRemap, deleteBookRemap, getBookRemaps, mergeDuplicatesForSlug, remapActivityForSlug } from '../js/firebase.js';
+    import { ROOT, db, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, backfillWorkIds, backfillWorkIdsForAllUsers, setBookRemap, deleteBookRemap, getBookRemaps, getCountryRemaps, setCountryRemap, deleteCountryRemap, mergeDuplicatesForSlug, remapActivityForSlug } from '../js/firebase.js';
     import { deleteField, collection, doc, getDocs, query as fsQuery, where, updateDoc, Timestamp, limit, getCountFromServer, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, resolveWorkIds, workIdForSlug } from '../js/hardcover.js';
     import { computeDupeGroups, planWorkMerge } from '../js/book-utils.js';
+    import { COUNTRY_ISO } from '../js/stats-utils.js';
     import { normalizeCountry, esc } from '../js/utils.js';
 
     let currentUser = null;
@@ -712,11 +732,12 @@
         }
 
         // ── Phase 2.5: re-normalize stored country values ────────────────────
-        const toRenormalize = books.filter(b => b.country && normalizeCountry(b.country) !== b.country);
+        const cRemaps = await getCountryRemaps();
+        const toRenormalize = books.filter(b => b.country && normalizeCountry(b.country, cRemaps) !== b.country);
         if (toRenormalize.length) {
           repairStatus.textContent = `Normalizing ${toRenormalize.length} countr${toRenormalize.length === 1 ? 'y' : 'ies'}…`;
           for (const book of toRenormalize) {
-            await updateBookMeta(targetUid, book.id, { country: normalizeCountry(book.country) });
+            await updateBookMeta(targetUid, book.id, { country: normalizeCountry(book.country, cRemaps) });
             fixed++;
           }
         }
@@ -762,7 +783,7 @@
                   if (lr.ok) {
                     const ld = await lr.json();
                     const country = ld.entities?.[countryQid]?.labels?.en?.value;
-                    if (country) countryMap.set(authorName, normalizeCountry(country));
+                    if (country) countryMap.set(authorName, normalizeCountry(country, await getCountryRemaps()));
                   }
                 }
               }
@@ -1070,6 +1091,86 @@
     }
 
     renderRemaps().catch(() => {});
+
+    // -- Country remaps -------------------------------------------
+    // A name normalizeCountry has never heard of, taught at runtime. Stored
+    // lowercased, so whatever casing is typed here does not matter.
+    const crFrom  = document.getElementById('country-remap-from');
+    const crTo    = document.getElementById('country-remap-to');
+    const crBtn   = document.getElementById('country-remap-btn');
+    const crState = document.getElementById('country-remap-status');
+    const crList  = document.getElementById('country-remap-list');
+    const crCount = document.getElementById('country-remap-count');
+
+    function crSay(msg, ok) {
+      crState.style.display = '';
+      crState.style.color   = ok ? 'var(--accent)' : '#c84f4f';
+      crState.textContent   = msg;
+    }
+
+    async function renderCountryRemaps() {
+      const remaps  = await getCountryRemaps({ force: true });
+      const entries = Object.entries(remaps).sort((a, b) => a[0].localeCompare(b[0]));
+      crCount.textContent = entries.length ? `(${entries.length})` : '';
+      crList.innerHTML = '';
+      if (!entries.length) {
+        crList.innerHTML = '<span style="font-size:.82rem;color:var(--text-muted)">No country remaps yet.</span>';
+        return;
+      }
+      for (const [from, to] of entries) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.5rem;font-size:.85rem';
+        const label = document.createElement('span');
+        label.style.cssText = 'flex:1;min-width:0;word-break:break-word';
+        label.textContent = `${from} → ${to}`;
+        if (!COUNTRY_ISO[to.toLowerCase()]) {
+          const warn = document.createElement('span');
+          warn.style.cssText = 'font-size:.75rem;color:var(--text-muted)';
+          warn.textContent = 'not on the map';
+          label.append(' ', warn);
+        }
+        const del = document.createElement('button');
+        del.textContent = 'Remove';
+        del.style.cssText = 'padding:.2rem .5rem;font-size:.8rem;font-family:inherit;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;color:var(--text-muted)';
+        del.addEventListener('click', async () => {
+          // Books already written keep the country they were given; only
+          // later writes and the next Repair change.
+          if (!confirm(`Remove the remap "${from}" → "${to}"? Books already saved as "${to}" stay that way.`)) return;
+          del.disabled = true;
+          try { await deleteCountryRemap(from); await renderCountryRemaps(); }
+          catch (err) { console.error(err); del.disabled = false; }
+        });
+        row.append(label, del);
+        crList.appendChild(row);
+      }
+    }
+
+    crBtn.addEventListener('click', async () => {
+      const from = crFrom.value.trim();
+      const to   = crTo.value.trim();
+      if (!from || !to) { crSay('Both a name and a country are needed.', false); return; }
+      crBtn.disabled = true;
+      try {
+        await setCountryRemap(from, to);
+        crFrom.value = '';
+        crTo.value   = '';
+        // Saved either way: the countries map is one view of the data, not the
+        // arbiter of what counts as a country. But an unrecognised target goes
+        // quietly missing from it, which is worth saying at the time.
+        crSay(COUNTRY_ISO[to.toLowerCase()]
+          ? `${from} → ${to}. Run Repair to apply it to books already saved.`
+          : `${from} → ${to}. Note: "${to}" is not on the countries map, so those books will not appear on it.`, true);
+        await renderCountryRemaps();
+      } catch (err) {
+        crSay(err.message || 'Could not save that.', false);
+      }
+      crBtn.disabled = false;
+    });
+
+    crFrom.addEventListener('keydown', e => { if (e.key === 'Enter') crTo.focus(); });
+    crTo.addEventListener('keydown',   e => { if (e.key === 'Enter') crBtn.click(); });
+
+    renderCountryRemaps().catch(() => {});
   </script>
   <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
 </body>

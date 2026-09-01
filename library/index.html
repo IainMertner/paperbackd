@@ -211,12 +211,12 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, undnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing, setBookPrivate } from '../js/firebase.js';
+    import { getBooks, addBook, getCountryRemaps, resolveBookLanguage, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, undnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing, setBookPrivate } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { normalizeCountry } from '../js/utils.js';
     import { fitDropdown, releaseDropdown, autoFit } from '../js/dropdown.js';
     import { metaForSlug, searchBooks } from '../js/hardcover.js';
-    import { pickIsbn13, progressBarPercent, wantToReadBlock, BOOK_LANGUAGES as LANGUAGES } from '../js/book-utils.js';
+    import { parseReleaseYear, pickIsbn13, progressBarPercent, wantToReadBlock, BOOK_LANGUAGES as LANGUAGES } from '../js/book-utils.js';
     import { fetchBookMeta } from '../js/enrich.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
@@ -377,9 +377,10 @@
       }
 
       // Phase 2.5: re-normalize stored country
+      const cRemaps = await getCountryRemaps();
       const storedCountry = book.country;
-      if (storedCountry && normalizeCountry(storedCountry) !== storedCountry) {
-        updates.country = normalizeCountry(storedCountry);
+      if (storedCountry && normalizeCountry(storedCountry, cRemaps) !== storedCountry) {
+        updates.country = normalizeCountry(storedCountry, cRemaps);
       }
 
       // Phase 3: country + gender lookup — overrides first, then Wikidata
@@ -414,7 +415,7 @@
                       if (lr.ok) {
                         const ld = await lr.json();
                         const countryName = ld.entities?.[countryQid]?.labels?.en?.value;
-                        if (countryName) updates.country = normalizeCountry(countryName);
+                        if (countryName) updates.country = normalizeCountry(countryName, await getCountryRemaps());
                       }
                     }
                   }
@@ -2943,8 +2944,8 @@
               const paramStr = [slugs.length && '$slugs:[String!]!', ids.length && '$ids:[Int!]!'].filter(Boolean).join(',');
               const d = await hcPost(`query(${paramStr}){${parts.join(' ')}}`, vars);
               const yearMap = new Map();
-              (d?.data?.bySlug || []).forEach(b => { const y = parseInt(b.release_year, 10); if (y >= 1000 && y <= 2100) yearMap.set(b.slug, y); });
-              (d?.data?.byId   || []).forEach(b => { const y = parseInt(b.release_year, 10); if (y >= 1000 && y <= 2100) yearMap.set(String(b.id), y); });
+              (d?.data?.bySlug || []).forEach(b => { const y = parseReleaseYear(b.release_year); if (y != null) yearMap.set(b.slug, y); });
+              (d?.data?.byId   || []).forEach(b => { const y = parseReleaseYear(b.release_year); if (y != null) yearMap.set(String(b.id), y); });
               let updated = false;
               missing.forEach(b => { const y = yearMap.get(b.gbid); if (y) { b.releaseYear = y; updated = true; } });
               if (updated && sortState.key === 'release') renderFinishedSorted();
@@ -3537,7 +3538,7 @@
           pages: parseInt(pagesInp.value) || 0,
           gbid: '',
           cover: '',
-          releaseYear: (() => { const y = parseInt(yearInp.value, 10); return y >= 1000 && y <= 2100 ? y : null; })(),
+          releaseYear: parseReleaseYear(yearInp.value),
         };
         searchInput.value        = title;
         suggestBox.innerHTML     = '';
@@ -3571,7 +3572,7 @@
         const pages       = doc.pages || 0;
         const cover       = doc.image?.url || '';
         const slug        = doc.slug || String(doc.id);
-        const releaseYear = (() => { const y = parseInt(doc.release_year, 10); return y >= 1000 && y <= 2100 ? y : null; })();
+        const releaseYear = parseReleaseYear(doc.release_year);
 
         const el = document.createElement('div');
         el.className = 'book-suggestion-item';
@@ -3628,10 +3629,11 @@
       const { title, author, pages, gbid, cover, releaseYear, country, authorGender, genres } = selectedBook;
       const { workId, isbn13 } = await metaForSlug(gbid);
 
-      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, workId, isbn13, coverUrl: cover, releaseYear, country, authorGender, genres, language: profile.defaultLanguage }, profile.username);
+      const language = resolveBookLanguage(profile.defaultLanguage);
+      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, workId, isbn13, coverUrl: cover, releaseYear, country, authorGender, genres, language }, profile.username);
       const isPrivate = privateCheck.checked;
       if (isPrivate) await setBookPrivate(user.uid, id, true);
-      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, authorGender, genres, addedAt: { toDate: () => new Date() }, addedAtPrecision: 'day', private: isPrivate || undefined };
+      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, authorGender, genres, language, addedAt: { toDate: () => new Date() }, addedAtPrecision: 'day', private: isPrivate || undefined };
 
       allBooks.push(book);
       document.getElementById('reading-empty')?.remove();
@@ -3738,10 +3740,11 @@
           updateCounts();
           document.getElementById('library-filter')?.dispatchEvent(new Event('input'));
         } else {
+          const finishedLanguage = resolveBookLanguage(profile.defaultLanguage);
           const id = await addFinishedBook(user.uid, {
             title, author, totalPages: pages, gbid, ...(await metaForSlug(gbid)),
             coverUrl: cover, rating, review, releaseYear, country, authorGender, genres,
-            language: profile.defaultLanguage,
+            language: finishedLanguage,
             finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,
             addedAt,    addedAtPrecision:    addedAt    ? startedPrec  : undefined
           }, profile.username);
@@ -3753,8 +3756,8 @@
             addedAtPrecision:    addedAt    ? startedPrec  : null,
             finishedAt:          finishedAt ? { toDate: () => finishedAt } : null,
             finishedAtPrecision: finishedAt ? finishedPrec : null,
-            gbid, rating, review, releaseYear, country, authorGender, genres,
-            reads: [{ startedAt: addedAt ? { toDate: () => addedAt } : null, startedAtPrecision: addedAt ? startedPrec : null, finishedAt: finishedAt ? { toDate: () => finishedAt } : { toDate: () => new Date() }, finishedAtPrecision: finishedAt ? finishedPrec : null, rating, review }],
+            gbid, rating, review, releaseYear, country, authorGender, genres, language: finishedLanguage,
+            reads: [{ startedAt: addedAt ? { toDate: () => addedAt } : null, startedAtPrecision: addedAt ? startedPrec : null, finishedAt: finishedAt ? { toDate: () => finishedAt } : { toDate: () => new Date() }, finishedAtPrecision: finishedAt ? finishedPrec : null, language: finishedLanguage, format: null, rating, review }],
           };
           allBooks.push(book);
           document.getElementById('finished-empty')?.remove();

@@ -295,3 +295,16 @@ export function summariseSnapshot(entry) {
   }));
   return { rows, met: rows.filter(r => r.met).length, total: rows.length };
 }
+
+// How old a book is now, in years, or null if its year is unusable.
+//
+// BCE years are negative, and there is no year zero between -1 and 1 — so a
+// plain subtraction runs a year long across the boundary: 800 BCE to 2026 CE is
+// 2825 years, not 2826.
+//
+// Anything dated now or later comes back as 1 rather than 0 or a negative: the
+// scatter plots this on a log scale, where neither has a position.
+export function bookAgeYears(releaseYear, thisYear) {
+  if (releaseYear == null || releaseYear === 0) return null;
+  return Math.max(1, thisYear - releaseYear - (releaseYear < 0 ? 1 : 0));
+}
