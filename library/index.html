@@ -213,7 +213,7 @@
     import { requireAuth } from '../js/auth.js';
     import { getBooks, addBook, getCountryRemaps, resolveBookLanguage, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, undnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing, setBookPrivate } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-    import { normalizeCountry } from '../js/utils.js';
+    import { normalizeCountry, serialiseCalls } from '../js/utils.js';
     import { fitDropdown, releaseDropdown, autoFit } from '../js/dropdown.js';
     import { metaForSlug, searchBooks } from '../js/hardcover.js';
     import { parseReleaseYear, pickIsbn13, primaryAuthor, progressBarPercent, wantToReadBlock, BOOK_LANGUAGES as LANGUAGES } from '../js/book-utils.js';
@@ -2109,7 +2109,9 @@
         }
         try {
           markReadsDirty();
-          await Promise.all([doSaveCurrentRead(), doSaveBookMeta()]);
+          // Through the queue, not straight at doSaveCurrentRead: the
+          // serialisation above only works if every save goes through it.
+          await Promise.all([saveCurrentRead(), doSaveBookMeta()]);
           readSaveBtn.textContent = 'Saved ✓';
           setTimeout(() => { if (readSaveBtn.isConnected) { readSaveBtn.textContent = 'Save'; readSaveBtn.disabled = false; } }, 1500);
         } catch {
@@ -2135,11 +2137,9 @@
       // Serialize saves: overlapping calls (debounce vs. instant star/review triggers)
       // must never run concurrently, or whichever Firestore write lands last wins
       // regardless of which one started with fresher data.
-      let saveQueue = Promise.resolve();
-      function saveCurrentRead() {
-        saveQueue = saveQueue.then(doSaveCurrentRead, err => console.error('Read save failed:', err));
-        return saveQueue;
-      }
+      // doSaveCurrentRead is a hoisted function declaration, so it is already
+      // bound by the time this runs.
+      const saveCurrentRead = serialiseCalls(doSaveCurrentRead, err => console.error('Read save failed:', err));
       async function doSaveCurrentRead() {
         try {
           const { date: startedAtDate,  precision: startedAtPrec  } = startedPicker.getDate();

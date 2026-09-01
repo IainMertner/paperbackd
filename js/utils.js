@@ -329,3 +329,23 @@ export function moveInArray(items, from, delta) {
   next.splice(to, 0, moved);
   return next;
 }
+
+// Wraps an async function so its calls never overlap — each waits for the
+// previous one to settle before starting.
+//
+// For saves, where two writes in flight at once mean whichever lands last wins
+// regardless of which one started from fresher data.
+//
+// A rejection reaches the caller that caused it and nobody else. The internal
+// chain deliberately continues from a promise that always settles: a queue left
+// rejected would route the *next* call into its own error handler and skip that
+// call's work entirely, so one failed save would silently discard the one after
+// it while still reporting success. onError covers a caller that never awaits.
+export function serialiseCalls(fn, onError) {
+  let queue = Promise.resolve();
+  return (...args) => {
+    const run = queue.then(() => fn(...args), () => fn(...args));
+    queue = run.catch(err => { if (onError) onError(err); });
+    return run;
+  };
+}
