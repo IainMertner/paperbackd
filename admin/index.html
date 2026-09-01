@@ -44,7 +44,7 @@
           <p style="font-size:.82rem;color:var(--text-muted);margin:0">Map an author name to a country. Repair uses these instead of Wikidata, and new books trigger it automatically.</p>
           <div style="display:flex;gap:.5rem;width:100%">
             <input type="text" id="override-author" class="join-club-input" placeholder="Author name" autocomplete="off" spellcheck="false" style="flex:2;min-width:0">
-            <input type="text" id="override-country" class="join-club-input" placeholder="Country" autocomplete="off" spellcheck="false" style="flex:1;min-width:0">
+            <select id="override-country" class="join-club-input" style="flex:1;min-width:0"></select>
             <button class="btn-update" id="override-add-btn" type="button">Add</button>
           </div>
           <div id="override-status" style="display:none;font-size:.85rem"></div>
@@ -81,7 +81,7 @@
           <p style="font-size:.82rem;color:var(--text-muted);margin:0">Teach the app a country name it does not know &mdash; historic or regional, e.g. Castile &rarr; Spain. Applied to books as they are added; books already saved pick it up the next time Repair runs.</p>
           <div style="display:flex;gap:.5rem;width:100%;flex-wrap:wrap">
             <input type="text" id="country-remap-from" class="join-club-input" placeholder="Name to remap (Castile)" autocomplete="off" spellcheck="false" style="flex:1;min-width:10rem">
-            <input type="text" id="country-remap-to"   class="join-club-input" placeholder="Country (Spain)" autocomplete="off" spellcheck="false" style="flex:1;min-width:10rem">
+            <select id="country-remap-to" class="join-club-input" style="flex:1;min-width:10rem"></select>
             <button class="btn-update" id="country-remap-btn" type="button">Add</button>
           </div>
           <div id="country-remap-status" style="display:none;font-size:.85rem"></div>
@@ -222,7 +222,7 @@
     import { deleteField, collection, doc, getDocs, query as fsQuery, where, updateDoc, Timestamp, limit, getCountFromServer, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, resolveWorkIds, workIdForSlug } from '../js/hardcover.js';
     import { computeDupeGroups, planWorkMerge, primaryAuthor } from '../js/book-utils.js';
-    import { COUNTRY_ISO } from '../js/stats-utils.js';
+    import { COUNTRIES } from '../js/stats-utils.js';
     import { normalizeCountry, esc } from '../js/utils.js';
 
     let currentUser = null;
@@ -1092,6 +1092,14 @@
 
     renderRemaps().catch(() => {});
 
+    // Both country fields are pickers, not free text: a typo used to become a
+    // country of its own, counted separately and absent from the map.
+    for (const id of ['override-country', 'country-remap-to']) {
+      const sel = document.getElementById(id);
+      sel.appendChild(new Option('Select a country…', ''));
+      for (const c of COUNTRIES) sel.appendChild(new Option(c, c));
+    }
+
     // -- Country remaps -------------------------------------------
     // A name normalizeCountry has never heard of, taught at runtime. Stored
     // lowercased, so whatever casing is typed here does not matter.
@@ -1123,12 +1131,6 @@
         const label = document.createElement('span');
         label.style.cssText = 'flex:1;min-width:0;word-break:break-word';
         label.textContent = `${from} → ${to}`;
-        if (!COUNTRY_ISO[to.toLowerCase()]) {
-          const warn = document.createElement('span');
-          warn.style.cssText = 'font-size:.75rem;color:var(--text-muted)';
-          warn.textContent = 'not on the map';
-          label.append(' ', warn);
-        }
         const del = document.createElement('button');
         del.textContent = 'Remove';
         del.style.cssText = 'padding:.2rem .5rem;font-size:.8rem;font-family:inherit;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;color:var(--text-muted)';
@@ -1154,12 +1156,9 @@
         await setCountryRemap(from, to);
         crFrom.value = '';
         crTo.value   = '';
-        // Saved either way: the countries map is one view of the data, not the
-        // arbiter of what counts as a country. But an unrecognised target goes
-        // quietly missing from it, which is worth saying at the time.
-        crSay(COUNTRY_ISO[to.toLowerCase()]
-          ? `${from} → ${to}. Run Repair to apply it to books already saved.`
-          : `${from} → ${to}. Note: "${to}" is not on the countries map, so those books will not appear on it.`, true);
+        // No map warning needed: the target is picked from COUNTRIES, every
+        // entry of which COUNTRY_ISO can place.
+        crSay(`${from} → ${to}. Run Repair to apply it to books already saved.`, true);
         await renderCountryRemaps();
       } catch (err) {
         crSay(err.message || 'Could not save that.', false);

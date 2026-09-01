@@ -214,6 +214,7 @@
     import { getBooks, addBook, getCountryRemaps, resolveBookLanguage, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, undnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing, setBookPrivate } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { normalizeCountry, serialiseCalls } from '../js/utils.js';
+    import { COUNTRIES } from '../js/stats-utils.js';
     import { fitDropdown, releaseDropdown, autoFit } from '../js/dropdown.js';
     import { metaForSlug, searchBooks } from '../js/hardcover.js';
     import { parseReleaseYear, pickIsbn13, primaryAuthor, progressBarPercent, wantToReadBlock, BOOK_LANGUAGES as LANGUAGES } from '../js/book-utils.js';
@@ -693,7 +694,7 @@
         let overlay;
         const card = renderReading(book, cell, () => overlay?.remove());
         overlay = createBookModal(card);
-        card.querySelector('.page-input:not(.page-total)')?.select();
+        card.querySelector('.progress-controls input.page-input')?.select();
       });
     }
 
@@ -1072,7 +1073,6 @@
     }
 
 
-    const COUNTRIES = ['Afghanistan','Albania','Algeria','Andorra','Angola','Antigua and Barbuda','Argentina','Armenia','Australia','Austria','Azerbaijan','Bahamas','Bahrain','Bangladesh','Barbados','Belarus','Belgium','Belize','Benin','Bhutan','Bolivia','Bosnia and Herzegovina','Botswana','Brazil','Brunei','Bulgaria','Burkina Faso','Burundi','Cabo Verde','Cambodia','Cameroon','Canada','Central African Republic','Chad','Chile','China','Colombia','Comoros','Congo','Costa Rica','Croatia','Cuba','Cyprus','Czech Republic','Denmark','Djibouti','Dominica','Dominican Republic','Ecuador','Egypt','El Salvador','Equatorial Guinea','Eritrea','Estonia','Eswatini','Ethiopia','Fiji','Finland','France','Gabon','Gambia','Georgia','Germany','Ghana','Greece','Grenada','Guatemala','Guinea','Guinea-Bissau','Guyana','Haiti','Honduras','Hungary','Iceland','India','Indonesia','Iran','Iraq','Ireland','Israel','Italy','Jamaica','Japan','Jordan','Kazakhstan','Kenya','Kiribati','Kuwait','Kyrgyzstan','Laos','Latvia','Lebanon','Lesotho','Liberia','Libya','Liechtenstein','Lithuania','Luxembourg','Madagascar','Malawi','Malaysia','Maldives','Mali','Malta','Marshall Islands','Mauritania','Mauritius','Mexico','Micronesia','Moldova','Monaco','Mongolia','Montenegro','Morocco','Mozambique','Myanmar','Namibia','Nauru','Nepal','Netherlands','New Zealand','Nicaragua','Niger','Nigeria','North Korea','North Macedonia','Norway','Oman','Pakistan','Palau','Palestine','Panama','Papua New Guinea','Paraguay','Peru','Philippines','Poland','Portugal','Qatar','Romania','Russia','Rwanda','Saint Kitts and Nevis','Saint Lucia','Saint Vincent and the Grenadines','Samoa','San Marino','São Tomé and Príncipe','Saudi Arabia','Senegal','Serbia','Seychelles','Sierra Leone','Singapore','Slovakia','Slovenia','Solomon Islands','Somalia','South Africa','South Korea','South Sudan','Spain','Sri Lanka','Sudan','Suriname','Sweden','Switzerland','Syria','Taiwan','Tajikistan','Tanzania','Thailand','Timor-Leste','Togo','Tonga','Trinidad and Tobago','Tunisia','Turkey','Turkmenistan','Tuvalu','Uganda','Ukraine','United Arab Emirates','United Kingdom','United States','Uruguay','Uzbekistan','Vanuatu','Vatican City','Venezuela','Vietnam','Yemen','Zambia','Zimbabwe'];
 
     // Language picker. A select, not an input+datalist: a datalist filters its
     // options against whatever is already typed, so a book already set to
@@ -1122,10 +1122,17 @@
           const blank = document.createElement('option');
           blank.value = ''; blank.textContent = '—';
           control.appendChild(blank);
-          (options || []).forEach(v => {
+          // A stored value outside the list keeps its place. Books predate this
+          // list, and an option quietly missing would show as blank and then be
+          // written as blank the next time anything on the card was saved.
+          const stored = book[key] ?? '';
+          const choices = stored && !(options || []).includes(stored)
+            ? [stored, ...(options || [])]
+            : (options || []);
+          choices.forEach(v => {
             const o = document.createElement('option');
             o.value = v; o.textContent = v;
-            if (v === (book[key] ?? '')) o.selected = true;
+            if (v === stored) o.selected = true;
             control.appendChild(o);
           });
         } else if (type === 'tags') {
@@ -1686,7 +1693,7 @@
         { label: 'Title',         key: 'title',        type: 'text'   },
         { label: 'Author',        key: 'author',       type: 'text'   },
         { label: 'Gender',        key: 'authorGender', type: 'select', options: ['Male', 'Female', 'Non-binary', 'Other'] },
-        { label: 'Country',       key: 'country',      type: 'text',   options: COUNTRIES },
+        { label: 'Country',       key: 'country',      type: 'select', options: COUNTRIES },
         { label: 'Release year',  key: 'releaseYear',  type: 'number' },
         { label: 'Genres',        key: 'genres',       type: 'tags'   },
       ]);
@@ -2223,7 +2230,7 @@
         { label: 'Title',         key: 'title',        type: 'text'   },
         { label: 'Author',        key: 'author',       type: 'text'   },
         { label: 'Gender',        key: 'authorGender', type: 'select', options: ['Male', 'Female', 'Non-binary', 'Other'] },
-        { label: 'Country',       key: 'country',      type: 'text',   options: COUNTRIES },
+        { label: 'Country',       key: 'country',      type: 'select', options: COUNTRIES },
         { label: 'Release year',  key: 'releaseYear',  type: 'number' },
         { label: 'Total pages',   key: 'totalPages',   type: 'number' },
         { label: 'Genres',        key: 'genres',       type: 'tags'   },
@@ -2730,7 +2737,7 @@
         document.getElementById('reading-empty')?.remove();
         if (viewMode === 'list') {
           const row = makeBookListRow(book);
-          row.addEventListener('click', () => { let ov; const c = renderReading(book, row, () => ov?.remove()); ov = createBookModal(c); c.querySelector('.page-input:not(.page-total)')?.select(); });
+          row.addEventListener('click', () => { let ov; const c = renderReading(book, row, () => ov?.remove()); ov = createBookModal(c); c.querySelector('.progress-controls input.page-input')?.select(); });
           readingList.prepend(row);
         } else {
           const cell = makeBookCoverCell(book);
@@ -2996,7 +3003,7 @@
           reading.forEach(b => {
             if (viewMode === 'list') {
               const row = makeBookListRow(b);
-              row.addEventListener('click', () => { let ov; const c = renderReading(b, row, () => ov?.remove()); ov = createBookModal(c); c.querySelector('.page-input:not(.page-total)')?.select(); });
+              row.addEventListener('click', () => { let ov; const c = renderReading(b, row, () => ov?.remove()); ov = createBookModal(c); c.querySelector('.progress-controls input.page-input')?.select(); });
               readingList.appendChild(row);
             } else {
               const cell = makeBookCoverCell(b);
@@ -3639,7 +3646,7 @@
       document.getElementById('reading-empty')?.remove();
       if (viewMode === 'list') {
         const newRow = makeBookListRow(book);
-        newRow.addEventListener('click', () => { let ov; const c = renderReading(book, newRow, () => ov?.remove()); ov = createBookModal(c); c.querySelector('.page-input:not(.page-total)')?.select(); });
+        newRow.addEventListener('click', () => { let ov; const c = renderReading(book, newRow, () => ov?.remove()); ov = createBookModal(c); c.querySelector('.progress-controls input.page-input')?.select(); });
         readingList.prepend(newRow);
       } else {
         const newCell = makeBookCoverCell(book);
