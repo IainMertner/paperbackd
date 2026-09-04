@@ -338,6 +338,15 @@ export function updateDisplayName(uid, name) {
   return updateDoc(doc(db, 'users', uid), { displayName: clean || deleteField() });
 }
 
+// Self-declared, and it cannot be anything else: nothing links a paperbackd
+// account to a Discord one unless the reader authorises it through Discord's
+// OAuth, so there is no way to check. All this does is stop showing the invite.
+//
+// Removed rather than stored false, so the absent field is the default.
+export function setDiscordJoined(uid, joined) {
+  return updateDoc(doc(db, 'users', uid), { discordJoined: joined ? true : deleteField() });
+}
+
 // Removed rather than stored empty when cleared: the profile shows pronouns only
 // when there are some, and an absent field says that more plainly than ''.
 export function updatePronouns(uid, pronouns) {

@@ -1,6 +1,6 @@
 // Bump on any release that changes what a JS module exports — activate() drops
 // every older cache, which is what clears a stale module out of existing clients.
-const CACHE = 'paperbackd-v105';
+const CACHE = 'paperbackd-v110';
 
 // Firebase API hosts — never intercept these
 const PASS_THROUGH = [
