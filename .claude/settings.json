@@ -6,7 +6,8 @@
       "Bash(awk 'NR>=64 && NR<=76 {printf \"%d|%s\\\\n\", NR, $0}' edit-profile/index.html)",
       "Bash(awk 'NR>=335 && NR<=372 {printf \"%d|%s\\\\n\", NR, $0}' edit-profile/index.html)",
       "Bash(node \"C:/Program Files/nodejs/node_modules/npm/bin/npm-cli.js\" run check)",
-      "Bash(awk 'NR>=60 && NR<=81 {printf \"%d|%s\\\\n\", NR, $0}' profile/index.html)"
+      "Bash(awk 'NR>=60 && NR<=81 {printf \"%d|%s\\\\n\", NR, $0}' profile/index.html)",
+      "Bash(\"C:/Program Files/nodejs/node.exe\" node_modules/firebase-tools/lib/bin/firebase.js functions:list)"
     ]
   }
 }

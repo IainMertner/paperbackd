@@ -852,6 +852,40 @@ a.book-author:hover { color: var(--text); }
   color: var(--text);
   text-transform: lowercase;
 }
+/* Built as one of the announcement cards it sits above: full width, same radius,
+   same ink edge. The border and background live on the ::before because the
+   filter has to be applied to a shape of its own — running it on the element
+   would ripple the text and the logo too.
+   Blurple rather than an app token: it is Discord's mark, and the icon picks it
+   up through currentColor. */
+.discord-pill {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: .75rem 1rem;
+  margin-bottom: .6rem;
+  color: #5865F2;
+  font-size: .875rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+.discord-pill::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  box-shadow: var(--shadow);
+  filter: url(#ink-edge);
+  z-index: -1;
+  transition: background .15s;
+}
+.discord-pill:hover::before { background: color-mix(in srgb, #5865F2 7%, var(--bg-card)); }
+
 /* Last on the username row, after the settings or follow button. Same face and
    size as the username, a step lighter — it is an aside about the person rather
    than a second name for them, and the weaker colour keeps that order clear.

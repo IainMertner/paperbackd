@@ -2,6 +2,13 @@ const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https')
 const admin = require('firebase-admin');
 const logger = require('firebase-functions/logger');
 const { matchBook, resolveProgress, pickBestHit, normaliseTitle } = require('./progress-utils');
+const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { defineSecret } = require('firebase-functions/params');
+const { buildAnnouncementPayload } = require('./discord-utils');
+
+// Set with: firebase functions:secrets:set DISCORD_WEBHOOK_URL
+const DISCORD_WEBHOOK_URL = defineSecret('DISCORD_WEBHOOK_URL');
+const SITE = 'https://paperbackd.ink';
 
 admin.initializeApp();
 
@@ -219,3 +226,63 @@ exports.syncProgress = onRequest({ cors: false, region: REGION }, async (req, re
     totalPages: progress.progressPct === undefined ? (book.data.totalPages || null) : undefined,
   });
 });
+
+// ── Announcements → Discord ───────────────────────────────────────────────────
+//
+// A Firestore trigger rather than a call from the admin page, for two reasons:
+// the webhook URL is a credential and anything in client source is public, and a
+// trigger fires from the write itself so the post cannot be skipped or forgotten
+// by whoever created the announcement.
+//
+// Only on create. Editing an announcement afterwards does not edit the Discord
+// message — a channel is a log of what was said, and quietly rewriting history
+// in it is worse than a correction posted as its own announcement.
+//
+// Not retried, either. Firestore triggers retry the whole handler, which would
+// repost on any failure occurring after Discord had already accepted the
+// message; a duplicate announcement in a channel is worse than a missing one the
+// admin can repost by hand.
+exports.announceToDiscord = onDocumentCreated(
+  { document: 'announcements/{id}', region: REGION, secrets: [DISCORD_WEBHOOK_URL] },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data) return;
+
+    const webhook = DISCORD_WEBHOOK_URL.value();
+    if (!webhook) {
+      logger.warn('DISCORD_WEBHOOK_URL is not set; announcement not mirrored.');
+      return;
+    }
+
+    const payload = buildAnnouncementPayload(data, { url: `${SITE}/announcements/` });
+    if (!payload) {
+      logger.warn('Announcement had no title or body; nothing to post.', { id: event.params.id });
+      return;
+    }
+
+    let res;
+    try {
+      res = await fetch(webhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      // The announcement itself is already saved and visible on the site, so a
+      // Discord outage must not be allowed to look like a failed announcement.
+      logger.error('Could not reach Discord', { id: event.params.id, error: e.message });
+      return;
+    }
+
+    if (!res.ok) {
+      logger.error('Discord rejected the announcement', {
+        id: event.params.id,
+        status: res.status,
+        body: (await res.text().catch(() => '')).slice(0, 500),
+      });
+      return;
+    }
+
+    logger.info('Announcement mirrored to Discord', { id: event.params.id });
+  }
+);
