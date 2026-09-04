@@ -138,7 +138,7 @@
     import { initSearchWidget } from '../js/search-widget.js';
     import { metaForSlug } from '../js/hardcover.js';
     import { fetchBookMeta, awaitMeta } from '../js/enrich.js';
-    import { resolveRemappedSlug, wantToReadBlock, primaryAuthor } from '../js/book-utils.js';
+    import { resolveRemappedSlug, wantToReadBlock, primaryAuthor, mergeBookFacts } from '../js/book-utils.js';
     import { autoFit } from '../js/dropdown.js';
 
     const params = new URLSearchParams(location.search);
@@ -308,6 +308,12 @@
       const rawDesc     = hcBook.description || '';
       const desc        = looksLatin(rawDesc) ? rawDesc : '';
 
+      // Genres, and the author's country and gender. Started here rather than in
+      // the add-a-book branch below, because the page shows these whether or not
+      // the reader owns the book — and sharing the one promise means adding it
+      // does not repeat the lookups.
+      const metaPromise = fetchBookMeta(gbid, author);
+
       document.title = `${title} - paperbackd`;
 
       const detail = document.getElementById('book-detail');
@@ -316,7 +322,7 @@
 
       card.innerHTML = `<div style="display:flex;gap:1rem;align-items:flex-start">
         ${cover?.startsWith('https://') ? `<img src="${cover}" alt="" style="width:80px;border-radius:var(--radius-sm);flex-shrink:0;display:block;box-shadow:0 1px 4px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.07)">` : ''}
-        <div style="flex:1;min-width:0">
+        <div style="flex:1;min-width:0" class="book-detail-body">
           <div style="display:flex;align-items:flex-start;gap:.5rem">
             <div style="flex:1"><span class="book-detail-title">${esc(title)}</span>${releaseYear ? `<span class="book-detail-year">${releaseYear}</span>` : ''}</div>
             <div style="display:flex;gap:.3rem;align-items:center;padding-top:.2rem;flex-shrink:0">
@@ -336,6 +342,51 @@
         const el = card.querySelector('.book-desc');
         el.textContent = desc;
       });
+
+      // ── Book facts ───────────────────────────────────────────────────────────
+      //
+      // Facts about the book itself, not about this reader's copy of it, so they
+      // show whether or not the book is in their library. A copy they already own
+      // carries them, which is why they are seeded from myBook and only then
+      // filled in from the lookup — an owned book shows them with no wait at all.
+      const factsEl = document.createElement('div');
+      factsEl.style.cssText = 'display:flex;flex-direction:column;gap:.2rem;margin-top:.625rem';
+      card.querySelector('.book-detail-body').appendChild(factsEl);
+
+      let facts = mergeBookFacts(myBook, {}, isbn);
+
+      // Mostly the labels the library's "Book info" panel uses. Gender is spelled
+      // out here: that panel sits under Title and Author, which says whose it is,
+      // and this block does not.
+      function renderFacts() {
+        factsEl.innerHTML = '';
+        for (const [label, value] of [
+          ['Genres',        facts.genres?.length ? facts.genres.join(', ') : null],
+          ['Country',       facts.country],
+          ['Author gender', facts.authorGender],
+          ['ISBN',          facts.isbn13],
+        ]) {
+          if (!value) continue;
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;gap:.4rem;font-size:.78rem;align-items:baseline';
+          const l = document.createElement('span');
+          l.style.cssText = 'color:var(--text-muted);min-width:88px;flex-shrink:0';
+          l.textContent = label;
+          const v = document.createElement('span');
+          v.style.cssText = 'color:var(--text);min-width:0';
+          v.textContent = value;
+          row.append(l, v);
+          factsEl.appendChild(row);
+        }
+      }
+      renderFacts();
+
+      // Fills whatever the reader's copy did not already have. Decoration on a
+      // page that is complete without it, so a Wikidata outage costs nothing.
+      metaPromise.then(meta => {
+        facts = mergeBookFacts(myBook, meta, isbn);
+        renderFacts();
+      }).catch(() => {});
 
       // ── library actions ──────────────────────────────────────────────────────
       function setupListsButton() {
@@ -445,11 +496,6 @@
         function showDone(msg) {
           actionsCard.innerHTML = `<div style="font-size:.85rem;color:var(--accent);font-weight:500">${msg}</div>`;
         }
-
-        // Genres, author country and gender — started now, awaited on save.
-        // Without this a book added here arrived with none of them, unlike one
-        // added from the library.
-        const metaPromise = fetchBookMeta(gbid, author);
 
         startBtn.addEventListener('click', async () => {
           startBtn.disabled = alreadyBtn.disabled = true;

@@ -461,6 +461,30 @@ export function resolveBookLanguage(preference) {
   return preference ?? DEFAULT_BOOK_LANGUAGE;
 }
 
+// The facts a book page shows: the reader's own copy where they have one, and
+// the lookup for anything it lacks.
+//
+// The copy wins every contested field. They may have corrected it by hand — the
+// library's editor exists for exactly that — and a page render is no place to
+// quietly put Wikidata's answer back.
+//
+// An empty genre array is not an answer, though. It means nobody has tagged the
+// book, not that it has no genres, so it must not block the fetched list the way
+// a real value would.
+export function mergeBookFacts(own, fetched = {}, isbnFallback = null) {
+  const meta = fetched || {};
+  return {
+    genres:       own?.genres?.length ? own.genres
+                : meta.genres?.length ? meta.genres
+                : null,
+    country:      own?.country      || meta.country      || null,
+    authorGender: own?.authorGender || meta.authorGender || null,
+    // Never fetched — the page works this one out from the editions it already
+    // asked Hardcover for.
+    isbn13:       own?.isbn13 || isbnFallback || null,
+  };
+}
+
 // Roles in Hardcover's `contributions` that belong to someone other than the
 // person who wrote the book.
 //

@@ -95,6 +95,7 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { searchUsers, getFollowerCount } from '../js/firebase.js';
+    import { orderByFollowers } from '../js/utils.js';
     import { searchBooks } from '../js/hardcover.js';
 
     const { user } = await requireAuth();
@@ -125,16 +126,30 @@
       list.unshift(item);
       localStorage.setItem(RECENTS_KEY, JSON.stringify(list.slice(0, RECENTS_MAX)));
     }
-    // Fills a row's meta line with the follower count, after the row is already
-    // on screen — results should not wait on a count query per user. Silent on
-    // failure: the row still works, and the row's min-height fixes its size
-    // either way. Shared by results and recents so the two rows stay identical.
+    const followerLabel = n => `${n} ${n === 1 ? 'follower' : 'followers'}`;
+
+    // Fills a row's meta line with the follower count after the row is already on
+    // screen. Used by the recents list, which has no order to establish and so
+    // should not wait on a count query per person. Silent on failure: the row
+    // still works, and its min-height fixes its size either way.
     function fillFollowerCount(row, uid) {
       const metaEl = row.querySelector('.search-result-meta');
       if (!metaEl || !uid) return;
       getFollowerCount(uid)
-        .then(n => { metaEl.textContent = `${n} ${n === 1 ? 'follower' : 'followers'}`; })
+        .then(n => { metaEl.textContent = followerLabel(n); })
         .catch(() => {});
+    }
+
+    // Search results, on the other hand, are ordered by follower count, so the
+    // counts have to be in hand before anything is drawn. One count query per
+    // person, but they go out together — about one round trip, not one each.
+    //
+    // A count that fails counts as zero rather than sinking the whole search.
+    async function withFollowerCounts(users) {
+      const counts = await Promise.all(
+        users.map(u => getFollowerCount(u.uid).catch(() => 0))
+      );
+      return orderByFollowers(users.map((u, i) => ({ ...u, followerCount: counts[i] })));
     }
 
     // Tab ids are plural, the type stored on a recent is singular.
@@ -285,7 +300,7 @@
           const res = await fetch(HARDCOVER_PROXY, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ query:`query($q:String!){search(query:$q,query_type:"Author",per_page:8){results}}`, variables:{q} }) });
           return ((await res.json())?.data?.search?.results?.hits || []).map(h => h.document);
         })(),
-        searchUsers(q, user.uid),
+        (async () => withFollowerCounts(await searchUsers(q, user.uid)))(),
       ]);
       const books   = br.status === 'fulfilled' ? br.value : [];
       const authors = ar.status === 'fulfilled' ? ar.value : [];
@@ -373,8 +388,7 @@
     async function fetchUsers(q) {
       results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">Searching…</p>';
       try {
-        const users = await searchUsers(q, user.uid);
-        renderUsers(users);
+        renderUsers(await withFollowerCounts(await searchUsers(q, user.uid)));
       } catch (e) {
         results.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">Search failed. Please try again.</p>';
       }
@@ -433,7 +447,7 @@
         a.innerHTML = `<div class="friend-avatar" style="flex-shrink:0;${borderStyle}">${avatarInner}</div>
           <div class="search-result-info">
             <div class="search-result-title" style="font-size:.9rem">${esc(u.username)}${showName ? ` <span class="network-row-handle">${esc(u.displayName)}</span>` : ''}</div>
-            <div class="search-result-meta"></div>
+            <div class="search-result-meta">${typeof u.followerCount === 'number' ? esc(followerLabel(u.followerCount)) : ''}</div>
           </div>`;
         a.addEventListener('click', () => saveRecent({
           type: 'user', label: u.username, sublabel: '', coverUrl: u.avatarUrl || '',
@@ -443,7 +457,9 @@
           uid: u.uid, displayName: u.displayName || '',
         }));
         results.appendChild(a);
-        fillFollowerCount(a, u.uid);
+        // Only if the count did not arrive with the user — every search path
+        // supplies it now, but a caller that does not should still show one.
+        if (typeof u.followerCount !== 'number') fillFollowerCount(a, u.uid);
       });
     }
 

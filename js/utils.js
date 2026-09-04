@@ -341,6 +341,20 @@ export function moveInArray(items, from, delta) {
 // rejected would route the *next* call into its own error handler and skip that
 // call's work entirely, so one failed save would silently discard the one after
 // it while still reporting success. onError covers a caller that never awaits.
+// People search results, most-followed first.
+//
+// Stable, and that matters more than it sounds: most accounts have no followers
+// at all, so nearly every comparison is a tie. An unstable sort would scramble
+// the relevance order searchUsers returned and could drop an exact username
+// match below a dozen partial ones. Array.prototype.sort has been required to
+// be stable since ES2019, so ties keep the order they arrived in.
+//
+// A missing count sorts as zero rather than throwing the row away — a count
+// query that failed should cost someone their place, not their listing.
+export function orderByFollowers(users) {
+  return [...(users || [])].sort((a, b) => (b?.followerCount || 0) - (a?.followerCount || 0));
+}
+
 export function serialiseCalls(fn, onError) {
   let queue = Promise.resolve();
   return (...args) => {
