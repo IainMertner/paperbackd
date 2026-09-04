@@ -852,6 +852,22 @@ a.book-author:hover { color: var(--text); }
   color: var(--text);
   text-transform: lowercase;
 }
+/* Last on the username row, after the settings or follow button. Same face and
+   size as the username, a step lighter — it is an aside about the person rather
+   than a second name for them, and the weaker colour keeps that order clear.
+   Mixed toward the background rather than set with opacity, so the hover
+   underline below keeps its own strength. */
+.profile-pronouns {
+  font-family: 'Arvo', serif;
+  font-size: .82rem;
+  color: color-mix(in srgb, var(--text-muted) 65%, var(--bg));
+  margin-left: .2rem;
+  white-space: nowrap;
+}
+/* Only on your own profile: elsewhere it is a label, not a control. */
+.profile-pronouns-editable { cursor: pointer; border-bottom: 1px solid transparent; transition: border-color .15s; }
+.profile-pronouns-editable:hover { border-bottom-color: var(--text-muted); }
+
 .profile-meta-row {
   display: flex;
   align-items: flex-start;

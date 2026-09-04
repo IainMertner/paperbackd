@@ -341,6 +341,20 @@ export function moveInArray(items, from, delta) {
 // rejected would route the *next* call into its own error handler and skip that
 // call's work entirely, so one failed save would silently discard the one after
 // it while still reporting success. onError covers a caller that never awaits.
+// The sets offered as ready-made choices. Anything else goes in as free text —
+// this list is a convenience, not a definition of what is allowed.
+export const PRONOUN_PRESETS = ['they/them', 'she/her', 'he/him'];
+
+// Pronouns as stored: trimmed, spaces collapsed, lowercased, capped. '' means
+// none, and the profile shows nothing at all.
+//
+// Lowercased to match the display name and username, both of which this app also
+// forces down — "he/him" beside a lowercase name reads as part of the same line,
+// where "He/Him" would be the only capitalised thing on the page.
+export function normalisePronouns(raw) {
+  return String(raw ?? '').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 30);
+}
+
 // People search results, most-followed first.
 //
 // Stable, and that matters more than it sounds: most accounts have no followers

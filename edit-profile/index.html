@@ -69,6 +69,13 @@
     </div>
 
     <div class="card" style="margin-bottom:.625rem">
+      <div class="edit-field-label" style="margin-bottom:.35rem">Pronouns</div>
+      <select id="pronouns-select" class="join-club-input" style="width:100%;box-sizing:border-box"></select>
+      <input type="text" id="pronouns-other" class="join-club-input" maxlength="30" placeholder="e.g. ze/zir"
+             autocomplete="off" style="width:100%;box-sizing:border-box;margin-top:.4rem;display:none;text-transform:lowercase">
+    </div>
+
+    <div class="card" style="margin-bottom:.625rem">
       <div class="edit-field-label" style="margin-bottom:.6rem">Profile colour</div>
       <div id="theme-swatches" style="display:flex;flex-wrap:wrap;gap:.5rem"></div>
     </div>
@@ -135,7 +142,8 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, updateAvatarUrl, updateShelf, updateDisplayName, updateAvatarBorderColor } from '../js/firebase.js';
+    import { getBooks, updateAvatarUrl, updateShelf, updateDisplayName, updateAvatarBorderColor, updatePronouns } from '../js/firebase.js';
+    import { PRONOUN_PRESETS, normalisePronouns } from '../js/utils.js';
     import { autoFit } from '../js/dropdown.js';
 
     const { user, profile } = await requireAuth();
@@ -143,6 +151,37 @@
 
     const displayNameInput = document.getElementById('display-name-input');
     displayNameInput.value = profile.displayName || '';
+
+    // ── Pronouns ──────────────────────────────────────────────────────────────
+    //
+    // The presets are a shortcut, not the whole set, so "Other…" reveals a free
+    // text box. A stored value the presets do not cover starts there with the box
+    // already filled, rather than looking unset.
+    const PRONOUNS_OTHER = '__other__';
+    const pronounsSelect = document.getElementById('pronouns-select');
+    const pronounsOther  = document.getElementById('pronouns-other');
+    const storedPronouns = normalisePronouns(profile.pronouns);
+
+    for (const [value, label] of [['', 'none'], ...PRONOUN_PRESETS.map(p => [p, p]), [PRONOUNS_OTHER, 'other…']]) {
+      pronounsSelect.appendChild(new Option(label, value));
+    }
+    const pronounsArePreset = PRONOUN_PRESETS.includes(storedPronouns);
+    pronounsSelect.value = storedPronouns ? (pronounsArePreset ? storedPronouns : PRONOUNS_OTHER) : '';
+    if (storedPronouns && !pronounsArePreset) pronounsOther.value = storedPronouns;
+
+    function syncPronounsOther() {
+      pronounsOther.style.display = pronounsSelect.value === PRONOUNS_OTHER ? '' : 'none';
+    }
+    syncPronounsOther();
+    pronounsSelect.addEventListener('change', () => {
+      syncPronounsOther();
+      if (pronounsSelect.value === PRONOUNS_OTHER) pronounsOther.focus();
+    });
+
+    // Whatever the picker is showing, as it would be stored.
+    const chosenPronouns = () => normalisePronouns(
+      pronounsSelect.value === PRONOUNS_OTHER ? pronounsOther.value : pronounsSelect.value
+    );
 
     // ── Theme colour ──────────────────────────────────────────────────────────
     const THEMES = [
@@ -347,12 +386,15 @@
         saves.push(updateShelf(user.uid, shelfItems));
         saves.push(updateDisplayName(user.uid, newDisplayName));
         saves.push(updateAvatarBorderColor(user.uid, selectedTheme));
+        const newPronouns = chosenPronouns();
+        saves.push(updatePronouns(user.uid, newPronouns));
         await Promise.all(saves);
 
         const cached = JSON.parse(localStorage.getItem('rl_profile') || '{}');
         if (pendingAvatarUrl) cached.avatarUrl = pendingAvatarUrl;
         cached.shelf = shelfItems;
         cached.displayName = newDisplayName || null;
+        cached.pronouns = newPronouns || null;
         cached.avatarBorderColor = selectedTheme;
         localStorage.setItem('rl_profile', JSON.stringify(cached));
 

@@ -35,7 +35,7 @@ import {
   startAfter,
   writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { compareLists } from './utils.js';
+import { compareLists, normalisePronouns } from './utils.js';
 import { viewerSeesOnlyPublic, planWorkMerge, dupeGroupsForSlug, sameBook, resolveBookLanguage } from './book-utils.js';
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -336,6 +336,13 @@ export function updateAvatarBorderColor(uid, color) {
 export function updateDisplayName(uid, name) {
   const clean = name ? name.trim().toLowerCase() : '';
   return updateDoc(doc(db, 'users', uid), { displayName: clean || deleteField() });
+}
+
+// Removed rather than stored empty when cleared: the profile shows pronouns only
+// when there are some, and an absent field says that more plainly than ''.
+export function updatePronouns(uid, pronouns) {
+  const clean = normalisePronouns(pronouns);
+  return updateDoc(doc(db, 'users', uid), { pronouns: clean || deleteField() });
 }
 
 export function updateBio(uid, bio) {

@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash('/c/Program Files/nodejs/node.exe' -e ' *)",
-      "WebFetch(domain:www.fasthosts.co.uk)"
+      "WebFetch(domain:www.fasthosts.co.uk)",
+      "Bash(awk 'NR>=64 && NR<=76 {printf \"%d|%s\\\\n\", NR, $0}' edit-profile/index.html)",
+      "Bash(awk 'NR>=335 && NR<=372 {printf \"%d|%s\\\\n\", NR, $0}' edit-profile/index.html)",
+      "Bash(node \"C:/Program Files/nodejs/node_modules/npm/bin/npm-cli.js\" run check)",
+      "Bash(awk 'NR>=60 && NR<=81 {printf \"%d|%s\\\\n\", NR, $0}' profile/index.html)"
     ]
   }
 }
