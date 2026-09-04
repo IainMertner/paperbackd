@@ -215,7 +215,10 @@
           books.forEach(book => {
             const a = document.createElement('a');
             a.className = 'reading-book';
-            a.href = book.gbid ? `../book/?gbid=${encodeURIComponent(book.gbid)}` : '#';
+            // No href at all rather than '#': a book added by hand has no book
+            // page, and '#' is still a link — it jumps to the top and leaves a
+            // stray fragment in the URL.
+            if (book.gbid) a.href = `../book/?gbid=${encodeURIComponent(book.gbid)}`;
 
             const coverWrap = document.createElement('div');
             coverWrap.className = 'reading-book-cover-wrap';

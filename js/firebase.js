@@ -1082,8 +1082,12 @@ export async function addBookToList(uid, listId, book) {
   const snap = await getDoc(ref);
   if (!snap.exists()) return;
   const books = snap.data().books || [];
-  if (books.some(b => b.gbid === book.gbid)) return;
-  await updateDoc(ref, { books: [...books, { gbid: book.gbid, title: book.title, author: book.author || '', coverUrl: book.coverUrl || '' }] });
+  // sameBook, not `b.gbid === book.gbid`. A book added by hand has no gbid at
+  // all, so that test read '' === '' and declared every hand-added book a
+  // duplicate of the first one on the list — the second onwards were dropped
+  // here in silence, having already been drawn on screen by the caller.
+  if (books.some(b => sameBook(b, book))) return;
+  await updateDoc(ref, { books: [...books, { gbid: book.gbid || '', title: book.title, author: book.author || '', coverUrl: book.coverUrl || '' }] });
 }
 
 // Replaces a list's books wholesale — used for both reordering and removal.

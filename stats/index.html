@@ -446,7 +446,7 @@
     import { requireAuth } from '../js/auth.js';
     import { getProfileByUsername, getProfile, getFinishedBooks, getFollowing, db } from '../js/firebase.js';
     import { doc, updateDoc, setDoc, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-    import { COUNTRY_ISO, ISO_CONTINENT, calcStats, bookAgeYears, periodKey, inPeriod, periodsToSnapshot, summariseSnapshot } from '../js/stats-utils.js';
+    import { COUNTRY_ISO, ISO_CONTINENT, calcStats, bookAgeYears, periodKey, inPeriod, periodsToSnapshot, previousPeriodKey, summariseSnapshot } from '../js/stats-utils.js';
     import { fitDropdown, releaseDropdown } from '../js/dropdown.js';
 
     const NOW  = new Date();
@@ -1270,7 +1270,15 @@
 
       for (const period of HISTORY_PERIODS) {
         const fromKey = period === 'yearly' ? from.slice(0, 4) : from;
-        for (const key of periodsToSnapshot(period, fromKey, NOW, have)) {
+        // The marker names the period the reader first had this feature, and
+        // that period should be recorded once it ends — they had it for the
+        // month that just finished. periodsToSnapshot's bound is exclusive, so
+        // it is stepped back one to let the marker's own period through.
+        //
+        // Nothing earlier ever becomes eligible: on the first visit the walk
+        // starts at the period in progress and the first step back already lands
+        // below the bound.
+        for (const key of periodsToSnapshot(period, previousPeriodKey(fromKey), NOW, have)) {
           const entry = snapshotFor(period, key);
           // A period with no targets is left unrecorded rather than stored
           // empty, so it can still be captured if targets are added later.

@@ -297,8 +297,22 @@ export function inPeriod(date, key) {
   return periodKey(d, 'monthly') === key;
 }
 
+// The period immediately before the one a key names: "2026-08" -> "2026-07",
+// "2026-01" -> "2025-12", "2026" -> "2025".
+//
+// periodsToSnapshot treats its bound as exclusive, so a caller that wants a
+// period itself included has to hand it the one before.
+export function previousPeriodKey(key) {
+  if (!key) return key;
+  if (!key.includes('-')) return String(Number(key) - 1);
+  const [y, m] = key.split('-').map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return key;
+  return m > 1 ? `${y}-${String(m - 1).padStart(2, '0')}` : `${y - 1}-12`;
+}
+
 // Keys for every period of this kind that has fully ended and is not already
-// recorded, oldest first, back as far as fromKey.
+// recorded, oldest first, back as far as fromKey — which is exclusive: fromKey
+// itself is never returned.
 //
 // Walks backwards from the present rather than forwards from fromKey, so that
 // when the limit bites it keeps the most recent periods. Forwards, a long gap

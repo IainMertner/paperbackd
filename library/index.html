@@ -2966,11 +2966,7 @@
       let reRenderFinishedFn = () => {};
       let renderDnfFn        = () => {};
 
-      // Progress bars take the theme colour of whoever's library this is.
-      const themeColour = c => { if (c) document.documentElement.style.setProperty('--ring-color', c); };
-
       if (isOwn) {
-        themeColour(profile.avatarBorderColor);
         const [booksData, lists] = await Promise.all([
           getBooks(user.uid).then(sortBooks),
           getLists(user.uid).catch(() => [])
@@ -3042,7 +3038,6 @@
 
         const target = await getProfileByUsername(viewUser);
         if (target) {
-          themeColour(target.avatarBorderColor);
           document.getElementById('page-title').innerHTML = `<a href="../profile/?u=${encodeURIComponent(target.username)}" style="color:var(--accent);text-decoration:none">${esc(target.username)}</a><span style="color:var(--text-muted);font-weight:400;margin:0 .3em">//</span>library<span class="title-dot">.</span>`;
           const { reading, finished, dnf } = sortBooks((await getBooks(target.uid)).filter(b => !b.private));
           allBooks = [...reading, ...finished, ...dnf];
@@ -3104,7 +3099,12 @@
 
         function applyFilter() {
           const q = filterInput.value.trim().toLowerCase();
-          [readingList, finishedList].forEach(container => {
+          // DNF included: it is part of the library, and leaving it out meant a
+          // filtered view still showed every abandoned book alongside the
+          // handful that matched. Its rows come from the same makeBookListRow
+          // and makeBookCoverCell as the others, so they already carry every
+          // data attribute this reads.
+          [readingList, finishedList, dnfList].forEach(container => {
             container.querySelectorAll('[data-title]').forEach(el => {
               let show = !q || el.dataset.title.includes(q) || el.dataset.author.includes(q);
               if (show && activeFilters.format.size)   show = activeFilters.format.has(el.dataset.format || '');
@@ -3196,7 +3196,12 @@
           filterDropdown.appendChild(section);
         }
 
-        const cb = allBooks.filter(b => b.status !== 'dnf'); // countable books — DNF excluded from filter counts
+        // Every book, DNF included. These numbers sit beside each option and say
+        // how many books it matches, so they have to count what the filter
+        // actually shows — DNF was excluded here back when the filter skipped
+        // that section entirely, and keeping it out now would both understate
+        // the counts and hide options that only DNF books have.
+        const cb = allBooks;
         const formats   = [...new Set(cb.map(b => b.format).filter(Boolean))].sort();
         const languages = [...new Set(cb.map(b => b.language).filter(Boolean))].sort();
         const countries = [...new Set(cb.map(b => b.country).filter(Boolean))].sort();

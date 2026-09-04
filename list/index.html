@@ -471,6 +471,9 @@
 
                   wrap.append(mkRow('Title', titleInp), mkRow('Author', authorInp), btns);
                   suggestBox.appendChild(wrap);
+                  // Already visible, but said outright so this branch does not
+                  // depend on the state the prompt happened to be shown in.
+                  suggestBox.style.display = '';
                   titleInp.focus();
 
                   addBtn.addEventListener('click', async () => {
@@ -482,7 +485,7 @@
                     suggestBox.style.display = 'none';
                     searchInput.value = '';
                     await addBookToList(user.uid, list.id, { gbid: '', title, author, coverUrl: '' });
-                    if (!books.find(b => b.title === title)) {
+                    if (!books.find(b => sameBook(b, { title }))) {
                       books = [...books, { gbid: '', title, author, coverUrl: '' }];
                       renderBooks();
                       renderHeader();
@@ -531,7 +534,7 @@
                   suggestBox.style.display = 'none';
                   searchInput.value = '';
                   await addBookToList(user.uid, list.id, { gbid, title, author, coverUrl });
-                  if (!books.find(b => b.gbid === gbid)) {
+                  if (!books.find(b => sameBook(b, { gbid, title }))) {
                     books = [...books, { gbid, title, author, coverUrl }];
                     renderBooks();
                     renderHeader();
@@ -596,7 +599,7 @@
                   suggestBox.style.display = 'none';
                   searchInput.value = '';
                   await addBookToList(user.uid, list.id, { gbid: '', title, author, coverUrl: '' });
-                  if (!books.find(b => b.title === title)) {
+                  if (!books.find(b => sameBook(b, { title }))) {
                     books = [...books, { gbid: '', title, author, coverUrl: '' }];
                     renderBooks();
                     renderHeader();
@@ -617,6 +620,13 @@
         });
 
         document.addEventListener('click', e => {
+          // A click whose handler removed the clicked element — "Add manually…"
+          // and the no-results prompt both replace the whole box with a form —
+          // arrives here with a detached target. A detached node is inside
+          // nothing, so `contains` says false and the box we have just filled
+          // with the form would be hidden in the same tick it appeared. Judging
+          // it as an outside click is what made the manual add unreachable.
+          if (!e.target.isConnected) return;
           if (!suggestBox.contains(e.target) && e.target !== searchInput) {
             suggestBox.style.display = 'none';
           }
@@ -665,9 +675,13 @@
       }
 
       function makeBookCoverCell(book) {
+        // An <a> either way so the grid styling is unchanged, but only a linked
+        // one when there is somewhere to go: a book added by hand has no gbid,
+        // and `?gbid=` alone bounces off the book page into the library. Without
+        // href it is not focusable or clickable and takes no pointer cursor.
         const cell = document.createElement('a');
         cell.className = 'library-cover-cell';
-        cell.href = `../book/?gbid=${encodeURIComponent(book.gbid)}`;
+        if (book.gbid) cell.href = `../book/?gbid=${encodeURIComponent(book.gbid)}`;
         cell.dataset.title  = (book.title  || '').toLowerCase();
         cell.dataset.author = (book.author || '').toLowerCase();
         const cover = (book.gbid && libraryCovers[book.gbid]) || book.coverUrl;
@@ -825,7 +839,13 @@
         el.dataset.title  = (book.title  || '').toLowerCase();
         el.dataset.author = (book.author || '').toLowerCase();
         const author = book.author ? `<span style="color:var(--text-muted);font-weight:400"> · ${esc(book.author)}</span>` : '';
-        el.innerHTML = `<a href="../book/?gbid=${encodeURIComponent(book.gbid)}" style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:.875rem;font-weight:600;color:inherit;text-decoration:none">${esc(book.title)}${author}</a>`;
+        // A book added by hand has no gbid, so there is no book page to open —
+        // `?gbid=` alone lands on the book page with nothing to look up and it
+        // bounces to the library. Plain text for those, as the library does.
+        const nameStyle = 'flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:.875rem;font-weight:600;color:inherit;text-decoration:none';
+        el.innerHTML = book.gbid
+          ? `<a href="../book/?gbid=${encodeURIComponent(book.gbid)}" style="${nameStyle}">${esc(book.title)}${author}</a>`
+          : `<span style="${nameStyle}">${esc(book.title)}${author}</span>`;
 
         // Arrows first, then remove — appended in that order so remove sits on
         // the far right, furthest from anything you might press by accident.

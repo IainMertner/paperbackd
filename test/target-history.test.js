@@ -6,7 +6,7 @@
 // because nothing ever revisits it.
 
 import { describe, it, expect } from 'vitest';
-import { periodKey, inPeriod, periodsToSnapshot, summariseSnapshot } from '../js/stats-utils.js';
+import { periodKey, inPeriod, periodsToSnapshot, previousPeriodKey, summariseSnapshot } from '../js/stats-utils.js';
 
 describe('periodKey', () => {
   it('names a month with a padded number so keys sort as strings', () => {
@@ -117,5 +117,70 @@ describe('summariseSnapshot', () => {
   it('copes with an empty or absent entry', () => {
     expect(summariseSnapshot({})).toEqual({ rows: [], met: 0, total: 0 });
     expect(summariseSnapshot(undefined)).toEqual({ rows: [], met: 0, total: 0 });
+  });
+});
+
+describe('previousPeriodKey', () => {
+  it('steps a month back', () => {
+    expect(previousPeriodKey('2026-08')).toBe('2026-07');
+  });
+
+  it('rolls back over January', () => {
+    expect(previousPeriodKey('2026-01')).toBe('2025-12');
+  });
+
+  it('pads the month, so keys still sort as strings', () => {
+    expect(previousPeriodKey('2026-11')).toBe('2026-10');
+    expect(previousPeriodKey('2026-10')).toBe('2026-09');
+  });
+
+  it('steps a year back', () => {
+    expect(previousPeriodKey('2026')).toBe('2025');
+  });
+
+  it('leaves nonsense alone rather than inventing a key', () => {
+    expect(previousPeriodKey('')).toBe('');
+    expect(previousPeriodKey(null)).toBe(null);
+    expect(previousPeriodKey('not-a-key')).toBe('not-a-key');
+  });
+});
+
+describe('the month the feature was switched on', () => {
+  // Reported: history did not update after a new month began. The marker names
+  // the period the reader first had the feature, but periodsToSnapshot's bound
+  // is exclusive — so the marker's own period was skipped, and the first entry
+  // would not have appeared until a whole month later.
+  //
+  // The caller now steps the bound back one. These pin both halves: the marker
+  // period is recorded once it ends, and nothing before it ever is.
+  const bound = previousPeriodKey;
+
+  it('records the month it was switched on, once that month has ended', () => {
+    // Marker set 31 August; now 4 September.
+    expect(periodsToSnapshot('monthly', bound('2026-08'), new Date(2026, 8, 4)))
+      .toEqual(['2026-08']);
+  });
+
+  it('records nothing while that month is still running', () => {
+    // The refusal to backfill is the whole point of the marker.
+    expect(periodsToSnapshot('monthly', bound('2026-08'), new Date(2026, 7, 31))).toEqual([]);
+    expect(periodsToSnapshot('monthly', bound('2026-08'), new Date(2026, 7, 1))).toEqual([]);
+  });
+
+  it('never reaches back past the month it was switched on', () => {
+    // Even years later, July 2026 and earlier stay out of it.
+    const out = periodsToSnapshot('monthly', bound('2026-08'), new Date(2027, 5, 1));
+    expect(out[0]).toBe('2026-08');
+    expect(out).not.toContain('2026-07');
+  });
+
+  it('does the same for years', () => {
+    expect(periodsToSnapshot('yearly', bound('2026'), new Date(2026, 8, 4))).toEqual([]);
+    expect(periodsToSnapshot('yearly', bound('2026'), new Date(2027, 0, 2))).toEqual(['2026']);
+  });
+
+  it('still skips a period already recorded', () => {
+    expect(periodsToSnapshot('monthly', bound('2026-08'), new Date(2026, 8, 4), ['2026-08']))
+      .toEqual([]);
   });
 });

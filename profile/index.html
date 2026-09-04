@@ -196,7 +196,10 @@
       const filled = items.filter(i => i.coverUrl).slice(0, max);
       filled.forEach((item, idx) => {
         const a = document.createElement('a');
-        a.href = `../book/?gbid=${encodeURIComponent(item.gbid)}`;
+        // A book added by hand has no gbid and so no book page; `?gbid=` alone
+        // bounces off it into the library. These are filtered to books with a
+        // cover, which such a book usually lacks — but it can be given one.
+        if (item.gbid) a.href = `../book/?gbid=${encodeURIComponent(item.gbid)}`;
         a.style.cssText = 'text-decoration:none;display:block';
         a.style.transform = `rotate(${COVER_ROTATIONS[idx % COVER_ROTATIONS.length]}deg)`;
         const img = document.createElement('img');
@@ -686,7 +689,7 @@
       const coversEl = document.getElementById('activity-covers');
       items.forEach((item, idx) => {
         const a = document.createElement('a');
-        a.href = `../book/?gbid=${encodeURIComponent(item.gbid)}`;
+        if (item.gbid) a.href = `../book/?gbid=${encodeURIComponent(item.gbid)}`;
         a.style.cssText = 'text-decoration:none';
         a.style.transform = `rotate(${COVER_ROTATIONS[idx % COVER_ROTATIONS.length]}deg)`;
         const img = document.createElement('img');
