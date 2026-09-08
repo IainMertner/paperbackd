@@ -244,7 +244,7 @@
     import { requireAuth } from '../js/auth.js';
     import { logOut, ROOT, importBooks, getBooks, getCountryRemaps, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary, addEmailToAccount, deleteAccountData, getSyncToken, createSyncToken, revokeSyncToken, setDefaultLanguage, setDiscordJoined, resolveBookLanguage } from '../js/firebase.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, searchHardcover } from '../js/hardcover.js';
-    import { computeDupeGroups, planWorkMerge, normaliseIsbn13, primaryAuthor, BOOK_LANGUAGES } from '../js/book-utils.js';
+    import { computeDupeGroups, planWorkMerge, normaliseIsbn13, primaryAuthor, pickSeries, BOOK_LANGUAGES } from '../js/book-utils.js';
     import { normalizeCountry } from '../js/utils.js';
     import { updatePassword, reauthenticateWithCredential, EmailAuthProvider, deleteUser } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
@@ -760,7 +760,7 @@
         // Phase 2: books already matched (non-numeric slug) but missing fillable fields
         let incomplete = books.filter(b =>
           b.gbid && !/^\d+$/.test(b.gbid) &&
-          (b.releaseYear == null || !b.totalPages || !b.author)
+          (b.releaseYear == null || !b.totalPages || !b.author || b.seriesId === undefined)
         );
 
         // Phase 3: books missing country (computed early so the guard below sees it)
@@ -862,7 +862,7 @@
           // Re-fetch so subsequent phases operate on up-to-date data
           books        = await getBooks(currentUser.uid);
           unmatched    = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
-          incomplete   = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author));
+          incomplete   = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author || b.seriesId === undefined));
           needsAuthorFacts = books.filter(b => b.author && (!b.country || !b.authorGender));
         }
 
@@ -896,7 +896,7 @@
             const slugs = chunk.map(b => b.gbid);
             try {
               const data = await hcQuery(
-                `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:${CHUNK}){slug pages release_year contributions{contribution author{name}}}}`,
+                `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:${CHUNK}){slug pages release_year contributions{contribution author{name}} book_series{featured series{id name}}}}`,
                 { slugs }
               );
               const bySlug = new Map((data?.data?.books || []).map(b => [b.slug, b]));
@@ -909,6 +909,11 @@
                 if (!book.author) {
                   const name = primaryAuthor(hc.contributions);
                   if (name) updates.author = name;
+                }
+                if (book.seriesId === undefined) {
+                  const series = pickSeries(hc.book_series);
+                  updates.seriesId = series ? series.seriesId : '';
+                  if (series?.seriesName) updates.seriesName = series.seriesName;
                 }
                 if (Object.keys(updates).length) {
                   await updateBookMeta(currentUser.uid, book.id, updates);

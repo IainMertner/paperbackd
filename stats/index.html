@@ -378,7 +378,13 @@
         <div class="chart-empty" id="chart-bymonth-empty" style="display:none">Not enough data.</div>
       </div>
       <div class="card chart-card" id="chart-authors-card">
-        <div class="chart-title">Most-read authors</div>
+        <div class="chart-title-row">
+          <div class="chart-title">Most-read authors</div>
+          <div class="view-toggle" id="authors-view-toggle" style="display:none">
+            <button class="view-toggle-btn active" id="authors-books-btn" title="Count every book">Books</button>
+            <button class="view-toggle-btn" id="authors-works-btn" title="Count a series once">Works</button>
+          </div>
+        </div>
         <div class="chart-wrap"><canvas id="chart-authors"></canvas></div>
         <div class="chart-empty" id="chart-authors-empty" style="display:none">Not enough data.</div>
       </div>
@@ -446,7 +452,7 @@
     import { requireAuth } from '../js/auth.js';
     import { getProfileByUsername, getProfile, getFinishedBooks, getFollowing, db } from '../js/firebase.js';
     import { doc, updateDoc, setDoc, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-    import { COUNTRY_ISO, ISO_CONTINENT, calcStats, bookAgeYears, periodKey, inPeriod, periodsToSnapshot, previousPeriodKey, summariseSnapshot } from '../js/stats-utils.js';
+    import { COUNTRY_ISO, ISO_CONTINENT, calcStats, bookAgeYears, periodKey, inPeriod, periodsToSnapshot, previousPeriodKey, topAuthors, summariseSnapshot } from '../js/stats-utils.js';
     import { fitDropdown, releaseDropdown } from '../js/dropdown.js';
 
     const NOW  = new Date();
@@ -1059,9 +1065,11 @@
           { label: 'gender ratio (M/F/NB)', value: cv(genderRatio, me ? me.genderRatio : '') },
         ]}] : []),
         ...(!me ? [{ title: 'highlights', stats: (() => {
-          const authorCounts = {};
-          for (const b of publicBooks) if (b.author) authorCounts[b.author] = (authorCounts[b.author] || 0) + 1;
-          const topAuthor = Object.entries(authorCounts).sort((a, b) => b[1] - a[1])[0];
+          // Books, not works: the highlight answers the plain question. The
+          // by-works view lives on the Most-read authors chart, where there is
+          // room for a toggle to explain itself.
+          const topAuthor = topAuthors(publicBooks, { limit: 1, collapseSeries: false })
+            .map(({ label, value }) => [label, value])[0];
 
           const countryCounts = {};
           for (const b of publicBooks) if (b.country) countryCounts[b.country] = (countryCounts[b.country] || 0) + 1;
@@ -2443,20 +2451,43 @@
 
       // Most-read authors (top 10)
       {
-        const authorCounts2 = {};
-        for (const b of books) if (b.author) authorCounts2[b.author] = (authorCounts2[b.author] || 0) + 1;
-        const top = Object.entries(authorCounts2)
-          .filter(([, v]) => v > 1)
-          .sort(([, a], [, b]) => b - a)
-          .slice(0, 10)
-          .map(([label, value]) => ({ label, value }));
+        // Two ways to read the same shelf. Books is the default and the plainer
+        // question; Works counts a series once, for when one long series is
+        // drowning out authors of separate novels.
         const authorsCanvas = document.getElementById('chart-authors');
-        if (top.length >= 2) {
-          drawHBar(authorsCanvas, top, { color: cssVar('--palette-amber') });
-        } else {
-          authorsCanvas.style.display = 'none';
-          document.getElementById('chart-authors-empty').style.display = '';
+        const authorsEmpty  = document.getElementById('chart-authors-empty');
+        const authorsToggle = document.getElementById('authors-view-toggle');
+        const booksBtn      = document.getElementById('authors-books-btn');
+        const worksBtn      = document.getElementById('authors-works-btn');
+
+        // min: 2 keeps the old "more than one" cut, so an author earns a place by
+        // having written more than one of the things you have read.
+        const authorsFor = collapseSeries => topAuthors(books, { limit: 10, min: 2, collapseSeries });
+
+        function drawAuthors(collapseSeries) {
+          const top = authorsFor(collapseSeries);
+          const enough = top.length >= 2;
+          authorsCanvas.style.display = enough ? '' : 'none';
+          authorsEmpty.style.display  = enough ? 'none' : '';
+          if (enough) drawHBar(authorsCanvas, top, { color: cssVar('--palette-amber') });
         }
+
+        function setAuthorsView(works, { remember = true } = {}) {
+          booksBtn.classList.toggle('active', !works);
+          worksBtn.classList.toggle('active', works);
+          if (remember) localStorage.setItem('authors-view', works ? 'works' : 'books');
+          drawAuthors(works);
+        }
+
+        booksBtn.addEventListener('click', () => setAuthorsView(false));
+        worksBtn.addEventListener('click', () => setAuthorsView(true));
+
+        // Offered only when at least one of the two views has something to show,
+        // so an empty card does not carry a toggle between two blanks.
+        if (authorsFor(false).length >= 2 || authorsFor(true).length >= 2) {
+          authorsToggle.style.display = '';
+        }
+        setAuthorsView(localStorage.getItem('authors-view') === 'works', { remember: false });
       }
 
       // Books by author gender

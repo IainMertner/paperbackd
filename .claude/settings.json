@@ -7,7 +7,12 @@
       "Bash(awk 'NR>=335 && NR<=372 {printf \"%d|%s\\\\n\", NR, $0}' edit-profile/index.html)",
       "Bash(node \"C:/Program Files/nodejs/node_modules/npm/bin/npm-cli.js\" run check)",
       "Bash(awk 'NR>=60 && NR<=81 {printf \"%d|%s\\\\n\", NR, $0}' profile/index.html)",
-      "Bash(\"C:/Program Files/nodejs/node.exe\" node_modules/firebase-tools/lib/bin/firebase.js functions:list)"
+      "Bash(\"C:/Program Files/nodejs/node.exe\" node_modules/firebase-tools/lib/bin/firebase.js functions:list)",
+      "Bash(node --check js/firebase.js)",
+      "Bash(python -)",
+      "Bash(awk 'NR>=1062 && NR<=1080 {printf \"%d|%s\\\\n\", NR, $0}' stats/index.html)",
+      "Bash(awk 'NR>=322 && NR<=342 {printf \"%d|%s\\\\n\", NR, $0}' stats/index.html)",
+      "Bash(awk 'NR>=378 && NR<=385 {printf \"%d|%s\\\\n\", NR, $0}' stats/index.html)"
     ]
   }
 }

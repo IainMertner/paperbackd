@@ -221,7 +221,7 @@
     import { ROOT, db, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, backfillWorkIds, backfillWorkIdsForAllUsers, setBookRemap, deleteBookRemap, getBookRemaps, getCountryRemaps, setCountryRemap, deleteCountryRemap, mergeDuplicatesForSlug, remapActivityForSlug } from '../js/firebase.js';
     import { deleteField, collection, doc, getDocs, query as fsQuery, where, updateDoc, Timestamp, limit, getCountFromServer, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, resolveWorkIds, workIdForSlug } from '../js/hardcover.js';
-    import { computeDupeGroups, planWorkMerge, primaryAuthor } from '../js/book-utils.js';
+    import { computeDupeGroups, planWorkMerge, primaryAuthor, pickSeries } from '../js/book-utils.js';
     import { COUNTRIES } from '../js/stats-utils.js';
     import { normalizeCountry, esc } from '../js/utils.js';
 
@@ -573,7 +573,7 @@
 
         const dupeGroups   = computeDupeGroups(books);
         let unmatched      = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
-        let incomplete        = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author || !b.genres?.length));
+        let incomplete        = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author || !b.genres?.length || b.seriesId === undefined));
         let needsGenreNumeric = books.filter(b => b.gbid && /^\d+$/.test(b.gbid) && !b.genres?.length);
         let needsCountry      = books.filter(b => !b.country && b.author);
         let needsGender       = books.filter(b => !b.authorGender && b.author);
@@ -657,7 +657,7 @@
 
           books             = await getBooks(targetUid);
           unmatched         = books.filter(b => !b.gbid && !b.coverUrl?.startsWith('data:'));
-          incomplete        = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author || !b.genres?.length));
+          incomplete        = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author || !b.genres?.length || b.seriesId === undefined));
           needsGenreNumeric = books.filter(b => b.gbid && /^\d+$/.test(b.gbid) && !b.genres?.length);
           needsCountry      = books.filter(b => !b.country && b.author);
           needsGender       = books.filter(b => !b.authorGender && b.author);
@@ -687,7 +687,7 @@
             const slugs = chunk.map(b => b.gbid);
             try {
               const data = await hcQuery(
-                `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:${CHUNK}){slug pages release_year contributions{contribution author{name}} cached_tags}}`,
+                `query($slugs:[String!]!){books(where:{slug:{_in:$slugs}},limit:${CHUNK}){slug pages release_year contributions{contribution author{name}} cached_tags book_series{featured series{id name}}}}`,
                 { slugs }
               );
               const bySlug = new Map((data?.data?.books || []).map(b => [b.slug, b]));
@@ -701,6 +701,11 @@
                 if (!book.genres?.length) {
                   const genres = (hc.cached_tags?.Genre || []).map(t => t.tag).filter(Boolean);
                   if (genres.length) updates.genres = genres;
+                }
+                if (book.seriesId === undefined) {
+                  const series = pickSeries(hc.book_series);
+                  updates.seriesId = series ? series.seriesId : '';
+                  if (series?.seriesName) updates.seriesName = series.seriesName;
                 }
                 if (Object.keys(updates).length) { await updateBookMeta(targetUid, book.id, updates); fixed++; }
               }

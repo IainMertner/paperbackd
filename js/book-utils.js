@@ -461,6 +461,21 @@ export function resolveBookLanguage(preference) {
   return preference ?? DEFAULT_BOOK_LANGUAGE;
 }
 
+// Which series a book belongs to, from Hardcover's book_series list.
+//
+// A book can sit in several: The Fellowship of the Ring is in both "The Lord of
+// the Rings" and "Middle Earth". Hardcover marks one `featured`, and that is the
+// one worth collapsing on — the broader universe would merge books nobody thinks
+// of as one series.
+//
+// null for a standalone, which comes back with an empty list.
+export function pickSeries(bookSeries) {
+  const list = (bookSeries || []).filter(s => s?.series?.id != null);
+  if (!list.length) return null;
+  const chosen = list.find(s => s.featured) || list[0];
+  return { seriesId: String(chosen.series.id), seriesName: chosen.series.name || '' };
+}
+
 // The facts a book page shows: the reader's own copy where they have one, and
 // the lookup for anything it lacks.
 //

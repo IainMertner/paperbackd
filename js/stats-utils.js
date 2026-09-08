@@ -297,6 +297,53 @@ export function inPeriod(date, key) {
   return periodKey(d, 'monthly') === key;
 }
 
+// How many separate works by each author someone has read, with a series
+// counting once however many of its books they got through.
+//
+// Without this, "most-read authors" is really a ranking of series length:
+// fourteen Wheel of Time books put Jordan above an author of five unrelated
+// novels, which is not what the stat is trying to say. A book with no series is
+// its own unit, so a prolific author of standalones still ranks honestly.
+//
+// The key pairs author with series, so a shared-world series read across two
+// authors counts once for each of them rather than once overall.
+//
+// Returns a Map rather than an object: an author called "constructor" would
+// otherwise find the one on Object.prototype and turn the count into NaN.
+export function authorReadCounts(books, { collapseSeries = true } = {}) {
+  const counts = new Map();
+  const countedSeries = new Set();
+  for (const b of books || []) {
+    const author = b?.author;
+    if (!author) continue;
+    const series = collapseSeries ? b.seriesId : null;
+    if (series != null && series !== '') {
+      // Joined on a NUL escape, which cannot occur in an author name or in
+      // a series id. A plain separator would let "A B" + "C" collide with
+      // "A" + "B C".
+      const key = `${author}\u0000${series}`;
+      if (countedSeries.has(key)) continue;
+      countedSeries.add(key);
+    }
+    counts.set(author, (counts.get(author) || 0) + 1);
+  }
+  return counts;
+}
+
+// Authors by how much of them someone has read, most first. Ties keep the order
+// the books arrived in, which is stable across renders.
+//
+// collapseSeries decides what "most" means: false counts books, true counts
+// works. The chart offers both — books is the plainer question, works is the one
+// that stops a long series drowning out authors of separate novels.
+export function topAuthors(books, { limit = 10, min = 1, collapseSeries = true } = {}) {
+  return [...authorReadCounts(books, { collapseSeries }).entries()]
+    .filter(([, n]) => n >= min)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, limit)
+    .map(([label, value]) => ({ label, value }));
+}
+
 // The period immediately before the one a key names: "2026-08" -> "2026-07",
 // "2026-01" -> "2025-12", "2026" -> "2025".
 //

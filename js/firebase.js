@@ -559,7 +559,7 @@ export async function getRecentlyFinishedBooks(uid) {
     .sort((a, b) => (b.finishedAt?.seconds ?? 0) - (a.finishedAt?.seconds ?? 0));
 }
 
-export async function addFinishedBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, rating, review, releaseYear, country, authorGender, genres, language, format, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
+export async function addFinishedBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, rating, review, releaseYear, country, authorGender, genres, seriesId, seriesName, language, format, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
   const data = {
     title,
     author:      author || '',
@@ -584,6 +584,10 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, wo
   if (country)        data.country        = country;
   if (authorGender)   data.authorGender   = authorGender;
   if (genres?.length) data.genres         = genres;
+  // Series identity, for the most-read-authors stat: a trilogy should count
+  // once for its author, not three times.
+  if (seriesId !== undefined) data.seriesId = String(seriesId);
+  if (seriesName)     data.seriesName     = seriesName;
   if (format)         data.format         = format;
   data.reads = [{
     startedAt:           addedAt instanceof Date ? Timestamp.fromDate(addedAt) : (addedAt?.toDate ? Timestamp.fromDate(addedAt.toDate()) : null),
@@ -620,7 +624,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, wo
   return bookRef.id;
 }
 
-export async function addBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, releaseYear, country, authorGender, genres, language }, username) {
+export async function addBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, releaseYear, country, authorGender, genres, seriesId, seriesName, language }, username) {
   const bookData = {
     title,
     author:           author || '',
@@ -641,6 +645,8 @@ export async function addBook(uid, { title, author, totalPages, gbid, workId, is
   if (country)               bookData.country      = country;
   if (authorGender)          bookData.authorGender = authorGender;
   if (genres?.length)        bookData.genres       = genres;
+  if (seriesId !== undefined) bookData.seriesId    = String(seriesId);
+  if (seriesName)            bookData.seriesName   = seriesName;
   const bookRef = await addDoc(collection(db, 'users', uid, 'books'), bookData);
   await addDoc(collection(db, 'activity'), {
     uid,

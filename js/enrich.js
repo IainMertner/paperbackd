@@ -11,6 +11,7 @@
 import { hcQuery } from './hardcover.js';
 import { getAuthorCountryOverrides, getCountryRemaps } from './firebase.js';
 import { normalizeCountry } from './utils.js';
+import { pickSeries } from './book-utils.js';
 
 const WIKIDATA = 'https://www.wikidata.org/w/api.php';
 
@@ -34,15 +35,29 @@ const bestClaim = claims => claims.find(c => c.rank === 'preferred')
   || claims.find(c => c.rank === 'normal')
   || claims[0];
 
-async function fetchGenres(slug) {
-  if (!slug) return null;
+// Genres and series in one query, since they come from the same record. The
+// series is what lets the most-read-authors stat count a trilogy once instead of
+// three times — see authorReadCounts.
+const HC_FIELDS = 'cached_tags book_series{featured series{id name}}';
+
+async function fetchBookFields(slug) {
+  if (!slug) return {};
   const numeric = /^\d+$/.test(slug);
   const query = numeric
-    ? 'query($id:Int!){books(where:{id:{_eq:$id}},limit:1){cached_tags}}'
-    : 'query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){cached_tags}}';
+    ? `query($id:Int!){books(where:{id:{_eq:$id}},limit:1){${HC_FIELDS}}}`
+    : `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){${HC_FIELDS}}}`;
   const data = await hcQuery(query, numeric ? { id: parseInt(slug, 10) } : { slug });
-  const genres = (data?.data?.books?.[0]?.cached_tags?.Genre || []).map(t => t.tag).filter(Boolean);
-  return genres.length ? genres : null;
+  const book = data?.data?.books?.[0];
+  const out = {};
+  const genres = (book?.cached_tags?.Genre || []).map(t => t.tag).filter(Boolean);
+  if (genres.length) out.genres = genres;
+  // Always set, '' included: an absent key means nobody has looked, which is
+  // what repair tests to decide whether to ask. A standalone that came back
+  // empty has been looked up, and must not be asked about again.
+  const series = pickSeries(book?.book_series);
+  if (book) out.seriesId = series ? series.seriesId : '';
+  if (series?.seriesName) out.seriesName = series.seriesName;
+  return out;
 }
 
 async function fetchAuthorFacts(author) {
@@ -80,15 +95,15 @@ async function fetchAuthorFacts(author) {
   return out;
 }
 
-// Returns whatever could be found — `{ genres?, country?, authorGender? }`.
+// Returns whatever could be found — `{ genres?, country?, authorGender?, seriesId?, seriesName? }`.
 // Start it as soon as a book is chosen and await it when saving, so the lookups
 // overlap with the reader deciding rather than delaying the write.
 export async function fetchBookMeta(slug, author) {
-  const [genres, facts] = await Promise.all([
-    fetchGenres(slug).catch(() => null),
+  const [fields, facts] = await Promise.all([
+    fetchBookFields(slug).catch(() => ({})),
     fetchAuthorFacts(author).catch(() => ({})),
   ]);
-  return genres ? { ...facts, genres } : facts;
+  return { ...facts, ...fields };
 }
 
 // Waits for an in-flight fetchBookMeta, giving up after `ms` so a slow or dead
