@@ -41,7 +41,26 @@ const authorHtml = book => {
 // readOnly renders somebody else's book: their progress as plain text, and no
 // way to edit it. Pass reader — { username } — so the library link points at
 // their shelf rather than yours.
-export function openQuickProgress(book, { uid, onSaved, readOnly = false, reader = null } = {}) {
+//
+// progress says what to do with the page count: 'edit' for a box to type in,
+// 'static' to show it as text, false to leave it out altogether. Separate from
+// readOnly, which is about whose book this is — a list shows your own book
+// without offering to edit its progress from there.
+//
+// false is for a book nobody is partway through. A finished book is the clearest
+// case: a bar pinned at 100% says less than the word "Finished", and a page
+// number invites changing something already settled. Pass `status` for the text
+// that stands in its place.
+//
+// onCoverClick makes the cover a control rather than a link to the book page.
+// It is handed a repaint function, so the caller can settle where the cover is
+// stored and let the card update itself.
+export function openQuickProgress(book, {
+  uid, onSaved, readOnly = false, reader = null, progress = 'edit', status: statusText = '',
+  onCoverClick = null,
+} = {}) {
+  // Nobody edits somebody else's page count, whatever the caller asked for.
+  if (readOnly && progress === 'edit') progress = 'static';
   const audio = isAudiobook(book);
   // Somebody else's library needs ?u=; the deep-link works there too, since
   // their books render with the same data-gbid the handler looks for.
@@ -67,25 +86,28 @@ export function openQuickProgress(book, { uid, onSaved, readOnly = false, reader
   card.innerHTML = `
     <button class="quick-progress-close" aria-label="Close">&times;</button>
     <div class="quick-progress-head">
-      ${coverHtml(book, bookHref)}
+      ${onCoverClick
+        ? `<span class="book-cover-wrap quick-progress-cover-wrap">${coverInner(book)}<span class="quick-progress-cover-hint"></span></span>`
+        : coverHtml(book, bookHref)}
       <div class="quick-progress-meta">
         ${titleHtml(book, bookHref)}
         ${authorHtml(book)}
-        <div class="quick-progress-controls">
-          ${readOnly
+        ${!progress ? '' : `<div class="quick-progress-controls">
+          ${progress === 'static'
             ? `<span class="quick-progress-static">${esc(progressText(book))}</span>`
             : `<input class="quick-progress-input" type="text" inputmode="numeric"
                       aria-label="${audio ? 'Progress %' : 'Current page'}"
                       value="${audio ? (book.progressPct || 0) : (book.currentPage || 0)}">
                <span class="quick-progress-sep">${audio ? '%' : `/ ${book.totalPages || '?'}`}</span>`}
-        </div>
+        </div>`}
       </div>
     </div>
-    <div class="quick-progress-bar"><div class="quick-progress-fill"></div></div>
+    ${progress ? '<div class="quick-progress-bar"><div class="quick-progress-fill"></div></div>' : ''}
     <div class="quick-progress-foot">
-      <span class="quick-progress-status"></span>
+      <span class="quick-progress-status">${esc(statusText)}</span>
       ${showLibraryLink ? `<a class="quick-progress-link" href="${libraryHref}">${libraryLabel} &rarr;</a>` : ''}
-    </div>`;
+    </div>
+`;
 
   inner.appendChild(card);
   overlay.appendChild(inner);
@@ -96,17 +118,18 @@ export function openQuickProgress(book, { uid, onSaved, readOnly = false, reader
   const status = card.querySelector('.quick-progress-status');
 
   function paint(pct) {
+    if (!bar) return;
     bar.style.visibility = pct == null ? 'hidden' : '';
     fill.style.width = `${pct ?? 0}%`;
     status.textContent = pct == null ? 'No page count recorded' : `${pct}%`;
   }
-  paint(progressPercent(book));
+  if (progress) paint(progressPercent(book));
 
   let timer;
   let saving = false;
   async function save() {
     clearTimeout(timer);
-    if (readOnly) return;
+    if (progress !== 'edit') return;
     const { updates, value, pct } = progressUpdate(book, input.value);
     if (document.activeElement !== input) input.value = value;
     // Nothing to write — avoids a Firestore round trip on every stray blur.
@@ -142,6 +165,19 @@ export function openQuickProgress(book, { uid, onSaved, readOnly = false, reader
   }
   function onEsc(e) { if (e.key === 'Escape') dismiss(); }
 
+  if (onCoverClick) {
+    const coverEl = card.querySelector('.quick-progress-cover-wrap');
+    coverEl.title = 'Change cover';
+    // repaint is passed back rather than the card reading book.coverUrl again:
+    // the caller decides what the new cover is and where it lives, and only then
+    // is there anything to draw.
+    coverEl.addEventListener('click', () => onCoverClick(url => {
+      book.coverUrl = url;
+      const fresh = card.querySelector('.quick-progress-cover');
+      fresh.outerHTML = coverInner(book);
+    }));
+  }
+
   card.querySelector('.quick-progress-close').addEventListener('click', dismiss);
   overlay.addEventListener('click', e => { if (e.target === overlay) dismiss(); });
   document.addEventListener('keydown', onEsc);
@@ -150,7 +186,7 @@ export function openQuickProgress(book, { uid, onSaved, readOnly = false, reader
   // inside the debounce window and lose the edit, so finish the write first.
   // Delegated rather than per-link: every way out of this card has to flush,
   // and a handler bound to one of them is a trap for whichever gets added next.
-  if (!readOnly) card.addEventListener('click', async e => {
+  if (progress === 'edit') card.addEventListener('click', async e => {
     const link = e.target.closest?.('a[href]');
     if (!link || !card.contains(link)) return;
     // Let modified clicks open a new tab as normal; this card stays put, and

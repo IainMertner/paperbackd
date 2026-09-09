@@ -216,6 +216,7 @@
     import { normalizeCountry, serialiseCalls } from '../js/utils.js';
     import { COUNTRIES, finishedDate } from '../js/stats-utils.js';
     import { periodBarHtml, initPeriodBar, periodFromParams, describeRange } from '../js/period-filter.js';
+    import { openCoverPicker as openPicker } from '../js/cover-picker.js';
     import { fitDropdown, releaseDropdown, autoFit } from '../js/dropdown.js';
     import { metaForSlug, searchBooks } from '../js/hardcover.js';
     import { parseReleaseYear, pickIsbn13, pickSeries, primaryAuthor, progressBarPercent, wantToReadBlock, BOOK_LANGUAGES as LANGUAGES } from '../js/book-utils.js';
@@ -726,80 +727,12 @@
       coverWrap.appendChild(hint);
     }
 
+    // The picker itself lives in js/cover-picker.js so the list page can use it
+    // too. What happens to the chosen cover is the part that differs, and that
+    // is this function: repaint what is on screen, then write it to the book.
     async function openCoverPicker(book, wrapEl, coverCell) {
-      const overlay = document.createElement('div');
-      overlay.className = 'cover-picker-overlay';
-      const modal = document.createElement('div');
-      modal.className = 'cover-picker-modal';
-      modal.innerHTML = `<div style="font-weight:600;margin-bottom:.2rem">${esc(book.title)}</div>
-        <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:.875rem">Choose an edition cover</div>
-        <div class="cover-picker-grid" id="cpg"><span style="font-size:.85rem;color:var(--text-muted)">Loading…</span></div>`;
-      overlay.appendChild(modal);
-      document.body.appendChild(overlay);
-      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-
-      const grid = modal.querySelector('#cpg');
-
-      function bestCoverUrl(url) {
-        if (!url) return url;
-        // OpenLibrary: upgrade S or M thumbnails to L
-        url = url.replace(/-(S|M)\.jpg(\?|$)/, '-L.jpg$2');
-        return url;
-      }
-
-      try {
-        let editions = [];
-
-        // Kick off Google Books fetch in parallel with Hardcover
-        const gbQuery = encodeURIComponent(`${book.title}${book.author ? ' ' + book.author : ''}`);
-        const GB_KEY = 'AIzaSyCHP8T9d3zm7IDhmRchE_wk2-9vR4xs_3I';
-        const gbFetch = fetch(`https://www.googleapis.com/books/v1/volumes?q=${gbQuery}&maxResults=20&printType=books&key=${GB_KEY}`)
-          .then(r => r.json()).catch(() => null);
-
-        // search by title to get multiple book IDs (catches different publisher entries)
-        const searchData = await hcPost(
-          `query($q:String!){search(query:$q,query_type:"Book",per_page:8){results}}`,
-          { q: book.title }
-        );
-        const hits = searchData?.data?.search?.results?.hits || [];
-        const bookIds = [...new Set(hits.map(h => h.document?.id).filter(Boolean).map(id => parseInt(id, 10)).filter(n => !isNaN(n)))];
-
-        // If the stored gbid is a slug (not numeric), resolve it to an ID too
-        const slug = /^\d+$/.test(book.gbid) ? '' : (book.gbid || '');
-        if (slug) {
-          const d = await hcPost(
-            `query($s:String!){books(where:{slug:{_eq:$s}},limit:1){id}}`,
-            { s: slug }
-          );
-          const id = d?.data?.books?.[0]?.id;
-          if (id && !bookIds.includes(id)) bookIds.push(id);
-        }
-
-        if (bookIds.length) {
-          const d = await hcPost(
-            `query($ids:[Int!]!){editions(where:{book_id:{_in:$ids}},limit:100){id image{url width height} publisher{name} release_year}}`,
-            { ids: bookIds }
-          );
-          const seen = new Set();
-          editions = (d?.data?.editions || []).filter(e => {
-            if (!e.image?.url) return false;
-            // Filter out low-res covers (width known and too small for a shelf)
-            if (e.image.width && e.image.width < 180) return false;
-            const url = bestCoverUrl(e.image.url);
-            if (seen.has(url)) return false;
-            seen.add(url);
-            e.image.url = url;
-            return true;
-          });
-        }
-
-        grid.innerHTML = '';
-
-        const currentUrl = book.coverUrl || null;
-        const filteredEditions = editions.filter(e => e.image.url !== currentUrl);
-
-        async function pickCover(url) {
-          if (url === book.coverUrl) { overlay.remove(); return; }
+      await openPicker(book, {
+        onPick: async url => {
           book.coverUrl = url;
           wrapEl.innerHTML = coverInnerHtml(book);
           const newCoverImg = wrapEl.querySelector('.book-cover, .book-cover-img');
@@ -814,122 +747,20 @@
               existPh ? existPh.replaceWith(img) : coverCell.prepend(img);
             }
           }
-          overlay.remove();
-          updateBookCover(user.uid, book.id, url, { gbid: book.gbid, title: book.title });
-          if (profile.shelf?.some(s => s.gbid === book.gbid && book.gbid)) {
-            const updatedShelf = profile.shelf.map(s =>
-              s.gbid === book.gbid ? { ...s, coverUrl: url } : s
+          await updateBookCover(user.uid, book.id, url, { gbid: book.gbid, title: book.title });
+          // Kept in step with the shelf on the profile, which holds its own copy
+          // of the cover.
+          if (profile.shelf?.some(sh => sh.gbid === book.gbid && book.gbid)) {
+            const updatedShelf = profile.shelf.map(sh =>
+              sh.gbid === book.gbid ? { ...sh, coverUrl: url } : sh
             );
             await updateShelf(user.uid, updatedShelf);
             profile.shelf = updatedShelf;
             const cached = JSON.parse(localStorage.getItem('rl_profile') || '{}');
             if (cached.shelf) { cached.shelf = updatedShelf; localStorage.setItem('rl_profile', JSON.stringify(cached)); }
           }
-        }
-
-        // Current cover first (selected state)
-        if (currentUrl) {
-          const item = document.createElement('div');
-          item.className = 'cover-picker-item selected';
-          item.title = 'Current cover';
-          item.innerHTML = `<img src="${esc(currentUrl)}" alt="" loading="lazy">`;
-          item.addEventListener('click', () => overlay.remove());
-          grid.appendChild(item);
-        }
-
-        // Upload custom cover
-        const uploadInput = document.createElement('input');
-        uploadInput.type = 'file';
-        uploadInput.accept = 'image/*';
-        uploadInput.style.display = 'none';
-        modal.appendChild(uploadInput);
-
-        const uploadItem = document.createElement('div');
-        uploadItem.className = 'cover-picker-item cover-picker-upload';
-        uploadItem.title = 'Upload custom cover';
-        uploadItem.innerHTML = `<div class="cover-picker-upload-inner">+</div>`;
-        uploadItem.addEventListener('click', () => uploadInput.click());
-        uploadInput.addEventListener('change', async () => {
-          const file = uploadInput.files[0];
-          if (!file) return;
-          uploadInput.value = '';
-          uploadItem.style.opacity = '0.5';
-          try {
-            const dataUrl = await new Promise((resolve, reject) => {
-              const img = new Image();
-              const objectUrl = URL.createObjectURL(file);
-              img.onload = () => {
-                URL.revokeObjectURL(objectUrl);
-                const MAX_W = 400, MAX_H = 600;
-                const scale = Math.min(MAX_W / img.width, MAX_H / img.height, 1);
-                const w = Math.round(img.width * scale);
-                const h = Math.round(img.height * scale);
-                const canvas = document.createElement('canvas');
-                canvas.width = w; canvas.height = h;
-                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                resolve(canvas.toDataURL('image/jpeg', 0.85));
-              };
-              img.onerror = reject;
-              img.src = objectUrl;
-            });
-            await pickCover(dataUrl);
-          } catch (e) {
-            console.error(e);
-            uploadItem.style.opacity = '';
-            alert('Could not load that image.');
-          }
-        });
-        grid.appendChild(uploadItem);
-
-        if (!filteredEditions.length) {
-          const msg = document.createElement('div');
-          msg.style.cssText = 'font-size:.85rem;color:var(--text-muted);width:100%;padding-top:.25rem';
-          msg.textContent = currentUrl ? 'No other edition covers found.' : 'No edition covers found.';
-          grid.appendChild(msg);
-        }
-
-        filteredEditions.forEach(ed => {
-          const url = ed.image.url;
-          const item = document.createElement('div');
-          item.className = 'cover-picker-item';
-          if (ed.publisher?.name || ed.release_year) item.title = [ed.publisher?.name, ed.release_year].filter(Boolean).join(' · ');
-          item.innerHTML = `<img src="${esc(url)}" alt="" loading="lazy">`;
-          item.addEventListener('click', () => { item.style.opacity = '0.5'; pickCover(url); });
-          grid.appendChild(item);
-        });
-
-        // Google Books covers
-        const seenUrls = new Set([currentUrl, ...filteredEditions.map(e => e.image.url)].filter(Boolean));
-        const gbData  = await gbFetch;
-        const gbItems = gbData?.items || [];
-        const gbCovers = [];
-        for (const item of gbItems) {
-          const links = item.volumeInfo?.imageLinks;
-          if (!links) continue;
-          let url = links.thumbnail || links.smallThumbnail;
-          if (!url) continue;
-          url = url.replace(/^http:/, 'https:').replace(/&edge=curl/, '').replace(/zoom=\d/, 'zoom=0');
-          if (seenUrls.has(url)) continue;
-          seenUrls.add(url);
-          gbCovers.push(url);
-        }
-        if (gbCovers.length) {
-          const sep = document.createElement('div');
-          sep.style.cssText = 'width:100%;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);padding:.5rem 0 .2rem';
-          sep.textContent = 'Google Books';
-          grid.appendChild(sep);
-          gbCovers.forEach(url => {
-            const item = document.createElement('div');
-            item.className = 'cover-picker-item';
-            item.innerHTML = `<img src="${esc(url)}" alt="" loading="lazy">`;
-            item.addEventListener('click', () => { item.style.opacity = '0.5'; pickCover(url); });
-            grid.appendChild(item);
-          });
-        }
-      } catch (err) {
-        console.error(err);
-        grid.innerHTML = '<span style="font-size:.85rem;color:var(--text-muted)">Failed to load covers.</span>';
-      }
+        },
+      });
     }
 
     function tsOf(book, field) {

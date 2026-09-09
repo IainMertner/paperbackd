@@ -488,6 +488,35 @@ export async function deleteCountryRemap(from) {
   countryRemapCache = null;
 }
 
+// Covers chosen for books that are not in the library — from a list, say. Keyed
+// by gbid under the reader's own config, so every list showing that book shows
+// the same cover, and so the choice is still there if the book is added later.
+//
+// A book in the library keeps its cover on its own document; this is only for
+// the ones with nowhere else to put it.
+const COVER_OVERRIDES_DOC = uid => doc(db, 'users', uid, 'config', 'covers');
+
+let coverOverrideCache = null;
+
+export async function getCoverOverrides(uid, { force = false } = {}) {
+  if (coverOverrideCache && !force) return coverOverrideCache;
+  try {
+    const snap = await getDoc(COVER_OVERRIDES_DOC(uid));
+    coverOverrideCache = snap.exists() ? (snap.data().covers || {}) : {};
+  } catch {
+    coverOverrideCache = {};   // a page must still render if this read fails
+  }
+  return coverOverrideCache;
+}
+
+export async function setCoverOverride(uid, gbid, coverUrl) {
+  if (!gbid) return;
+  // Nested data rather than a field path: a gbid is a slug and could contain a
+  // dot, which a path would read as another level.
+  await setDoc(COVER_OVERRIDES_DOC(uid), { covers: { [gbid]: coverUrl } }, { merge: true });
+  if (coverOverrideCache) coverOverrideCache[gbid] = coverUrl;
+}
+
 export async function updateBookCover(uid, bookId, coverUrl, { gbid, title } = {}) {
   await updateDoc(doc(db, 'users', uid, 'books', bookId), { coverUrl });
   const docs = await activityDocsForBook(uid, { bookId, gbid, title });
@@ -577,7 +606,9 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, wo
   if (addedAt && addedAtPrecision) data.addedAtPrecision = addedAtPrecision;
   if (workId)         data.workId         = workId;
   if (isbn13)         data.isbn13         = isbn13;
-  if (coverUrl)       data.coverUrl       = coverUrl;
+  // A cover chosen while the book was only on a list follows it in.
+  const overrideCover = gbid ? (await getCoverOverrides(uid))[gbid] : null;
+  if (overrideCover || coverUrl) data.coverUrl = overrideCover || coverUrl;
   if (rating != null) data.rating         = rating;
   if (review)         data.review         = review;
   if (releaseYear)    data.releaseYear    = releaseYear;
@@ -640,7 +671,8 @@ export async function addBook(uid, { title, author, totalPages, gbid, workId, is
   // The one identifier here that means anything outside Hardcover, so it is
   // worth a field of its own — see the ISBN notes in book-utils.js.
   if (isbn13)                bookData.isbn13       = isbn13;
-  if (coverUrl)              bookData.coverUrl     = coverUrl;
+  const overrideCover = gbid ? (await getCoverOverrides(uid))[gbid] : null;
+  if (overrideCover || coverUrl) bookData.coverUrl    = overrideCover || coverUrl;
   if (releaseYear)           bookData.releaseYear  = releaseYear;
   if (country)               bookData.country      = country;
   if (authorGender)          bookData.authorGender = authorGender;
@@ -1121,7 +1153,11 @@ export async function addBookToList(uid, listId, book) {
   // duplicate of the first one on the list — the second onwards were dropped
   // here in silence, having already been drawn on screen by the caller.
   if (books.some(b => sameBook(b, book))) return;
-  await updateDoc(ref, { books: [...books, { gbid: book.gbid || '', title: book.title, author: book.author || '', coverUrl: book.coverUrl || '' }] });
+  // Epoch milliseconds, not serverTimestamp(): that is not allowed inside an
+  // array, and a plain number sorts without any conversion. Entries written
+  // before this have none at all — the list page treats those as older than
+  // anything stamped, which they are.
+  await updateDoc(ref, { books: [...books, { gbid: book.gbid || '', title: book.title, author: book.author || '', coverUrl: book.coverUrl || '', addedAt: Date.now() }] });
 }
 
 // Replaces a list's books wholesale — used for both reordering and removal.

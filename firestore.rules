@@ -32,6 +32,15 @@ service cloud.firestore {
         allow read, write: if request.auth.uid == uid;
       }
 
+      // Per-reader settings that are not secret. Currently the covers chosen
+      // for books that are not in the library, which a visitor has to be able
+      // to read: their lists render with those covers. Rules do not cascade
+      // from /users/{uid}, so this needs its own.
+      match /config/{docId} {
+        allow read:  if request.auth != null;
+        allow write: if request.auth.uid == uid || isAdmin();
+      }
+
       // Lists subcollection — private lists visible to owner only.
       // Uses .get('private', false) rather than .private: reading a key that
       // does not exist raises an error and denies, which would hide every list

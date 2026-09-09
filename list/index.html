@@ -178,6 +178,7 @@
     <div class="section-header" id="sort-header" style="display:none;margin-bottom:.5rem">
       <div id="list-sort" class="sort-options">
         <button class="sort-btn" data-key="order"  data-default="asc" data-label="Custom">Custom</button>
+        <button class="sort-btn" data-key="added"  data-default="desc" data-label="Added">Added</button>
         <button class="sort-btn" data-key="alpha"  data-default="asc" data-label="A–Z">A–Z</button>
         <button class="sort-btn" data-key="author" data-default="asc" data-label="Author">Author</button>
       </div>
@@ -229,10 +230,12 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getProfileByUsername, getLists, addBookToList, setListBooks, deleteList, renameList, getBooks, setListPrivate } from '../js/firebase.js';
+    import { getProfileByUsername, getLists, addBookToList, setListBooks, deleteList, renameList, getBooks, setListPrivate, updateBookCover, getCoverOverrides, setCoverOverride } from '../js/firebase.js';
     import { autoFit } from '../js/dropdown.js';
     import { moveInArray } from '../js/utils.js';
     import { sameBook, wantToReadBlock } from '../js/book-utils.js';
+    import { openQuickProgress } from '../js/quick-progress.js';
+    import { openCoverPicker } from '../js/cover-picker.js';
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -276,6 +279,9 @@
       ]);
       const libraryCovers = {};
       for (const b of libBooks) { if (b.gbid && b.coverUrl) libraryCovers[b.gbid] = b.coverUrl; }
+      // Covers chosen for books that are not in the library. The owner's, since
+      // it is their list being looked at.
+      const coverOverrides = await getCoverOverrides(ownerUid).catch(() => ({}));
 
       const list  = lists.find(l => l.id === listId);
 
@@ -486,7 +492,7 @@
                     searchInput.value = '';
                     await addBookToList(user.uid, list.id, { gbid: '', title, author, coverUrl: '' });
                     if (!books.find(b => sameBook(b, { title }))) {
-                      books = [...books, { gbid: '', title, author, coverUrl: '' }];
+                      books = [...books, { gbid: '', title, author, coverUrl: '', addedAt: Date.now() }];
                       renderBooks();
                       renderHeader();
                     }
@@ -535,7 +541,7 @@
                   searchInput.value = '';
                   await addBookToList(user.uid, list.id, { gbid, title, author, coverUrl });
                   if (!books.find(b => sameBook(b, { gbid, title }))) {
-                    books = [...books, { gbid, title, author, coverUrl }];
+                    books = [...books, { gbid, title, author, coverUrl, addedAt: Date.now() }];
                     renderBooks();
                     renderHeader();
                   }
@@ -600,7 +606,7 @@
                   searchInput.value = '';
                   await addBookToList(user.uid, list.id, { gbid: '', title, author, coverUrl: '' });
                   if (!books.find(b => sameBook(b, { title }))) {
-                    books = [...books, { gbid: '', title, author, coverUrl: '' }];
+                    books = [...books, { gbid: '', title, author, coverUrl: '', addedAt: Date.now() }];
                     renderBooks();
                     renderHeader();
                   }
@@ -655,6 +661,8 @@
               ? (sortState.dir === 'asc' ? 'A–Z' : 'Z–A')
               : btn.dataset.key === 'author'
               ? (sortState.dir === 'asc' ? 'Author ↑' : 'Author ↓')
+              : btn.dataset.key === 'added'
+              ? (sortState.dir === 'asc' ? 'Oldest' : 'Newest')
               : btn.dataset.label;
           } else {
             btn.textContent = btn.dataset.label;
@@ -674,6 +682,54 @@
         });
       }
 
+      // A list entry is only a name and a cover. Where the owner's library holds
+      // the same book, the popover is the one from the home strip.
+      //
+      // Progress is shown but never editable here: a list is for what you mean to
+      // read, and the page you are on is the library's business. A finished book
+      // says so instead of showing a bar pinned at 100%, and a book that is on
+      // the list but in nobody's library gets no progress half at all.
+      const STATUS_TEXT = { finished: 'Finished', dnf: 'Did not finish' };
+
+      // Where a chosen cover goes depends on whether the book exists in the
+      // library. One that does keeps it on its own document, which every list
+      // already prefers over the copy stored on the entry. One that does not has
+      // nowhere of its own, so it goes to the cover overrides — keyed by gbid, so
+      // every list showing that book picks it up, and so the choice survives the
+      // book being added to the library later.
+      async function saveCover(entry, owned, url) {
+        if (owned) {
+          await updateBookCover(user.uid, owned.id, url, { gbid: owned.gbid, title: owned.title });
+          owned.coverUrl = url;
+          if (owned.gbid) libraryCovers[owned.gbid] = url;
+        } else if (entry.gbid) {
+          await setCoverOverride(user.uid, entry.gbid, url);
+          coverOverrides[entry.gbid] = url;
+        } else {
+          // A book added by hand has no gbid to key an override on, so the entry
+          // itself is the only place to put it.
+          entry.coverUrl = url;
+          await commitBooks([...books]);
+          return;
+        }
+        renderBooks();
+      }
+
+      function openListBook(entry) {
+        const owned = libBooks.find(b => sameBook(b, entry));
+        const reading = owned?.status === 'reading';
+        openQuickProgress(owned || entry, {
+          uid: user.uid,
+          readOnly: !isOwn,
+          reader: isOwn ? null : { username: ownerUsername },
+          progress: reading ? 'static' : false,
+          onCoverClick: !isOwn ? null : repaint => openCoverPicker(owned || entry, {
+            onPick: async url => { repaint(url); await saveCover(entry, owned, url); },
+          }),
+          status: reading ? '' : (STATUS_TEXT[owned?.status] || ''),
+        });
+      }
+
       function makeBookCoverCell(book) {
         // An <a> either way so the grid styling is unchanged, but only a linked
         // one when there is somewhere to go: a book added by hand has no gbid,
@@ -681,10 +737,13 @@
         // href it is not focusable or clickable and takes no pointer cursor.
         const cell = document.createElement('a');
         cell.className = 'library-cover-cell';
-        if (book.gbid) cell.href = `../book/?gbid=${encodeURIComponent(book.gbid)}`;
+        // No href: the cell opens the card, and the card carries the link to the
+        // book page. Left as an <a> so the grid styling is unchanged.
+        cell.style.cursor = 'pointer';
+        cell.addEventListener('click', e => { e.preventDefault(); openListBook(book); });
         cell.dataset.title  = (book.title  || '').toLowerCase();
         cell.dataset.author = (book.author || '').toLowerCase();
-        const cover = (book.gbid && libraryCovers[book.gbid]) || book.coverUrl;
+        const cover = (book.gbid && (libraryCovers[book.gbid] || coverOverrides[book.gbid])) || book.coverUrl;
         if (cover) {
           const img = document.createElement('img');
           img.src = cover; img.alt = '';
@@ -839,13 +898,12 @@
         el.dataset.title  = (book.title  || '').toLowerCase();
         el.dataset.author = (book.author || '').toLowerCase();
         const author = book.author ? `<span style="color:var(--text-muted);font-weight:400"> · ${esc(book.author)}</span>` : '';
-        // A book added by hand has no gbid, so there is no book page to open —
-        // `?gbid=` alone lands on the book page with nothing to look up and it
-        // bounces to the library. Plain text for those, as the library does.
+        // The name opens the card, like the cover does in grid view. The card
+        // carries the links to the book and author pages, so nothing here has to
+        // decide whether a hand-added book with no gbid has anywhere to go.
         const nameStyle = 'flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:.875rem;font-weight:600;color:inherit;text-decoration:none';
-        el.innerHTML = book.gbid
-          ? `<a href="../book/?gbid=${encodeURIComponent(book.gbid)}" style="${nameStyle}">${esc(book.title)}${author}</a>`
-          : `<span style="${nameStyle}">${esc(book.title)}${author}</span>`;
+        el.innerHTML = `<span style="${nameStyle};cursor:pointer">${esc(book.title)}${author}</span>`;
+        el.querySelector('span').addEventListener('click', () => openListBook(book));
 
         // Arrows first, then remove — appended in that order so remove sits on
         // the far right, furthest from anything you might press by accident.
@@ -875,6 +933,24 @@
         const { key, dir } = sortState;
         const asc = dir === 'asc';
         if (key === 'order') return asc ? [...books] : [...books].reverse();
+        if (key === 'added') {
+          // Entries added before the list stored a timestamp have none. They
+          // predate every stamped entry by definition, so they come first
+          // ascending, and among themselves keep their array position — which is
+          // the order they were appended in, and the only record of it there is.
+          const stamp = b => (typeof b.addedAt === 'number' ? b.addedAt : null);
+          const byAdded = books
+            .map((b, i) => ({ b, i }))
+            .sort((x, y) => {
+              const ax = stamp(x.b), ay = stamp(y.b);
+              if (ax == null && ay == null) return x.i - y.i;
+              if (ax == null) return -1;
+              if (ay == null) return 1;
+              return ax - ay || x.i - y.i;
+            })
+            .map(x => x.b);
+          return asc ? byAdded : byAdded.reverse();
+        }
         const sorted = [...books];
         if (key === 'alpha')  sorted.sort((a, b) => asc ? alphaKey(a.title).localeCompare(alphaKey(b.title)) : alphaKey(b.title).localeCompare(alphaKey(a.title)));
         if (key === 'author') sorted.sort((a, b) => asc ? (a.author||'').localeCompare(b.author||'') : (b.author||'').localeCompare(a.author||''));
