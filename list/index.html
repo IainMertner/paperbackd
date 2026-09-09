@@ -723,6 +723,7 @@
           readOnly: !isOwn,
           reader: isOwn ? null : { username: ownerUsername },
           progress: reading ? 'static' : false,
+          inLibrary: !!owned,
           onCoverClick: !isOwn ? null : repaint => openCoverPicker(owned || entry, {
             onPick: async url => { repaint(url); await saveCover(entry, owned, url); },
           }),

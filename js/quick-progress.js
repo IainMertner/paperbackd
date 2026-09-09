@@ -52,12 +52,15 @@ const authorHtml = book => {
 // number invites changing something already settled. Pass `status` for the text
 // that stands in its place.
 //
+// inLibrary:false drops the "Open in library" link, for a book that is only on
+// a list.
+//
 // onCoverClick makes the cover a control rather than a link to the book page.
 // It is handed a repaint function, so the caller can settle where the cover is
 // stored and let the card update itself.
 export function openQuickProgress(book, {
   uid, onSaved, readOnly = false, reader = null, progress = 'edit', status: statusText = '',
-  onCoverClick = null,
+  onCoverClick = null, inLibrary = true,
 } = {}) {
   // Nobody edits somebody else's page count, whatever the caller asked for.
   if (readOnly && progress === 'edit') progress = 'static';
@@ -70,7 +73,10 @@ export function openQuickProgress(book, {
   });
   // Without a username there is no shelf to point at, so show no link at all
   // rather than one that quietly opens your own library instead of theirs.
-  const showLibraryLink = !readOnly || !!reader?.username;
+  // Only for a book that is actually on the shelf. A list can hold books nobody
+  // has added, and offering to open one in a library it is not in would land on
+  // a page that cannot show it.
+  const showLibraryLink = inLibrary && (!readOnly || !!reader?.username);
   const libraryLabel = readOnly
     ? `Open in ${esc(reader?.username || '')}&rsquo;s library`
     : 'Open in library';

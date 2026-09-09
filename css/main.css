@@ -1143,6 +1143,26 @@ a.book-author:hover { color: var(--text); }
 .quick-progress-meta { flex: 1; min-width: 0; padding-right: 1.25rem; }
 .quick-progress-cover-link { display: block; flex-shrink: 0; border-radius: var(--radius-sm); transition: transform .12s ease; }
 .quick-progress-cover-link:hover { transform: translateY(-2px); }
+
+/* flex, not block: the cover is an inline <img>, so a block wrapper leaves
+   descender space under it and the hover wash — which is inset:0 on the
+   wrapper, from .book-cover-wrap — hangs a few pixels below the cover and
+   reads as a cut-off image. */
+.quick-progress-cover-wrap { display: flex; }
+
+/* The same "edit cover" badge the library puts on a cover, so the control
+   reads the same in both places. The text is here rather than in the markup
+   so the two cannot end up worded differently. */
+.quick-progress-cover-hint {
+  position: absolute; left: 0; right: 0; bottom: .3rem;
+  text-align: center; pointer-events: none;
+}
+.quick-progress-cover-hint::before {
+  content: 'edit cover';
+  font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: #fff; background: rgba(0,0,0,.45);
+  border-radius: 2px; padding: .15rem .35rem; line-height: 1.4;
+}
 .quick-progress-title { text-decoration: none; color: inherit; }
 a.quick-progress-title:hover { color: var(--accent); }
 .quick-progress-author { display: block; font-size: .8rem; color: var(--text-muted); margin-top: .1rem; text-decoration: none; }
