@@ -973,10 +973,22 @@ export async function deleteBook(uid, bookId, { title, author }) {
   ]);
 }
 
-export async function dnfBook(uid, bookId) {
-  await updateDoc(doc(db, 'users', uid, 'books', bookId), { status: 'dnf' });
+// `note` is optional, and separate from a review: a book set aside has no
+// rating and often no verdict, only a reason for stopping.
+export async function dnfBook(uid, bookId, note) {
+  const updates = { status: 'dnf' };
+  if (note !== undefined) updates.dnfNote = note || deleteField();
+  await updateDoc(doc(db, 'users', uid, 'books', bookId), updates);
 }
 
+export async function setDnfNote(uid, bookId, note) {
+  await updateDoc(doc(db, 'users', uid, 'books', bookId), { dnfNote: note || deleteField() });
+}
+
+// The note is deliberately left in place. Picking a book up again does not
+// unsay why it was put down, and setting it aside a second time should find the
+// note still there rather than a blank box. Only the DNF card ever shows it, so
+// it stays out of sight while the book is being read.
 export async function undnfBook(uid, bookId) {
   await updateDoc(doc(db, 'users', uid, 'books', bookId), { status: 'reading' });
 }

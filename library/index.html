@@ -211,7 +211,7 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getBooks, addBook, getCountryRemaps, resolveBookLanguage, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, undnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing, setBookPrivate } from '../js/firebase.js';
+    import { getBooks, addBook, getCountryRemaps, resolveBookLanguage, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, setDnfNote, undnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing, setBookPrivate } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { normalizeCountry, serialiseCalls } from '../js/utils.js';
     import { COUNTRIES, finishedDate } from '../js/stats-utils.js';
@@ -1833,8 +1833,18 @@
       });
 
       dnfTab.addEventListener('click', async () => {
-        if (!confirm(`Mark "${book.title}" as did not finish?`)) return;
-        await dnfBook(user.uid, book.id);
+        // A prompt rather than a confirm: there is usually something worth
+        // keeping about a book set aside, and this is the moment it is fresh.
+        // Worded openly — it might be why you stopped, or where you got to, or
+        // that you mean to come back to it. Cancel still means cancel; an empty
+        // note just means no note.
+        const note = prompt(
+          `Mark "${book.title}" as did not finish?\n\nNotes (optional)`,
+          book.dnfNote || '',
+        );
+        if (note === null) return;
+        await dnfBook(user.uid, book.id, note.trim());
+        book.dnfNote = note.trim() || undefined;
         book.status = 'dnf';
         if (coverCell) coverCell.remove();
         closeModal();
@@ -2732,6 +2742,65 @@
       metaRow('Language', book.language || null);
       metaRow('Format',   book.format   || null);
 
+      // Notes on a book set aside. Click-to-edit, like the review on a finished
+      // book, but with no rating attached — this is not a verdict, and it need not
+      // be a reason either.
+      //
+      // Only rendered here, on the DNF card. The note survives picking the book up
+      // again, but stays out of sight until it is set aside once more.
+      const noteWrap = document.createElement('div');
+      noteWrap.style.cssText = 'margin-top:.6rem';
+
+      const noteText = document.createElement('div');
+      noteText.style.cssText = 'font-size:.82rem;cursor:pointer;line-height:1.4;white-space:pre-wrap;word-break:break-word';
+
+      const noteTa = document.createElement('textarea');
+      noteTa.className   = 'review-input';
+      noteTa.placeholder = 'Add a note…';
+      noteTa.rows = 3;
+      noteTa.style.display = 'none';
+      noteTa.style.marginTop = '0';
+
+      function setNoteDisplay(val) {
+        if (val) {
+          noteText.textContent = '“' + val + '”';
+          noteText.style.color = 'var(--text)';
+        } else {
+          noteText.textContent = 'Add a note…';
+          noteText.style.color = 'var(--text-muted)';
+        }
+      }
+      setNoteDisplay(book.dnfNote || '');
+      noteTa.value = book.dnfNote || '';
+
+      noteText.addEventListener('click', () => {
+        noteText.style.display = 'none';
+        noteTa.style.display = '';
+        noteTa.focus();
+      });
+
+      // Saved on blur rather than behind a button: there is nothing else on this
+      // card to save, so a button would be the only one.
+      noteTa.addEventListener('blur', async () => {
+        const value = noteTa.value.trim();
+        noteTa.style.display = 'none';
+        noteText.style.display = '';
+        setNoteDisplay(value);
+        if (value === (book.dnfNote || '')) return;
+        const previous = book.dnfNote;
+        book.dnfNote = value || undefined;
+        try {
+          await setDnfNote(user.uid, book.id, value);
+        } catch (e) {
+          console.error('Could not save the note', e);
+          book.dnfNote = previous;
+          setNoteDisplay(previous || '');
+        }
+      });
+
+      noteWrap.append(noteText, noteTa);
+      card.appendChild(noteWrap);
+
       const actions = document.createElement('div');
       actions.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem';
 
@@ -2821,6 +2890,15 @@
       }
       metaRow('Language', book.language || null);
       metaRow('Format',   book.format   || null);
+
+      // Read-only here, and only when there is one: an empty "Add a note…"
+      // prompt on somebody else's book invites an edit that is not possible.
+      if (book.dnfNote) {
+        const note = document.createElement('div');
+        note.style.cssText = 'margin-top:.6rem;font-size:.82rem;line-height:1.4;white-space:pre-wrap;word-break:break-word';
+        note.textContent = '“' + book.dnfNote + '”';
+        card.appendChild(note);
+      }
       return card;
     }
 
