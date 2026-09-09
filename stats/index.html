@@ -150,32 +150,6 @@
       margin-bottom: .75rem;
     }
     .chart-title-row .chart-title { margin-bottom: 0; }
-    /* Sits above the charts, aligned right so it reads as a control on them
-       rather than a heading for them. The select is .settings-select, the app's
-       one select style — a second one here would only drift from it. */
-    .period-bar {
-      display: flex; flex-direction: column; align-items: flex-end;
-      gap: .4rem; margin-bottom: .75rem;
-    }
-    .period-custom { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; justify-content: flex-end; }
-    .period-field {
-      display: flex; align-items: center; gap: .35rem;
-      font-size: .75rem; color: var(--text-muted);
-    }
-    /* Matched to .settings-select, so the row reads as one control and not three
-       borrowed ones. A date input opens a picker rather than a keyboard on iOS,
-       so it does not need the 16px that stops the page zooming on text fields. */
-    .period-field input {
-      font-family: inherit;
-      font-size: .8rem;
-      padding: .25rem .45rem;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      background: var(--bg-alt);
-      color: var(--text);
-      cursor: pointer;
-    }
-    .period-summary { font-size: .72rem; color: var(--text-muted); text-align: right; }
     .view-toggle {
       display: flex;
       border: 1px solid var(--border);
@@ -349,22 +323,9 @@
     <div id="panel-general" hidden>
       <!-- Every chart below reads finished books, so the window is on finish
            dates. All time by default, and not remembered between visits: a
-           forgotten filter reads as broken stats. -->
-      <div class="period-bar">
-        <select class="settings-select" id="period-preset">
-          <option value="all">All time</option>
-          <option value="this-month">This month</option>
-          <option value="this-year">This year</option>
-          <option value="month">1 month</option>
-          <option value="year">1 year</option>
-          <option value="custom">Custom…</option>
-        </select>
-        <div class="period-custom" id="period-custom" style="display:none">
-          <label class="period-field">From <input type="date" id="period-from"></label>
-          <label class="period-field">To <input type="date" id="period-to"></label>
-        </div>
-        <div class="period-summary" id="period-summary"></div>
-      </div>
+           forgotten filter reads as broken stats. Built by js/period-filter.js,
+           which the library shares so a click-through can carry the window. -->
+      <div id="period-bar-slot"></div>
       <div class="card chart-card" id="chart-countries-card" style="padding-top:.5rem;padding-bottom:.5rem">
         <div class="chart-title-row">
           <div class="chart-title">Countries</div>
@@ -496,8 +457,9 @@
     import { requireAuth } from '../js/auth.js';
     import { getProfileByUsername, getProfile, getFinishedBooks, getFollowing, db } from '../js/firebase.js';
     import { doc, updateDoc, setDoc, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-    import { COUNTRY_ISO, ISO_CONTINENT, calcStats, bookAgeYears, periodKey, inPeriod, periodsToSnapshot, previousPeriodKey, topAuthors, booksInRange, presetRange, customRange, toDateInputValue, summariseSnapshot } from '../js/stats-utils.js';
+    import { COUNTRY_ISO, ISO_CONTINENT, calcStats, bookAgeYears, periodKey, inPeriod, periodsToSnapshot, previousPeriodKey, topAuthors, booksInRange, summariseSnapshot } from '../js/stats-utils.js';
     import { fitDropdown, releaseDropdown } from '../js/dropdown.js';
+    import { periodBarHtml, initPeriodBar, describeRange, periodQuery } from '../js/period-filter.js';
 
     const NOW  = new Date();
     const CY   = NOW.getFullYear();
@@ -1005,67 +967,19 @@
     // has this person read", which is not a question about a window.
     //
     // Sits above the tab switching that follows, which can call drawCharts on
-    // load. drawCharts is a hoisted declaration but currentRange is a let, so
-    // an early call would hit it in the temporal dead zone.
+    // load. drawCharts is a hoisted declaration but these are not, so an early
+    // call would hit them in the temporal dead zone.
+    document.getElementById('period-bar-slot').innerHTML = periodBarHtml();
     let currentRange = { from: null, to: null };
+    const periodBar = initPeriodBar({
+      onChange: range => { currentRange = range; drawCharts(); },
+    });
 
-    const periodPreset  = document.getElementById("period-preset");
-    const periodCustom  = document.getElementById("period-custom");
-    const periodFrom    = document.getElementById("period-from");
-    const periodTo      = document.getElementById("period-to");
-    const periodSummary = document.getElementById("period-summary");
-
-    // Where the custom fields start before anything else has been chosen. Only
-    // reached from All time, which has no dates of its own to hand over.
-    {
-      const { from, to } = presetRange("year");
-      periodFrom.value = toDateInputValue(from);
-      periodTo.value   = toDateInputValue(to);
-    }
-
-    function describeRange(shown, total) {
-      // The summary tab has its own `pl`, scoped inside the function that builds
-      // it, so this needs its own.
-      const pl = (n, one, many) => (n === 1 ? one : many);
-      if (!currentRange.from && !currentRange.to) {
-        return `${total} ${pl(total, "book", "books")}`;
-      }
-      const d = date => date ? date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null;
-      const from = d(currentRange.from), to = d(currentRange.to);
-      const span = from && to ? `${from} – ${to}` : from ? `since ${from}` : `up to ${to}`;
-      // The total is worth saying: an empty chart is otherwise indistinguishable
-      // from a broken one.
-      return `${shown} of ${total} ${pl(total, "book", "books")} · ${span}`;
-    }
-
-    let currentPreset = "all";
-
-    function applyPeriod(preset) {
-      // Switching into Custom carries the window that was showing into the date
-      // fields, so it opens on the range being looked at rather than discarding
-      // it. All time has no dates to hand over, so the fields keep what they had.
-      //
-      // Guarded on the previous preset because editing either date calls this
-      // again with "custom" — without it, every keystroke would overwrite the
-      // field being typed into with the range it had just produced.
-      if (preset === "custom" && currentPreset !== "custom") {
-        if (currentRange.from) periodFrom.value = toDateInputValue(currentRange.from);
-        if (currentRange.to)   periodTo.value   = toDateInputValue(currentRange.to);
-      }
-      currentPreset = preset;
-      periodPreset.value = preset;
-      periodCustom.style.display = preset === "custom" ? "" : "none";
-      currentRange = preset === "custom"
-        ? customRange(periodFrom.value, periodTo.value)
-        : presetRange(preset);
-      drawCharts();
-    }
-
-    periodPreset.addEventListener("change", () => applyPeriod(periodPreset.value));
-    // Redrawn as each date is picked, so a half-filled range shows what it has
-    // rather than waiting for both ends.
-    periodFrom.addEventListener("change", () => applyPeriod("custom"));
-    periodTo.addEventListener("change", () => applyPeriod("custom"));
+    // The window as a query string, for links out of a chart. A helper rather
+    // than a variable because the countries pie and map build their own links
+    // and run long after this — and forgetting it there is exactly the bug this
+    // exists to stop.
+    const periodLink = () => periodQuery(periodBar.preset, currentRange);
 
     // ── Tab switching ──────────────────────────────────────────────────────────
 
@@ -1198,6 +1112,8 @@
           const oldest = withYear.length ? withYear.reduce((a, b) => b.releaseYear < a.releaseYear ? b : a) : null;
           const newest = withYear.length ? withYear.reduce((a, b) => b.releaseYear > a.releaseYear ? b : a) : null;
 
+          // No periodLink here: the summary tab shows everything, so its links
+          // should too.
           const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
           return [
             { label: `most read author (${topAuthor  ? `${topAuthor[1]} ${pl(topAuthor[1], 'book', 'books')}` : '–'})`,  value: topAuthor  ? topAuthor[0]  : '–', href: topAuthor  ? `../author/?slug=${toAuthorSlug(topAuthor[0])}&name=${encodeURIComponent(topAuthor[0])}`  : null },
@@ -1819,7 +1735,7 @@
       labelEl.addEventListener('click', () => {
         if (selected < 0) return;
         const country = encodeURIComponent(nodes[selected].name.toLowerCase());
-        const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
+        const u = (targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '') + periodLink();
         location.href = `../library/?country=${country}${u}`;
       }, { signal });
 
@@ -1864,7 +1780,7 @@
         const hit = hitTest(cx, cy);
         if (hit >= 0 && hit === selected) {
           const country = encodeURIComponent(nodes[hit].name.toLowerCase());
-          const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
+          const u = (targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '') + periodLink();
           location.href = `../library/?country=${country}${u}`;
         } else {
           selected = hit;
@@ -1878,7 +1794,7 @@
         const hit = hitTest(cx, cy);
         if (hit >= 0 && hit === selected) {
           const country = encodeURIComponent(nodes[hit].name.toLowerCase());
-          const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
+          const u = (targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '') + periodLink();
           location.href = `../library/?country=${country}${u}`;
         } else {
           selected = hit;
@@ -2097,7 +2013,7 @@
         if (!hit) { pinned = null; redrawOverlay(); showLabel(hovered); return; }
         if (pinned === hit && hit.count > 0) {
           const name = isoToName[hit.iso] || hit.name;
-          const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
+          const u = (targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '') + periodLink();
           location.href = `../library/?country=${encodeURIComponent(name.toLowerCase())}${u}`;
           return;
         }
@@ -2461,14 +2377,17 @@
     }
 
     async function drawCharts() {
-      const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
+      // Every link out of a chart carries the window with it, so the library
+      // opens on the same books the chart was drawn from.
+      const u = (targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '')
+              + periodQuery(periodBar.preset, currentRange);
 
       // Every chart below works from the chosen window. Shadowing the outer
       // arrays rather than threading an argument through eighteen call sites:
       // nothing in here can then accidentally read past the filter.
       const books = booksInRange(allBooks, currentRange);
       const publicBooks = books.filter(b => !b.private);
-      periodSummary.textContent = describeRange(books.length, allBooks.length);
+      periodBar.setSummary(describeRange(currentRange, books.length, allBooks.length));
 
       // Every chart below hides itself and shows a "not enough data" note when it
       // has nothing to draw — but none of them undo that when they do have data,

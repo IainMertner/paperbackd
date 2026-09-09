@@ -214,7 +214,8 @@
     import { getBooks, addBook, getCountryRemaps, resolveBookLanguage, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, undnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing, setBookPrivate } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { normalizeCountry, serialiseCalls } from '../js/utils.js';
-    import { COUNTRIES } from '../js/stats-utils.js';
+    import { COUNTRIES, finishedDate } from '../js/stats-utils.js';
+    import { periodBarHtml, initPeriodBar, periodFromParams, describeRange } from '../js/period-filter.js';
     import { fitDropdown, releaseDropdown, autoFit } from '../js/dropdown.js';
     import { metaForSlug, searchBooks } from '../js/hardcover.js';
     import { parseReleaseYear, pickIsbn13, pickSeries, primaryAuthor, progressBarPercent, wantToReadBlock, BOOK_LANGUAGES as LANGUAGES } from '../js/book-utils.js';
@@ -258,6 +259,9 @@
       el.dataset.gender   = (book.authorGender || '').toLowerCase();
       el.dataset.genre    = (book.genres || []).map(g => g.toLowerCase()).join(',');
       el.dataset.rating   = book.rating != null ? String(book.rating) : '';
+      // Epoch milliseconds, not an ISO string: the range bounds are local Dates,
+      // and comparing numbers avoids any question of which zone a string is in.
+      el.dataset.finished = String(finishedDate(book)?.getTime() ?? '');
       el.dataset.lists    = book._listIds || '';
       el.dataset.gbid     = book.gbid || '';
       el.dataset.flags    = bookMissingFlags(book).join(',');
@@ -612,6 +616,7 @@
       cell.dataset.gender   = (book.authorGender || '').toLowerCase();
       cell.dataset.genre    = (book.genres || []).map(g => g.toLowerCase()).join(',');
       cell.dataset.rating   = book.rating != null ? String(book.rating) : '';
+      cell.dataset.finished = String(finishedDate(book)?.getTime() ?? '');
       cell.dataset.lists    = book._listIds || '';
       cell.dataset.gbid     = book.gbid || '';
       cell.dataset.flags    = bookMissingFlags(book).join(',');
@@ -3105,6 +3110,9 @@
         filterWrap.style.display = '';
 
         const activeFilters = { format: new Set(), language: new Set(), country: new Set(), gender: new Set(), genre: new Set(), rating: new Set(), lists: new Set(), completeness: new Set() };
+        // The date window, kept beside the rest of the filter state. Set by the
+        // period bar and by the ?period= a chart click-through arrives with.
+        let periodRange = { from: null, to: null };
 
         const filterDropdownBtn = document.getElementById('filter-dropdown-btn');
         const filterDropdown    = document.getElementById('filter-dropdown');
@@ -3136,6 +3144,18 @@
                 const flags = (el.dataset.flags || '').split(',').filter(Boolean);
                 show = [...activeFilters.completeness].some(f => flags.includes(f));
               }
+              if (show && (periodRange.from || periodRange.to)) {
+                // Same rule the graphs use: a book belongs to a window if it was
+                // finished inside it. One with no finish date — anything still
+                // being read — is in no window at all, so Currently Reading
+                // empties out under a date filter. That is the honest answer to
+                // "what did I read then", and the header says "0 of 5" rather
+                // than leaving it a mystery.
+                const at = Number(el.dataset.finished);
+                show = !!el.dataset.finished
+                  && (!periodRange.from || at >= periodRange.from.getTime())
+                  && (!periodRange.to   || at <= periodRange.to.getTime());
+              }
               el.style.display = show ? '' : 'none';
               el.classList.toggle('hidden', !show);
             });
@@ -3156,10 +3176,39 @@
               : `${label} · ${shown} of ${rows.length}`;
           }
 
-          const total = Object.values(activeFilters).reduce((n, s) => n + s.size, 0);
+          const rows  = [...document.querySelectorAll('#reading-list [data-title], #finished-list [data-title], #dnf-list [data-title]')];
+          periodBar.setSummary(describeRange(periodRange, rows.filter(el => !el.classList.contains('hidden')).length, rows.length));
+
+          // The period counts as a filter here: it narrows the library exactly as
+          // the checkboxes do, and a menu badge that ignored it would leave an
+          // active date range invisible from outside the menu.
+          const total = Object.values(activeFilters).reduce((n, s) => n + s.size, 0)
+                      + ((periodRange.from || periodRange.to) ? 1 : 0);
           filterDropdownBtn.textContent = total ? `Filters (${total})` : 'Filters';
           filterDropdownBtn.style.color = total ? 'var(--accent)' : '';
         }
+        // The shared period bar, as the first section of the Filters menu — it is
+        // a filter like any other, and floating above the library it read as a
+        // stray control. Prepended after the other sections are built so it sits
+        // at the top whatever order they were added in.
+        const periodSection = document.createElement('div');
+        // The same heading style addSection uses, so it reads as one of them.
+        periodSection.innerHTML = `<div style="font-size:.7rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;padding:.4rem .75rem .2rem">Period</div>${periodBarHtml()}`;
+        filterDropdown.prepend(periodSection);
+        // The menu is worth opening even with nothing else to filter by.
+        filterDropdownBtn.style.display = '';
+
+        const periodBar = initPeriodBar({
+          initial: periodFromParams(params),
+          onChange: range => { periodRange = range; applyFilter(); },
+        });
+        // initPeriodBar settles its initial window without firing onChange, so a
+        // caller is not made to draw twice on load. That window still has to be
+        // picked up here — otherwise a ?period= arriving from a chart click-through
+        // shows as selected in the menu while filtering nothing.
+        periodRange = periodBar.range;
+        applyFilter();
+
         reapplyFilter = applyFilter;
         filterInput.addEventListener('input', applyFilter);
 

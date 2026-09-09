@@ -1631,3 +1631,48 @@ body.auth-loading .mobile-nav { visibility: hidden; animation: auth-reveal 0s 8s
   .page-input          { --s: .825; --w: 44px; --h: 27.4px; }  /* was .825rem */
   .quick-progress-input { --s: .95; --w: 4rem; --h: 29.8px; }  /* was .95rem  */
 }
+
+/* ── Period filter (stats graphs and library) ─────────────── */
+/* Shared so the two pages cannot drift: the library carries the same window
+   over when you click through from a chart. */
+/* Sits above the charts, aligned right so it reads as a control on them
+   rather than a heading for them. The select is .settings-select, the app's
+   one select style — a second one here would only drift from it. */
+.period-bar {
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: .4rem; margin-bottom: .75rem;
+}
+.period-custom { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; justify-content: flex-end; }
+.period-field {
+  display: flex; align-items: center; gap: .35rem;
+  font-size: .75rem; color: var(--text-muted);
+}
+/* A shared width on the labels, so the From and To boxes start at the same
+   place instead of being offset by the difference between the two words. */
+.period-field > span { flex-shrink: 0; min-width: 2.4rem; }
+/* Matched to .settings-select, so the row reads as one control and not three
+   borrowed ones. A date input opens a picker rather than a keyboard on iOS,
+   so it does not need the 16px that stops the page zooming on text fields. */
+.period-field input {
+  font-family: inherit;
+  font-size: .8rem;
+  padding: .25rem .45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-alt);
+  color: var(--text);
+  cursor: pointer;
+}
+/* pre-line so describeRange's newline splits the count from the span: the count
+   is the answer and the dates are the question. */
+.period-summary { font-size: .72rem; color: var(--text-muted); text-align: right; white-space: pre-line; }
+
+/* Inside the library Filters menu the bar is a section, not a control hovering
+   over the page, so it aligns left with the checkbox rows around it. */
+#filter-dropdown .period-bar { align-items: stretch; gap: .35rem; margin: 0; padding: 0 .75rem .5rem; }
+/* Stacked in the menu, which is too narrow to sit them side by side — and
+   stacked is what makes the shared label width line the two boxes up. */
+#filter-dropdown .period-custom { flex-direction: column; align-items: stretch; gap: .35rem; }
+#filter-dropdown .period-field > input { flex: 1; min-width: 0; }
+#filter-dropdown .period-summary { text-align: left; }
+#filter-dropdown .settings-select { width: 100%; }
