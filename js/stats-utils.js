@@ -297,6 +297,113 @@ export function inPeriod(date, key) {
   return periodKey(d, 'monthly') === key;
 }
 
+// ── Date ranges for the graphs tab ───────────────────────────────────────────
+
+// When a book was finished, as a Date, or null if that cannot be established.
+//
+// The top-level finishedAt is only written when a date was actually supplied —
+// addFinishedBook guards it with `if (finishedAt)` — so a book logged as already
+// read, with no date given, has none at all. Its reads[] entry always does,
+// because that one is written unconditionally. Reading only the top-level field
+// dropped every such book out of every bounded period.
+//
+// The latest read is the one that counts, matching what updateBookReads copies
+// up to the book itself.
+//
+// Anything unparseable becomes null rather than an Invalid Date, which would
+// compare false against every bound and quietly drop the book instead.
+function asDate(raw) {
+  if (!raw) return null;
+  const d = raw?.toDate?.() ?? (raw instanceof Date ? raw : new Date(raw));
+  return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
+}
+
+export function finishedDate(book) {
+  const top = asDate(book?.finishedAt);
+  if (top) return top;
+  let latest = null;
+  for (const read of book?.reads || []) {
+    const d = asDate(read?.finishedAt);
+    if (d && (!latest || d > latest)) latest = d;
+  }
+  return latest;
+}
+// The books finished inside a window. Either bound may be null for open-ended,
+// and both null means all time — which returns the list untouched rather than
+// walking it, since that is the default view.
+//
+// A book with no usable finish date is excluded from any bounded range. It
+// cannot be placed, and guessing would put it in a period it may not belong to.
+export function booksInRange(books, { from = null, to = null } = {}) {
+  if (!from && !to) return books || [];
+  return (books || []).filter(b => {
+    const d = finishedDate(b);
+    if (!d) return false;
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  });
+}
+
+// The window a preset names, relative to `now`.
+//
+// Two kinds, deliberately named so they cannot be mistaken for one another:
+// "this-month" and "this-year" are calendar periods running from the 1st or from
+// January to now, while "month" and "year" are durations — the past month, the
+// past year. A label like "last month" would mean either, which is why none is
+// used.
+//
+// Every one ends at `now` rather than the end of the period, so nothing dated in
+// the future creeps in.
+export function presetRange(preset, now = new Date()) {
+  const startOf = (y, m) => new Date(y, m, 1, 0, 0, 0, 0);
+
+  if (preset === 'this-month') return { from: startOf(now.getFullYear(), now.getMonth()), to: now };
+  if (preset === 'this-year')  return { from: startOf(now.getFullYear(), 0), to: now };
+
+  if (preset === 'month' || preset === 'year') {
+    const from = new Date(now);
+    if (preset === 'month') from.setMonth(from.getMonth() - 1);
+    else from.setFullYear(from.getFullYear() - 1);
+    return { from, to: now };
+  }
+  return { from: null, to: null };
+}
+// A Date as an <input type="date"> wants it: YYYY-MM-DD in local time.
+//
+// Not toISOString().slice(0, 10), which converts to UTC first — for anyone west
+// of it that lands on the previous day all evening, and east of it on the next
+// day early in the morning. The prefilled range would then quietly be a day out.
+export function toDateInputValue(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+// A custom range from two <input type="date"> values, either of which may be
+// blank for open-ended.
+//
+// The end is pushed to the last instant of that day: a book finished at 19:40 on
+// the chosen end date is inside the range someone drew, and comparing against
+// midnight would drop a whole day's reading.
+export function customRange(fromValue, toValue) {
+  // Swapped before either is turned into a boundary, not after. Swapping the
+  // finished Dates would leave the start at end-of-day and the end at midnight,
+  // clipping a day off each end. YYYY-MM-DD compares correctly as a string.
+  if (fromValue && toValue && fromValue > toValue) {
+    [fromValue, toValue] = [toValue, fromValue];
+  }
+  const parse = v => {
+    if (!v) return null;
+    const d = new Date(`${v}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  const from = parse(fromValue);
+  const to   = parse(toValue);
+  if (to) to.setHours(23, 59, 59, 999);
+  return { from, to };
+}
+
 // How many separate works by each author someone has read, with a series
 // counting once however many of its books they got through.
 //

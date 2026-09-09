@@ -150,6 +150,32 @@
       margin-bottom: .75rem;
     }
     .chart-title-row .chart-title { margin-bottom: 0; }
+    /* Sits above the charts, aligned right so it reads as a control on them
+       rather than a heading for them. The select is .settings-select, the app's
+       one select style — a second one here would only drift from it. */
+    .period-bar {
+      display: flex; flex-direction: column; align-items: flex-end;
+      gap: .4rem; margin-bottom: .75rem;
+    }
+    .period-custom { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; justify-content: flex-end; }
+    .period-field {
+      display: flex; align-items: center; gap: .35rem;
+      font-size: .75rem; color: var(--text-muted);
+    }
+    /* Matched to .settings-select, so the row reads as one control and not three
+       borrowed ones. A date input opens a picker rather than a keyboard on iOS,
+       so it does not need the 16px that stops the page zooming on text fields. */
+    .period-field input {
+      font-family: inherit;
+      font-size: .8rem;
+      padding: .25rem .45rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-alt);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .period-summary { font-size: .72rem; color: var(--text-muted); text-align: right; }
     .view-toggle {
       display: flex;
       border: 1px solid var(--border);
@@ -321,6 +347,24 @@
 
     <!-- General stats panel -->
     <div id="panel-general" hidden>
+      <!-- Every chart below reads finished books, so the window is on finish
+           dates. All time by default, and not remembered between visits: a
+           forgotten filter reads as broken stats. -->
+      <div class="period-bar">
+        <select class="settings-select" id="period-preset">
+          <option value="all">All time</option>
+          <option value="this-month">This month</option>
+          <option value="this-year">This year</option>
+          <option value="month">1 month</option>
+          <option value="year">1 year</option>
+          <option value="custom">Custom…</option>
+        </select>
+        <div class="period-custom" id="period-custom" style="display:none">
+          <label class="period-field">From <input type="date" id="period-from"></label>
+          <label class="period-field">To <input type="date" id="period-to"></label>
+        </div>
+        <div class="period-summary" id="period-summary"></div>
+      </div>
       <div class="card chart-card" id="chart-countries-card" style="padding-top:.5rem;padding-bottom:.5rem">
         <div class="chart-title-row">
           <div class="chart-title">Countries</div>
@@ -452,7 +496,7 @@
     import { requireAuth } from '../js/auth.js';
     import { getProfileByUsername, getProfile, getFinishedBooks, getFollowing, db } from '../js/firebase.js';
     import { doc, updateDoc, setDoc, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-    import { COUNTRY_ISO, ISO_CONTINENT, calcStats, bookAgeYears, periodKey, inPeriod, periodsToSnapshot, previousPeriodKey, topAuthors, summariseSnapshot } from '../js/stats-utils.js';
+    import { COUNTRY_ISO, ISO_CONTINENT, calcStats, bookAgeYears, periodKey, inPeriod, periodsToSnapshot, previousPeriodKey, topAuthors, booksInRange, presetRange, customRange, toDateInputValue, summariseSnapshot } from '../js/stats-utils.js';
     import { fitDropdown, releaseDropdown } from '../js/dropdown.js';
 
     const NOW  = new Date();
@@ -946,11 +990,82 @@
       });
     })();
 
-    const [books, myBooks] = await Promise.all([
+    const [allBooks, myBooks] = await Promise.all([
       getFinishedBooks(targetProfile.uid),
       isOwn ? Promise.resolve(null) : getFinishedBooks(user.uid),
     ]);
+    // The whole shelf. drawCharts shadows both names with the chosen period, so
+    // everything outside the graphs tab keeps seeing all of it.
+    const books = allBooks;
     const publicBooks = books.filter(b => !b.private);
+
+    // ── Period filter (graphs tab only) ─────────────────────────────────────
+    //
+    // The summary tab deliberately keeps showing everything: it answers "what
+    // has this person read", which is not a question about a window.
+    //
+    // Sits above the tab switching that follows, which can call drawCharts on
+    // load. drawCharts is a hoisted declaration but currentRange is a let, so
+    // an early call would hit it in the temporal dead zone.
+    let currentRange = { from: null, to: null };
+
+    const periodPreset  = document.getElementById("period-preset");
+    const periodCustom  = document.getElementById("period-custom");
+    const periodFrom    = document.getElementById("period-from");
+    const periodTo      = document.getElementById("period-to");
+    const periodSummary = document.getElementById("period-summary");
+
+    // Where the custom fields start before anything else has been chosen. Only
+    // reached from All time, which has no dates of its own to hand over.
+    {
+      const { from, to } = presetRange("year");
+      periodFrom.value = toDateInputValue(from);
+      periodTo.value   = toDateInputValue(to);
+    }
+
+    function describeRange(shown, total) {
+      // The summary tab has its own `pl`, scoped inside the function that builds
+      // it, so this needs its own.
+      const pl = (n, one, many) => (n === 1 ? one : many);
+      if (!currentRange.from && !currentRange.to) {
+        return `${total} ${pl(total, "book", "books")}`;
+      }
+      const d = date => date ? date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null;
+      const from = d(currentRange.from), to = d(currentRange.to);
+      const span = from && to ? `${from} – ${to}` : from ? `since ${from}` : `up to ${to}`;
+      // The total is worth saying: an empty chart is otherwise indistinguishable
+      // from a broken one.
+      return `${shown} of ${total} ${pl(total, "book", "books")} · ${span}`;
+    }
+
+    let currentPreset = "all";
+
+    function applyPeriod(preset) {
+      // Switching into Custom carries the window that was showing into the date
+      // fields, so it opens on the range being looked at rather than discarding
+      // it. All time has no dates to hand over, so the fields keep what they had.
+      //
+      // Guarded on the previous preset because editing either date calls this
+      // again with "custom" — without it, every keystroke would overwrite the
+      // field being typed into with the range it had just produced.
+      if (preset === "custom" && currentPreset !== "custom") {
+        if (currentRange.from) periodFrom.value = toDateInputValue(currentRange.from);
+        if (currentRange.to)   periodTo.value   = toDateInputValue(currentRange.to);
+      }
+      currentPreset = preset;
+      periodPreset.value = preset;
+      periodCustom.style.display = preset === "custom" ? "" : "none";
+      currentRange = preset === "custom"
+        ? customRange(periodFrom.value, periodTo.value)
+        : presetRange(preset);
+      drawCharts();
+    }
+
+    periodPreset.addEventListener("change", () => applyPeriod(periodPreset.value));
+    // Redrawn as each date is picked, so a half-filled range shows what it has
+    // rather than waiting for both ends.
+    periodFrom.addEventListener("change", () => applyPeriod("custom"));
+    periodTo.addEventListener("change", () => applyPeriod("custom"));
 
     // ── Tab switching ──────────────────────────────────────────────────────────
 
@@ -1560,7 +1675,19 @@
       return nodes;
     }
 
-    async function drawCountriesPie(canvasEl, legendEl) {
+    // `books` is passed in rather than read from the outer scope: this is defined
+    // outside drawCharts, so it would otherwise close over the whole shelf and
+    // ignore the period filter entirely.
+    async function drawCountriesPie(canvasEl, legendEl, books) {
+      // Each run closes its pointer handlers over its own bubble layout, so the
+      // previous run's are discarded rather than left stacked on the canvas.
+      // Otherwise every redraw adds another set, they all fire on hover, and the
+      // oldest — holding the first period ever drawn — fights the newest.
+      canvasEl._pointerHandlers?.abort();
+      const pointerHandlers = new AbortController();
+      canvasEl._pointerHandlers = pointerHandlers;
+      const signal = pointerHandlers.signal;
+
       const counts = {};
       for (const b of books) {
         if (b.country) counts[b.country] = (counts[b.country] || 0) + 1;
@@ -1573,7 +1700,9 @@
       const flagImages = await loadFlagImages(items.map(i => i.name));
 
       const dpr     = window.devicePixelRatio || 1;
-      const parentW = canvasEl.parentElement.clientWidth;
+      // || 300 as drawHBar and drawVBar do: a zero here silently lays the whole
+      // chart out at no width rather than failing.
+      const parentW = canvasEl.parentElement.clientWidth || 300;
       const W = parentW;
       const H = Math.round(W * MAP_ASPECT);
 
@@ -1687,7 +1816,7 @@
         const country = encodeURIComponent(nodes[selected].name.toLowerCase());
         const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
         location.href = `../library/?country=${country}${u}`;
-      });
+      }, { signal });
 
       let selected = -1;
 
@@ -1720,11 +1849,11 @@
         const hit = hitTest(cx, cy);
         canvasEl.style.cursor = hit >= 0 ? 'pointer' : '';
         if (hit !== hovered) { hovered = hit; showLabel(hovered); updateSelectionOverlay(hovered); }
-      });
+      }, { signal });
       canvasEl.addEventListener('mouseleave', () => {
         hovered = -1; showLabel(-1); canvasEl.style.cursor = '';
         updateSelectionOverlay(-1);
-      });
+      }, { signal });
       canvasEl.addEventListener('click', e => {
         const [cx, cy] = canvasCoords(e.clientX, e.clientY);
         const hit = hitTest(cx, cy);
@@ -1737,7 +1866,7 @@
           render(selected);
           showLabel(hovered);
         }
-      });
+      }, { signal });
       canvasEl.addEventListener('touchstart', e => {
         const t = e.touches[0];
         const [cx, cy] = canvasCoords(t.clientX, t.clientY);
@@ -1752,12 +1881,12 @@
           showLabel(hit);
         }
         if (hit >= 0) e.preventDefault();
-      }, { passive: false });
+      }, { passive: false, signal });
       canvasEl.addEventListener('touchend', () => {
         hovered = -1;
         updateSelectionOverlay(-1);
         showLabel(-1);
-      });
+      }, { signal });
 
       return true;
     }
@@ -1770,7 +1899,10 @@
     const MAP_ASPECT = _yRange / (_xMax - _xLeft);
 
     let worldGeoCache = null;
-    async function drawCountriesMap(counts) {
+    // Same as drawCountriesPie: `books` is only used to map a country back to the
+    // spelling in someone's library for the link, but reading the outer one would
+    // quietly reintroduce books the period filter had excluded.
+    async function drawCountriesMap(counts, books) {
       const mapEl     = document.getElementById('chart-countries-map');
       const labelEl   = document.getElementById('chart-countries-label');
       const labelName = document.getElementById('chart-countries-label-name');
@@ -2286,8 +2418,50 @@
       }
     }
 
+    // Countries view state, held outside drawCharts: its toggle is wired once and
+    // must keep reaching the newest closures rather than the first run's.
+    let latestCountryCounts = {};
+    let latestCountryBooks  = [];
+    // Same reason: the Books/Works toggle is wired once, so its handlers hold the
+    // first run's closures for ever. Reading the shelf from here rather than from
+    // a captured `books` is what keeps them on the chosen period.
+    let latestAuthorBooks   = [];
+
+    function showCountriesView(which) {
+      const toggleEl = document.getElementById('countries-view-toggle');
+      localStorage.setItem('countries-view', which);
+      if (which === 'map') toggleEl._showMap?.();
+      else toggleEl._showBubble?.();
+    }
+
     async function drawCharts() {
       const u = targetParam ? `&u=${encodeURIComponent(targetProfile.username)}` : '';
+
+      // Every chart below works from the chosen window. Shadowing the outer
+      // arrays rather than threading an argument through eighteen call sites:
+      // nothing in here can then accidentally read past the filter.
+      const books = booksInRange(allBooks, currentRange);
+      const publicBooks = books.filter(b => !b.private);
+      periodSummary.textContent = describeRange(books.length, allBooks.length);
+
+      // Every chart below hides itself and shows a "not enough data" note when it
+      // has nothing to draw — but none of them undo that when they do have data,
+      // because they were written for a drawCharts that ran once per page load.
+      // Reset here rather than in nine success branches, so a chart recovers when
+      // the period changes back and any chart added later gets it for free.
+      //
+      // The countries card sets its own visibility afterwards, and the map canvas
+      // is rebuilt from scratch on every draw, so neither minds being reset.
+      // Looked up here rather than using the panelGeneral const declared further
+      // down: drawCharts is hoisted and this would sit in its temporal dead zone
+      // if anything ever called it earlier than the tab setup does.
+      const panel = document.getElementById('panel-general');
+      for (const el of panel.querySelectorAll('canvas')) el.style.display = '';
+      for (const el of panel.querySelectorAll('.chart-empty')) el.style.display = 'none';
+      // The captions go too. They are written only where a chart succeeds, so
+      // without this a period with nothing in it keeps the last one's "12 rated ·
+      // avg 4.1 ★" sitting under an empty chart.
+      for (const el of panel.querySelectorAll('.chart-summary')) el.innerHTML = '';
 
       // Rating distribution
       const ratingCounts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; // 0.5 → 5.0 in 0.5 steps
@@ -2336,33 +2510,63 @@
         }
       }
 
-      if (await drawCountriesPie(countriesCanvas, countriesLegend)) {
-        document.getElementById('chart-countries-empty').style.display = 'none';
+      const countriesEmpty = document.getElementById('chart-countries-empty');
+      const chartWrap = countriesCanvas.parentElement;
+      // Shown before drawing, not after. The previous period may have hidden it,
+      // and drawCountriesPie sizes the bubbles from parentElement.clientWidth —
+      // which is 0 while the parent is display:none, so the whole chart would be
+      // laid out at zero width and stay invisible once revealed.
+      chartWrap.style.display = '';
+      const hasCountries = await drawCountriesPie(countriesCanvas, countriesLegend, books);
+
+      // The counts live outside these closures because the listeners below are
+      // wired once and outlive every later run of drawCharts. Capturing this
+      // run's counts would pin the map to whichever period was selected first.
+      //
+      // Declared before the branch, not inside it: the empty-period case below
+      // draws the map too, and would otherwise have no showMap to call.
+      latestCountryCounts = hasCountries ? countryCounts : {};
+      latestCountryBooks  = books;
+
+      // Each view decides for itself what "nothing to show" looks like. The map
+      // still says something useful when the period is empty — an uncoloured
+      // world is a truthful answer — so it draws blank rather than being left on
+      // the previous period. Bubbles have nothing to draw at all, so the message
+      // stands in for them.
+      const showBubble = () => {
+        bubbleBtn.classList.add('active'); mapBtn.classList.remove('active');
+        countriesMapEl.style.display = 'none';
+        chartWrap.style.display = hasCountries ? '' : 'none';
+        countriesEmpty.style.display = hasCountries ? 'none' : '';
+      };
+      const showMap = async () => {
+        mapBtn.classList.add('active'); bubbleBtn.classList.remove('active');
+        chartWrap.style.display = 'none';
+        countriesEmpty.style.display = 'none';
+        countriesMapEl.style.display = '';
+        // Redrawn every time rather than once: it has to follow the period, and
+        // drawCountriesMap clears the element before it draws.
+        await drawCountriesMap(latestCountryCounts, latestCountryBooks);
+      };
+
+      // Set every run, so the listeners below always reach the current run's
+      // closures rather than the first run's.
+      toggleEl._showBubble = showBubble;
+      toggleEl._showMap    = showMap;
+
+      if (hasCountries) {
+        toggleEl.style.display = '';
         if (!toggleEl._wired) {
-          toggleEl.style.display = '';
           toggleEl._wired = true;
-          let mapDrawn = false;
-
-          const chartWrap = countriesCanvas.parentElement;
-          const showBubble = () => {
-            bubbleBtn.classList.add('active'); mapBtn.classList.remove('active');
-            chartWrap.style.display = ''; countriesMapEl.style.display = 'none';
-          };
-          const showMap = async () => {
-            mapBtn.classList.add('active'); bubbleBtn.classList.remove('active');
-            chartWrap.style.display = 'none'; countriesMapEl.style.display = '';
-            if (!mapDrawn) { await drawCountriesMap(countryCounts); mapDrawn = true; }
-          };
-
-          bubbleBtn.addEventListener('click', () => { showBubble(); localStorage.setItem('countries-view', 'bubble'); });
-          mapBtn.addEventListener('click',    () => { showMap();   localStorage.setItem('countries-view', 'map'); });
-
-          if (localStorage.getItem('countries-view') === 'map') await showMap(); else showBubble();
+          bubbleBtn.addEventListener('click', () => { showCountriesView('bubble'); });
+          mapBtn.addEventListener('click',    () => { showCountriesView('map'); });
         }
-      } else {
-        countriesCanvas.style.display = 'none';
-        document.getElementById('chart-countries-empty').style.display = '';
       }
+
+      // The map is only offered once the toggle has been shown — with no
+      // countries in the whole library there is nothing to toggle between.
+      const wantsMap = toggleEl.style.display !== 'none' && localStorage.getItem('countries-view') === 'map';
+      if (wantsMap) await showMap(); else showBubble();
 
       const pagesCanvas = document.getElementById('chart-pages');
       const ageCanvas   = document.getElementById('chart-age');
@@ -2460,9 +2664,17 @@
         const booksBtn      = document.getElementById('authors-books-btn');
         const worksBtn      = document.getElementById('authors-works-btn');
 
+        latestAuthorBooks = books;
+
+        // Reads latestAuthorBooks, not the `books` in scope here: the toggle's
+        // handlers are wired once and keep calling the first run's copy of this,
+        // which would otherwise redraw the period that was showing at the time —
+        // all time, on a first load.
+        //
         // min: 2 keeps the old "more than one" cut, so an author earns a place by
         // having written more than one of the things you have read.
-        const authorsFor = collapseSeries => topAuthors(books, { limit: 10, min: 2, collapseSeries });
+        const authorsFor = collapseSeries =>
+          topAuthors(latestAuthorBooks, { limit: 10, min: 2, collapseSeries });
 
         function drawAuthors(collapseSeries) {
           const top = authorsFor(collapseSeries);
@@ -2479,8 +2691,13 @@
           drawAuthors(works);
         }
 
-        booksBtn.addEventListener('click', () => setAuthorsView(false));
-        worksBtn.addEventListener('click', () => setAuthorsView(true));
+        // drawCharts reruns on every resize and every period change, so the
+        // listeners are wired once — the same guard the countries toggle uses.
+        if (!authorsToggle._wired) {
+          authorsToggle._wired = true;
+          booksBtn.addEventListener('click', () => setAuthorsView(false));
+          worksBtn.addEventListener('click', () => setAuthorsView(true));
+        }
 
         // Offered only when at least one of the two views has something to show,
         // so an empty card does not carry a toggle between two blanks.
