@@ -939,6 +939,45 @@ export async function getFriendBookStatus(followingUids, gbid) {
   return results.filter(Boolean);
 }
 
+// Which of `uids` has finished each of `gbids`. For the author page, where the
+// question is asked of a whole bibliography at once.
+//
+// Not getFriendBookStatus in a loop: that is one query per friend per book, so
+// twenty friends and twenty books would be four hundred round trips. An `in`
+// filter asks each friend about thirty books at a time instead.
+//
+// Returns a Map, since a gbid is an arbitrary string and a plain object would
+// answer for 'constructor' whether anyone has read it or not.
+export async function getReadersForBooks(uids, gbids) {
+  const wanted = [...new Set((gbids || []).filter(Boolean))];
+  const byGbid = new Map();
+  if (!uids?.length || !wanted.length) return byGbid;
+
+  const IN_LIMIT = 30;   // Firestore's cap on an `in` filter
+  const slices = [];
+  for (let i = 0; i < wanted.length; i += IN_LIMIT) slices.push(wanted.slice(i, i + IN_LIMIT));
+
+  await Promise.all(uids.flatMap(uid => slices.map(async slice => {
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'users', uid, 'books'),
+        where('gbid', 'in', slice),
+        where('status', '==', 'finished'),
+      ));
+      for (const d of snap.docs) {
+        const book = d.data();
+        if (book.private) continue;
+        if (!byGbid.has(book.gbid)) byGbid.set(book.gbid, []);
+        byGbid.get(book.gbid).push({ uid, rating: book.rating ?? null });
+      }
+    } catch (e) {
+      // One unreadable shelf must not cost the whole page its answer.
+      console.warn('Could not read a follower’s books', e);
+    }
+  })));
+  return byGbid;
+}
+
 export async function syncBookActivity(uid, type, date, precision, bookInfo) {
   if (date && precision === 'day') {
     await upsertActivityTimestamp(uid, type, date, bookInfo);

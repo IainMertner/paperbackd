@@ -1564,6 +1564,10 @@ body.auth-loading .mobile-nav { visibility: hidden; animation: auth-reveal 0s 8s
 /* No border on the hexagon's placeholder: a clip-path cuts straight through
    one, leaving the edge drawn on some sides and not others. */
 .search-result-cover-placeholder { background: var(--bg-alt); border: 1px solid var(--border); }
+/* Takes the slack in the row. Without it the row is laid out purely by content
+   width, so a recents row — which carries a remove button the results do not —
+   put everything after the text in a different place. */
+.search-result-info { flex: 1; min-width: 0; }
 .search-result-title { font-size: .9rem; font-weight: 500; line-height: 1.3; }
 .search-result-meta  { font-size: .78rem; color: var(--text-muted); margin-top: .2rem; }
 
@@ -1696,3 +1700,50 @@ body.auth-loading .mobile-nav { visibility: hidden; animation: auth-reveal 0s 8s
 #filter-dropdown .period-field > input { flex: 1; min-width: 0; }
 #filter-dropdown .period-summary { text-align: left; }
 #filter-dropdown .settings-select { width: 100%; }
+
+/* ── Author page: your status, and who else has read it ──── */
+/* The cover needs to be positioned for the marks to sit on it, and the row is
+   a flex line so the readers can be pushed to its far end.
+   flex, not block: the cover is an inline <img>, so a block wrapper leaves
+   descender space beneath it and anything anchored to bottom lands in that gap,
+   hanging off the cover rather than sitting on it. */
+.author-book-cover { position: relative; display: flex; flex-shrink: 0; overflow: hidden; border-radius: var(--radius-sm); }
+
+/* The same marks the profile puts on a shelf cover, so a finished book looks
+   finished in both places. */
+.author-book-tick {
+  position: absolute; top: 4px; right: 4px;
+  font-size: .7rem; font-weight: 700; color: #fff;
+  text-shadow: 0 0 4px rgba(0,0,0,.9); line-height: 1;
+}
+.author-book-rating {
+  position: absolute; bottom: 4px; right: 4px;
+  font-size: .62rem; font-weight: 700; color: #fff;
+  text-shadow: 0 0 4px rgba(0,0,0,.9); line-height: 1;
+}
+
+/* Pushed to the right-hand end, capped so it can never crowd out the title —
+   the book is what the row is for. overflow:hidden is what lets renderReaders
+   measure the overflow and trim to fit. */
+.author-book-readers {
+  display: flex; align-items: center; justify-content: flex-end;
+  padding-left: .5rem;
+  min-width: 0; max-width: 55%; overflow: hidden; flex-shrink: 0;
+}
+/* Overlapped, so a long row of them stays a row rather than a queue.
+
+   Selected through .author-book-readers, not on the class alone: these sit
+   inside .search-result-row, whose own
+   `.search-result-row .friend-avatar { width: 40px }` is the more specific
+   rule and was blowing them up to full search-result size. */
+.author-book-readers .author-book-reader {
+  width: 34px; height: 34px; border-width: 2px;
+  font-size: .85rem; margin-left: -10px;
+  box-shadow: none;
+}
+.author-book-readers .author-book-reader:first-child { margin-left: 0; }
+/* The overflow count, as one more circle at the end of the row. */
+.author-book-readers .author-book-more {
+  background: var(--text-muted); border-color: var(--text-muted); color: var(--bg);
+  font-size: .68rem; letter-spacing: -.02em;
+}

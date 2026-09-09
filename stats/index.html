@@ -620,15 +620,46 @@
       const xMax     = toRaw(origXMax);
       const xRange   = xMax - xMin || 1;
       const toX      = x => pad.left + (toRaw(x) - xMin) / xRange * plotW;
-      const toY      = y => pad.top  + (1 - (y - yMin) / (yMax - yMin)) * plotH;
+      // The scale runs a little past the top rating, so the 5★ line is a gridline
+      // inside the plot rather than its top border. Without that headroom a 5★
+      // book sits exactly on the edge, and any jitter — or just the marker's own
+      // radius — puts it half outside.
+      //
+      // Only at the top. The floor stays at yMin because nothing is rated 0: the
+      // lowest a book can go is half a star, which already sits well clear of it.
+      const PAD_Y     = 0.12;
+      const yLo       = yMin;
+      const yHi       = yMax + PAD_Y;
+      const toY      = y => pad.top  + (1 - (y - yLo) / (yHi - yLo)) * plotH;
 
-      // Pre-compute jittered positions once so hover targets are stable
+      // Pre-computed once so hover targets are stable.
+      //
+      // The jitter only exists to separate books that share a rating and a
+      // similar length; enough to show there are several, not enough to
+      // misreport where any of them sits.
+      //
+      // The headroom above and below should absorb the vertical jitter on its
+      // own; the clamp stays as a backstop, since how much of a star 4px is
+      // depends on how tall the plot happens to be rendered.
+      //
+      // Horizontally there is no headroom — the scale ends at the shortest and
+      // longest book — so there the clamp does real work.
+      //
+      // Inset by the marker radius rather than to the border itself: a centre on
+      // the edge still leaves half the circle outside, and the plot is clipped,
+      // so that half comes out sliced flat.
+      const R = 4;   // the hovered radius, so hovering cannot push one out either
+      const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
       const rendered = points.map(p => {
-        const yJitter = (Math.random() - 0.5) * 0.28;
+        const yJitter = (Math.random() - 0.5) * 0.18;
         const px = logX
-          ? toX(p.x) + (Math.random() - 0.5) * 8
-          : toX(p.x + (Math.random() - 0.5) * xRange * 0.012);
-        return { ...p, px, py: toY(p.y + yJitter) };
+          ? toX(p.x) + (Math.random() - 0.5) * 5
+          : toX(p.x + (Math.random() - 0.5) * xRange * 0.008);
+        return {
+          ...p,
+          px: clamp(px, pad.left + R, pad.left + plotW - R),
+          py: clamp(toY(p.y + yJitter), pad.top + R, pad.top + plotH - R),
+        };
       });
 
       const ptsReg = points.map(p => ({ x: toRaw(p.x), y: p.y }));

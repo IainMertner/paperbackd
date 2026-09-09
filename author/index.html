@@ -121,6 +121,7 @@
     import { requireAuth } from '../js/auth.js';
     import { initSearchWidget } from '../js/search-widget.js';
     import { getBookRemaps } from '../js/firebase.js';
+    import { annotateBookRows, coverSlot, readersSlot } from '../js/book-readers.js';
     import { applyBookRemaps } from '../js/book-utils.js';
 
     const params    = new URLSearchParams(location.search);
@@ -128,8 +129,8 @@
     const nameParam = params.get('name');
     if (!slug) location.replace('../search/');
 
-    const { user } = await requireAuth();
-    initSearchWidget(document.getElementById('search-widget'), { user });
+    const { user, profile: myProfile } = await requireAuth();
+    initSearchWidget(document.getElementById('search-widget'), { user, profile: myProfile });
 
 
     function esc(s) {
@@ -235,6 +236,9 @@
         booksTitle.textContent = `Books (${books.length})`;
         detail.appendChild(booksTitle);
 
+        // Drawn first with what is already known, then filled in — the shelves of
+        // everyone you follow take a moment, and the list should not wait on them.
+        const rows = new Map();
         books.forEach(book => {
           const bookSlug = book.slug || String(book.id || '');
           const cover    = book.cached_image?.url || '';
@@ -243,15 +247,19 @@
           const a = document.createElement('a');
           a.href = `../book/?gbid=${encodeURIComponent(bookSlug)}`;
           a.className = 'search-result-row';
-          a.innerHTML = cover
+          a.innerHTML = coverSlot(cover
             ? `<img class="search-result-cover" src="${esc(cover)}" alt="">`
-            : `<div class="search-result-cover search-result-cover-placeholder"></div>`;
-          a.innerHTML += `<div class="search-result-info">
-            <div class="search-result-title">${esc(book.title || '')}</div>
-            ${year ? `<div class="search-result-meta">${esc(String(year))}</div>` : ''}
-          </div>`;
+            : `<div class="search-result-cover search-result-cover-placeholder"></div>`)
+            + `<div class="search-result-info">
+              <div class="search-result-title">${esc(book.title || '')}</div>
+              ${year ? `<div class="search-result-meta">${esc(String(year))}</div>` : ''}
+            </div>`
+            + readersSlot();
           detail.appendChild(a);
+          if (bookSlug) rows.set(bookSlug, a);
         });
+
+        annotateBookRows(rows, { user, myProfile });
       }
       } // end else
     } finally {

@@ -1,6 +1,7 @@
 import { searchUsers } from './firebase.js';
 import { searchBooks } from './hardcover.js';
 import { autoFit } from './dropdown.js';
+import { annotateBookRows, coverSlot, readersSlot } from './book-readers.js';
 
 const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -36,13 +37,14 @@ function makeBookRow(doc) {
   const a = document.createElement('a');
   a.href = `../book/?gbid=${encodeURIComponent(slug)}`;
   a.className = 'search-result-row';
-  a.innerHTML = cover
+  a.innerHTML = coverSlot(cover
     ? `<img class="search-result-cover" src="${esc(cover)}" alt="">`
-    : `<div class="search-result-cover search-result-cover-placeholder"></div>`;
-  a.innerHTML += `<div class="search-result-info">
+    : `<div class="search-result-cover search-result-cover-placeholder"></div>`)
+    + `<div class="search-result-info">
     <div class="search-result-title">${esc(title)}</div>
     <div class="search-result-meta">${author ? esc(author) : ''}${author && year ? ' \xb7 ' : ''}${year ? esc(String(year)) : ''}</div>
-  </div>`;
+  </div>`
+    + readersSlot();
   a.addEventListener('click', () => saveRecent({
     type: 'book', label: title,
     sublabel: [author, year ? String(year) : ''].filter(Boolean).join(' \xb7 '),
@@ -93,7 +95,14 @@ function makeUserRow(u) {
   return a;
 }
 
-export function initSearchWidget(container, { defaultTab = 'all', user } = {}) {
+export function initSearchWidget(container, { defaultTab = 'all', user, profile } = {}) {
+  // Who among the people you follow has read each suggested book. Skipped
+  // without a user, since there is then nobody to compare against.
+  const annotateRows = pairs => {
+    if (!user) return;
+    annotateBookRows(new Map(pairs.filter(([gbid]) => gbid)), { user, myProfile: profile });
+  };
+
   let activeTab = defaultTab;
   let timer;
 
@@ -193,7 +202,11 @@ export function initSearchWidget(container, { defaultTab = 'all', user } = {}) {
       const docs = await fetchBooksData(q);
       if (!docs.length) { setEmpty(); return; }
       dropdown.innerHTML = '';
-      docs.forEach(doc => dropdown.appendChild(makeBookRow(doc)));
+      annotateRows(docs.map(doc => {
+        const row = makeBookRow(doc);
+        dropdown.appendChild(row);
+        return [doc.slug || String(doc.id), row];
+      }));
     } catch { setError(); }
   }
 
@@ -235,7 +248,11 @@ export function initSearchWidget(container, { defaultTab = 'all', user } = {}) {
     }
     if (books.length) {
       dropdown.appendChild(sectionHeader('Books'));
-      books.slice(0, 5).forEach(doc => dropdown.appendChild(makeBookRow(doc)));
+      annotateRows(books.slice(0, 5).map(doc => {
+        const row = makeBookRow(doc);
+        dropdown.appendChild(row);
+        return [doc.slug || String(doc.id), row];
+      }));
     }
     if (authors.length) {
       dropdown.appendChild(sectionHeader('Authors'));

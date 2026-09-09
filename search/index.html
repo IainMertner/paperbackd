@@ -97,8 +97,9 @@
     import { searchUsers, getFollowerCount } from '../js/firebase.js';
     import { orderByFollowers } from '../js/utils.js';
     import { searchBooks } from '../js/hardcover.js';
+    import { annotateBookRows, coverSlot, readersSlot } from '../js/book-readers.js';
 
-    const { user } = await requireAuth();
+    const { user, profile: myProfile } = await requireAuth();
     document.body.classList.remove('auth-loading');
 
     const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
@@ -165,6 +166,8 @@
       hdr.style.cssText = 'font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:.35rem';
       hdr.textContent = 'Recently viewed';
       results.appendChild(hdr);
+      // Books among the recents get the same reader row as a result does.
+      const readerRows = new Map();
       list.forEach(item => {
         const a = document.createElement('a');
         a.href = item.href;
@@ -199,7 +202,13 @@
         a.innerHTML = `${coverHtml}<div class="search-result-info">
           <div class="search-result-title" style="font-size:.9rem">${esc(item.label)}${nameHtml}</div>
           ${metaHtml}
-        </div>`;
+        </div>${item.type === 'book' ? readersSlot() : ''}`;
+        if (item.type === 'book') {
+          // Recents predate this and store no gbid, so it is read back out of the
+          // href they do store rather than leaving older entries unannotated.
+          const gbid = new URLSearchParams(item.href.split('?')[1] || '').get('gbid');
+          if (gbid) readerRows.set(gbid, a);
+        }
         if (isUser) fillFollowerCount(a, item.uid);
         const xBtn = document.createElement('button');
         xBtn.type = 'button';
@@ -217,6 +226,7 @@
         a.appendChild(xBtn);
         results.appendChild(a);
       });
+      annotateBookRows(readerRows, { user, myProfile });
     }
 
     const tabDefs = [
@@ -400,6 +410,9 @@
         return;
       }
       if (!append) results.innerHTML = '';
+      // Collected as they are built, then filled in once — the shelves take a
+      // moment and the results should not wait on them.
+      const readerRows = new Map();
       docs.forEach(doc => {
         const slug   = doc.slug || String(doc.id);
         const title  = doc.title || '';
@@ -410,13 +423,14 @@
         const a = document.createElement('a');
         a.href = `../book/?gbid=${encodeURIComponent(slug)}`;
         a.className = 'search-result-row';
-        a.innerHTML = cover
+        a.innerHTML = coverSlot(cover
           ? `<img class="search-result-cover" src="${esc(cover)}" alt="">`
-          : `<div class="search-result-cover search-result-cover-placeholder"></div>`;
-        a.innerHTML += `<div class="search-result-info">
+          : `<div class="search-result-cover search-result-cover-placeholder"></div>`)
+          + `<div class="search-result-info">
           <div class="search-result-title">${esc(title)}</div>
           <div class="search-result-meta">${author ? esc(author) : ''}${author && year ? ' · ' : ''}${year ? esc(String(year)) : ''}</div>
-        </div>`;
+        </div>`
+          + readersSlot();
         a.addEventListener('click', () => saveRecent({
           type: 'book', label: title,
           sublabel: [author, year ? String(year) : ''].filter(Boolean).join(' · '),
@@ -424,7 +438,9 @@
           isRound: false, borderColor: '',
         }));
         results.appendChild(a);
+        if (slug) readerRows.set(slug, a);
       });
+      annotateBookRows(readerRows, { user, myProfile });
     }
 
     function renderUsers(users, { append = false } = {}) {
