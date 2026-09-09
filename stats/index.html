@@ -1810,6 +1810,11 @@
       const labelName = document.getElementById('chart-countries-label-name');
       const labelPct  = document.getElementById('chart-countries-label-pct');
 
+      // Hidden up front. showLabel only toggles visibility and leaves the text
+      // behind, so a redraw would otherwise keep the previous period's selection
+      // showing over a chart that no longer has that country on it.
+      labelEl.style.visibility = 'hidden';
+
       labelEl.style.cursor = 'pointer';
       labelEl.addEventListener('click', () => {
         if (selected < 0) return;
@@ -1907,6 +1912,11 @@
       const labelEl   = document.getElementById('chart-countries-label');
       const labelName = document.getElementById('chart-countries-label-name');
       const labelPct  = document.getElementById('chart-countries-label-pct');
+
+      // Hidden up front. showLabel only toggles visibility and leaves the text
+      // behind, so a redraw would otherwise keep the previous period's selection
+      // showing over a chart that no longer has that country on it.
+      labelEl.style.visibility = 'hidden';
 
       if (!worldGeoCache) {
         const res = await fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson');
@@ -2236,6 +2246,14 @@
 
     // Horizontal bar chart for author-style lists. entries = [{label, value}]
     function drawHBar(canvasEl, entries, { color, onBarClick } = {}) {
+      // One set of pointer handlers per canvas. These charts redraw on every
+      // period change and every toggle, and without discarding the previous set
+      // they all stay live — each closed over its own bars, fighting over the
+      // hover highlight. Same reason drawCountriesPie does this.
+      canvasEl._pointerHandlers?.abort();
+      canvasEl._pointerHandlers = new AbortController();
+      const signal = canvasEl._pointerHandlers.signal;
+
       const dpr   = window.devicePixelRatio || 1;
       const W_CSS = canvasEl.parentElement.clientWidth || 300;
       const N     = entries.length;
@@ -2304,16 +2322,24 @@
           const i = rowAt(e.clientY);
           canvasEl.style.cursor = i >= 0 ? 'pointer' : '';
           render(i);
-        });
-        canvasEl.addEventListener('mouseleave', () => { canvasEl.style.cursor = ''; render(); });
+        }, { signal });
+        canvasEl.addEventListener('mouseleave', () => { canvasEl.style.cursor = ''; render(); }, { signal });
         canvasEl.addEventListener('click', e => {
           const i = rowAt(e.clientY);
           if (i >= 0) onBarClick(entries[i].label);
-        });
+        }, { signal });
       }
     }
 
     function drawRatingBar(canvasEl, counts, { onBarClick } = {}) {
+      // One set of pointer handlers per canvas. These charts redraw on every
+      // period change and every toggle, and without discarding the previous set
+      // they all stay live — each closed over its own bars, fighting over the
+      // hover highlight. Same reason drawCountriesPie does this.
+      canvasEl._pointerHandlers?.abort();
+      canvasEl._pointerHandlers = new AbortController();
+      const signal = canvasEl._pointerHandlers.signal;
+
       // counts[0] = 0.5★, counts[1] = 1★, ..., counts[9] = 5★
       const N    = 10;
       const dpr  = window.devicePixelRatio || 1;
@@ -2398,8 +2424,8 @@
         const idx = barAt(e.clientX);
         canvasEl.style.cursor = (onBarClick && idx >= 0 && counts[idx] > 0) ? 'pointer' : '';
         render(idx);
-      });
-      canvasEl.addEventListener('mouseleave', () => { canvasEl.style.cursor = ''; render(); });
+      }, { signal });
+      canvasEl.addEventListener('mouseleave', () => { canvasEl.style.cursor = ''; render(); }, { signal });
       if (onBarClick) {
         canvasEl.addEventListener('click', e => {
           const idx = barAt(e.clientX);
@@ -2414,7 +2440,7 @@
             selected = -1;
             render();
           }
-        });
+        }, { signal });
       }
     }
 
@@ -2681,7 +2707,17 @@
           const enough = top.length >= 2;
           authorsCanvas.style.display = enough ? '' : 'none';
           authorsEmpty.style.display  = enough ? 'none' : '';
-          if (enough) drawHBar(authorsCanvas, top, { color: cssVar('--palette-amber') });
+          if (enough) {
+            // Through ?q= rather than a filter of its own: the library has no author
+            // facet, but its search box already matches on author, and arriving with
+            // the name in the box makes the filter visible and easy to clear.
+            drawHBar(authorsCanvas, top, {
+              color: cssVar('--palette-amber'),
+              onBarClick: author => {
+                location.href = `../library/?q=${encodeURIComponent(author)}${u}`;
+              },
+            });
+          }
         }
 
         function setAuthorsView(works, { remember = true } = {}) {

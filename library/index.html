@@ -2821,6 +2821,10 @@
 
     let allBooks = [];
 
+    // Assigned by the filter setup once it exists. Until then, and on a library
+    // being viewed rather than owned, there is no filter and nothing to re-apply.
+    let reapplyFilter = () => {};
+
     function updateCounts() {
       const rc = allBooks.filter(b => b.status === 'reading').length;
       const fc = allBooks.filter(b => b.status === 'finished').length;
@@ -2829,6 +2833,9 @@
       document.getElementById('finished-title').textContent = `Finished · ${fc}`;
       document.getElementById('dnf-title').textContent      = `Did Not Finish · ${dc}`;
       document.getElementById('dnf-section').style.display  = dc > 0 ? '' : 'none';
+      // Adding or removing a book while a filter is on has to re-run it, both to
+      // hide a new book that does not match and to put the "N of M" back.
+      reapplyFilter();
     }
 
     function getReads(book) {
@@ -3133,10 +3140,27 @@
               el.classList.toggle('hidden', !show);
             });
           });
+          // Section headers count what is on screen. "Finished · 22" above three
+          // visible books is simply wrong, so a narrowed section says "3 of 22".
+          for (const [container, id, label] of [
+            [readingList,  'reading-title',  'Currently Reading'],
+            [finishedList, 'finished-title', 'Finished'],
+            [dnfList,      'dnf-title',      'Did Not Finish'],
+          ]) {
+            const el = document.getElementById(id);
+            if (!el) continue;
+            const rows  = container.querySelectorAll('[data-title]');
+            const shown = container.querySelectorAll('[data-title]:not(.hidden)').length;
+            el.textContent = shown === rows.length
+              ? `${label} · ${rows.length}`
+              : `${label} · ${shown} of ${rows.length}`;
+          }
+
           const total = Object.values(activeFilters).reduce((n, s) => n + s.size, 0);
           filterDropdownBtn.textContent = total ? `Filters (${total})` : 'Filters';
           filterDropdownBtn.style.color = total ? 'var(--accent)' : '';
         }
+        reapplyFilter = applyFilter;
         filterInput.addEventListener('input', applyFilter);
 
         const filterClearBtn = document.getElementById('library-filter-clear');
