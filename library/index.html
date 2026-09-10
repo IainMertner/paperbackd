@@ -1265,7 +1265,7 @@
             card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
           }
           const keys = Object.keys(updates);
-          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country', countryStd: 'Standardised country', isbn13: 'ISBN', authorGender: 'Gender', genres: 'Genres' };
+          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country', countryStd: 'Country ISO', isbn13: 'ISBN', authorGender: 'Gender', genres: 'Genres' };
           const toast = document.createElement('div');
           toast.style.cssText = 'position:absolute;bottom:.75rem;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:.7rem;padding:.25rem .65rem;border-radius:20px;white-space:nowrap;z-index:2;opacity:0;transition:opacity .2s;pointer-events:none';
           toast.textContent = keys.length ? `Updated: ${keys.map(k => LABELS[k] || k).join(', ')}` : 'Already up to date';
@@ -1591,7 +1591,7 @@
         { label: 'Author',        key: 'author',       type: 'text',   catalogue: true },
         { label: 'Gender',        key: 'authorGender', type: 'select', options: ['Male', 'Female', 'Non-binary', 'Other'], catalogue: true },
         { label: 'Country',       key: 'country',      type: 'text',   options: COUNTRIES, catalogue: true },
-        { label: 'Standardised',  key: 'countryStd',   type: 'select', options: COUNTRIES, catalogue: true },
+        { label: 'Country ISO',   key: 'countryStd',   type: 'select', options: COUNTRIES, catalogue: true },
         { label: 'Release year',  key: 'releaseYear',  type: 'number', catalogue: true },
         { label: 'Genres',        key: 'genres',       type: 'tags',   catalogue: true },
       ]);
@@ -1813,7 +1813,7 @@
             card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
           }
           const keys = Object.keys(updates);
-          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country', countryStd: 'Standardised country', isbn13: 'ISBN', authorGender: 'Gender', genres: 'Genres' };
+          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country', countryStd: 'Country ISO', isbn13: 'ISBN', authorGender: 'Gender', genres: 'Genres' };
           const toast = document.createElement('div');
           toast.style.cssText = 'position:absolute;bottom:.75rem;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:.7rem;padding:.25rem .65rem;border-radius:20px;white-space:nowrap;z-index:2;opacity:0;transition:opacity .2s;pointer-events:none';
           toast.textContent = keys.length ? `Updated: ${keys.map(k => LABELS[k] || k).join(', ')}` : 'Already up to date';
@@ -2139,7 +2139,7 @@
         { label: 'Author',        key: 'author',       type: 'text',   catalogue: true },
         { label: 'Gender',        key: 'authorGender', type: 'select', options: ['Male', 'Female', 'Non-binary', 'Other'], catalogue: true },
         { label: 'Country',       key: 'country',      type: 'text',   options: COUNTRIES, catalogue: true },
-        { label: 'Standardised',  key: 'countryStd',   type: 'select', options: COUNTRIES, catalogue: true },
+        { label: 'Country ISO',   key: 'countryStd',   type: 'select', options: COUNTRIES, catalogue: true },
         { label: 'Release year',  key: 'releaseYear',  type: 'number', catalogue: true },
         { label: 'Total pages',   key: 'totalPages',   type: 'number' },
         { label: 'Genres',        key: 'genres',       type: 'tags',   catalogue: true },
@@ -2351,7 +2351,7 @@
         ['Gender',       book.authorGender],
         ['Country',      book.country],
         // Only when it says something the line above does not.
-        ['Standardised', book.countryStd && book.countryStd !== book.country ? book.countryStd : null],
+        ['Country ISO', book.countryStd && book.countryStd !== book.country ? book.countryStd : null],
         ['Release year', book.releaseYear],
         ['Genres',       book.genres?.length ? book.genres.join(', ') : null],
       ].forEach(([lbl, val]) => {
@@ -2466,7 +2466,7 @@
         ['Author',       book.author],
         ['Gender',       book.authorGender],
         ['Country',      book.country],
-        ['Standardised', book.countryStd && book.countryStd !== book.country ? book.countryStd : null],
+        ['Country ISO', book.countryStd && book.countryStd !== book.country ? book.countryStd : null],
         ['Release year', book.releaseYear],
         ['Total pages',  book.totalPages],
         ['Genres',       book.genres?.length ? book.genres.join(', ') : null],
@@ -3276,7 +3276,7 @@
         const completenessItems = [
           { val: 'no-cover',    label: 'Missing cover',    count: cb.filter(b => !b.coverUrl).length },
           { val: 'no-country',  label: 'Missing country',  count: cb.filter(b => !b.country).length },
-          { val: 'no-country-std', label: 'Missing standardised country', count: cb.filter(b => !b.countryStd).length },
+          { val: 'no-country-std', label: 'Missing country ISO', count: cb.filter(b => !b.countryStd).length },
           { val: 'no-gender',   label: 'Missing gender',   count: cb.filter(b => !b.authorGender).length },
           { val: 'no-genre',    label: 'Missing genre',    count: cb.filter(b => !b.genres?.length).length },
           { val: 'no-year',     label: 'Missing year',     count: cb.filter(b => b.releaseYear == null).length },

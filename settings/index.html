@@ -936,7 +936,7 @@
         // "Kingdom of Greece" flattened to "Greece" on the way past — which is
         // exactly the information the second field now exists to keep.
         if (needsStd.length) {
-          repairStatus.textContent = `Standardising ${needsStd.length} countr${needsStd.length === 1 ? 'y' : 'ies'}…`;
+          repairStatus.textContent = `Setting country ISO on ${needsStd.length} book${needsStd.length === 1 ? '' : 's'}…`;
           for (const book of needsStd) {
             await updateBookMeta(currentUser.uid, book.id, { countryStd: standardCountry(book.country, cRemaps) });
             fixed++;
