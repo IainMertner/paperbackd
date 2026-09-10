@@ -120,9 +120,9 @@
   <script type="module">
     import { requireAuth } from '../js/auth.js';
     import { initSearchWidget } from '../js/search-widget.js';
-    import { getBookRemaps } from '../js/firebase.js';
+    import { getBookRemaps, getBookTitleOverrides } from '../js/firebase.js';
     import { annotateBookRows, coverSlot, readersSlot } from '../js/book-readers.js';
-    import { applyBookRemaps } from '../js/book-utils.js';
+    import { applyBookRemaps, applyTitleOverrides } from '../js/book-utils.js';
 
     const params    = new URLSearchParams(location.search);
     const slug      = params.get('slug');
@@ -189,7 +189,10 @@
       // A record an admin has redirected should not appear here either. Where
       // both the redirected record and its target are in the list — the usual
       // case for a translation — applyBookRemaps collapses them into one.
-      const books  = applyBookRemaps(booksData?.data?.books || [], await getBookRemaps());
+      const books  = applyTitleOverrides(
+        applyBookRemaps(booksData?.data?.books || [], await getBookRemaps()),
+        await getBookTitleOverrides()
+      );
 
       if (!author && nameParam) {
         try {

@@ -236,8 +236,8 @@
     import { sameBook, wantToReadBlock } from '../js/book-utils.js';
     import { openQuickProgress } from '../js/quick-progress.js';
     import { openCoverPicker } from '../js/cover-picker.js';
+    import { searchBooks } from '../js/hardcover.js';
 
-    const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -421,17 +421,10 @@
           if (q.length < 2) { suggestBox.style.display = 'none'; return; }
           searchTimer = setTimeout(async () => {
             try {
-              const res  = await fetch(HARDCOVER_PROXY, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  query: `query Search($q: String!) { search(query: $q, query_type: "Book", per_page: 8, page: 1) { results } }`,
-                  variables: { q }
-                })
-              });
-              if (res.status === 429) { showToast('Our servers are busy — give it a moment and try again.'); return; }
-              const data = res.ok ? await res.json() : {};
-              const hits = data?.data?.search?.results?.hits || [];
+              // searchBooks, not a raw call to the proxy: it is the only path
+              // that applies the admin remap table, so a record an admin has
+              // redirected is never offered as something to add.
+              const hits = (await searchBooks(q, 8)).map(document => ({ document }));
               // Loaded before anything renders, so both the results and the
               // manual form below can say why a book is not on offer.
               const mine = await loadOwnBooks();
@@ -621,7 +614,15 @@
               });
               suggestBox.appendChild(manualPrompt);
               suggestBox.style.display = '';
-            } catch (e) { console.error(e); }
+            } catch (e) {
+              // searchBooks retries a 429 before giving up, so reaching here
+              // means it stayed busy.
+              if (String(e?.message || '').includes('429')) {
+                showToast('Our servers are busy — give it a moment and try again.');
+                return;
+              }
+              console.error(e);
+            }
           }, 280);
         });
 

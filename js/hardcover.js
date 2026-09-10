@@ -1,6 +1,6 @@
-import { getHcCache, setHcCache, getBookRemaps } from './firebase.js';
+import { getHcCache, setHcCache, getBookRemaps, getBookTitleOverrides } from './firebase.js';
 import { cleanTitle, cleanAuthor } from './utils.js';
-import { hardcoverWorkId, applyBookRemaps, pickIsbn13, collectIsbn13s } from './book-utils.js';
+import { hardcoverWorkId, applyBookRemaps, applyTitleOverrides, pickIsbn13, collectIsbn13s } from './book-utils.js';
 
 export const HARDCOVER_PROXY = 'https://frosty-paper-e53b.phixel66.workers.dev/';
 
@@ -52,7 +52,10 @@ export async function searchBooks(q, perPage = 20) {
     { q, n: perPage }
   );
   const docs = (data?.data?.search?.results?.hits || []).map(h => h.document).filter(Boolean);
-  return applyBookRemaps(docs, await getBookRemaps());
+  // Remaps first: they decide which record a result is, and the title override
+  // is keyed by the slug that survives that.
+  const remapped = applyBookRemaps(docs, await getBookRemaps());
+  return applyTitleOverrides(remapped, await getBookTitleOverrides());
 }
 
 export async function searchHardcover(q) {

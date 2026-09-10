@@ -75,6 +75,27 @@
     </div>
 
     <div class="settings-group">
+      <div class="settings-group-label">Retitle book (global)</div>
+      <div class="settings-list">
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.75rem;padding:.875rem 1rem">
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Change the name a book is shown under, e.g. dropping a subtitle. The book stays the same record — only its title changes, everywhere it already appears and everywhere it is added from now on.</p>
+          <div style="display:flex;gap:.5rem;width:100%;flex-wrap:wrap">
+            <input type="text" id="retitle-slug"  class="join-club-input" placeholder="Hardcover slug" autocomplete="off" spellcheck="false" style="flex:1;min-width:10rem">
+            <input type="text" id="retitle-title" class="join-club-input" placeholder="Title to show" autocomplete="off" spellcheck="false" style="flex:1;min-width:10rem">
+            <button class="btn-update" id="retitle-preview-btn" type="button">Preview</button>
+          </div>
+          <div id="retitle-preview" style="display:none;font-size:.85rem;color:var(--text-muted)"></div>
+          <button class="btn-update" id="retitle-apply-btn" type="button" style="display:none">Apply</button>
+          <div id="retitle-status" style="display:none;font-size:.85rem"></div>
+          <details id="retitle-list-details" style="width:100%">
+            <summary style="font-size:.82rem;color:var(--text-muted);cursor:pointer;user-select:none;padding:.15rem 0">Existing titles <span id="retitle-list-count"></span></summary>
+            <div id="retitle-list" style="width:100%;display:flex;flex-direction:column;gap:.35rem;margin-top:.5rem"></div>
+          </details>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
       <div class="settings-group-label">Remap country (global)</div>
       <div class="settings-list">
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.75rem;padding:.875rem 1rem">
@@ -218,10 +239,10 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { ROOT, db, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, backfillWorkIds, backfillWorkIdsForAllUsers, setBookRemap, deleteBookRemap, getBookRemaps, getCountryRemaps, setCountryRemap, deleteCountryRemap, mergeDuplicatesForSlug, remapActivityForSlug } from '../js/firebase.js';
+    import { ROOT, db, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, backfillWorkIds, backfillWorkIdsForAllUsers, setBookRemap, deleteBookRemap, getBookRemaps, getBookTitleOverrides, setBookTitleOverride, deleteBookTitleOverride, retitleForSlug, getCountryRemaps, setCountryRemap, deleteCountryRemap, mergeDuplicatesForSlug, remapActivityForSlug } from '../js/firebase.js';
     import { deleteField, collection, doc, getDocs, query as fsQuery, where, updateDoc, Timestamp, limit, getCountFromServer, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, resolveWorkIds, workIdForSlug } from '../js/hardcover.js';
-    import { computeDupeGroups, planWorkMerge, primaryAuthor, pickSeries } from '../js/book-utils.js';
+    import { computeDupeGroups, planWorkMerge, primaryAuthor, pickSeries, remapListBooks } from '../js/book-utils.js';
     import { COUNTRIES } from '../js/stats-utils.js';
     import { normalizeCountry, esc } from '../js/utils.js';
 
@@ -878,6 +899,7 @@
     const remapStatus     = document.getElementById('remap-status');
 
     let remapHits       = [];
+    let remapListHits   = [];
     let remapTargetMeta = {};
 
     remapPreviewBtn.addEventListener('click', async () => {
@@ -887,6 +909,7 @@
       remapApplyBtn.style.display  = 'none';
       remapStatus.style.display    = 'none';
       remapHits = [];
+      remapListHits = [];
       remapTargetMeta = {};   // a failed preview must not leave a stale target applyable
       if (!fromSlug || !toSlug) {
         remapStatus.textContent = 'Enter both slugs.';
@@ -927,11 +950,26 @@
         remapPreviewEl.textContent = `Checking ${usersSnap.docs.length} users…`;
         let userCount = 0;
         for (const userDoc of usersSnap.docs) {
+          let touched = false;
           const booksSnap = await getDocs(fsQuery(collection(db, 'users', userDoc.id, 'books'), where('gbid', '==', fromSlug)));
           if (!booksSnap.empty) {
-            userCount++;
+            touched = true;
             for (const bookDoc of booksSnap.docs) remapHits.push(bookDoc.ref);
           }
+          // Lists hold their books in an array, so there is no gbid field to
+          // query on: every list has to be read and checked. Without this a
+          // remapped book stays on every list under its old name, linking to
+          // the record it was redirected away from.
+          {
+            const listsSnap = await getDocs(collection(db, 'users', userDoc.id, 'lists'));
+            for (const listDoc of listsSnap.docs) {
+              const { books, changed, removed } = remapListBooks(listDoc.data().books || [], fromSlug, remapTargetMeta);
+              if (!changed) continue;
+              touched = true;
+              remapListHits.push({ ref: listDoc.ref, books, changed, removed });
+            }
+          }
+          if (touched) userCount++;
         }
 
         // A remap is worth saving even when nobody owns the book: it keeps the
@@ -939,17 +977,30 @@
         // be added in the first place.
         const isRefresh = fromSlug === toSlug;
         const to = `→ "${targetTitle}"${targetAuthor ? ` by ${targetAuthor}` : ''}`;
-        remapPreviewEl.textContent = remapHits.length
+        // Counted apart from books: a list entry is a copy of the book, not of
+        // the shelf, so a book can sit on someone's list without them owning it
+        // and the two totals do not line up.
+        const listEntries = remapListHits.reduce((n, h) => n + h.changed, 0);
+        const listRemoved = remapListHits.reduce((n, h) => n + h.removed, 0);
+        const alsoLists = listEntries
+          ? ` Plus ${listEntries} list entr${listEntries === 1 ? 'y' : 'ies'}`
+            + (listRemoved
+                ? `, ${listRemoved} of which collapse${listRemoved === 1 ? 's' : ''} into an entry already on the same list.`
+                : '.')
+          : '';
+        const bookLine = `${remapHits.length} book${remapHits.length === 1 ? '' : 's'} across ${userCount} user${userCount === 1 ? '' : 's'}`;
+        remapPreviewEl.textContent = (remapHits.length || listEntries
           ? (isRefresh
-              ? `Refresh ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} across ${userCount} user${userCount === 1 ? '' : 's'} from "${targetTitle}". No redirect is created.`
-              : `Found ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} across ${userCount} user${userCount === 1 ? '' : 's'} ${to}.`)
+              ? `Refresh ${bookLine} from "${targetTitle}". No redirect is created.`
+              : `Found ${bookLine} ${to}.`)
           : (isRefresh
-              ? `No one has "${fromSlug}" in their library — nothing to refresh.`
-              : `No one has "${fromSlug}" in their library ${to}. The redirect will still be saved, hiding it from search and author pages.`);
+              ? `No one has "${fromSlug}" — nothing to refresh.`
+              : `No one has "${fromSlug}" ${to}. The redirect will still be saved, hiding it from search and author pages.`)) + alsoLists;
+        const total = remapHits.length + listEntries;
         remapApplyBtn.textContent = isRefresh
-          ? `Refresh ${remapHits.length} book${remapHits.length === 1 ? '' : 's'}`
-          : (remapHits.length ? `Apply to ${remapHits.length} book${remapHits.length === 1 ? '' : 's'}` : 'Save redirect');
-        if (!isRefresh || remapHits.length) remapApplyBtn.style.display = '';
+          ? `Refresh ${total} record${total === 1 ? '' : 's'}`
+          : (total ? `Apply to ${total} record${total === 1 ? '' : 's'}` : 'Save redirect');
+        if (!isRefresh || total) remapApplyBtn.style.display = '';
       } catch (err) {
         console.error(err);
         remapPreviewEl.textContent = 'Preview failed. Check the console.';
@@ -965,8 +1016,8 @@
       const isRefresh = remapTargetMeta.fromSlug === remapTargetMeta.gbid;
       const message = isRefresh
         ? `Refresh ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} from "${remapTargetMeta.title}"?\n\nTitle, author, cover, pages and year are overwritten from Hardcover. No redirect is created.`
-        : remapHits.length
-          ? `Remap ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} to "${remapTargetMeta.title}"?\n\nAnyone who ends up holding both books will have them merged into one entry, combining their reads and deleting the spare. This cannot be undone.`
+        : remapHits.length || remapListHits.length
+          ? `Remap ${remapHits.length} book${remapHits.length === 1 ? '' : 's'} and ${remapListHits.length} list${remapListHits.length === 1 ? '' : 's'} to "${remapTargetMeta.title}"?\n\nAnyone who ends up holding both books will have them merged into one entry, combining their reads and deleting the spare. This cannot be undone.`
           : `Save a redirect from "${remapTargetMeta.fromSlug}" to "${remapTargetMeta.title}"?\n\nNo libraries change — the old record just stops appearing in search and on author pages.`;
       if (!confirm(message)) return;
       remapApplyBtn.disabled = true;
@@ -994,6 +1045,25 @@
           await updateDoc(ref, updates);
           done++;
         }
+
+        // The lists, whose rewritten arrays the preview already worked out.
+        // A book on a list is a copy in its own right — leaving these behind
+        // kept the old record alive under its old name, linking to the very
+        // book it had just been redirected away from.
+        let listEntriesDone = 0, listsCollapsed = 0;
+        for (let i = 0; i < remapListHits.length; i++) {
+          const hit = remapListHits[i];
+          remapStatus.textContent = `Updating list ${i + 1}/${remapListHits.length}…`;
+          try {
+            await updateDoc(hit.ref, { books: hit.books });
+            listEntriesDone += hit.changed;
+            listsCollapsed  += hit.removed;
+          } catch (e) {
+            // One unwritable list should not abandon the rest of the sweep.
+            console.warn('List remap failed for', hit.ref.path, e);
+          }
+        }
+
         // Store the redirect so it also applies to search from now on: looking
         // up the old record surfaces the new one instead of re-adding the
         // mistake. Fixing existing books alone would leave the bad record
@@ -1036,11 +1106,14 @@
 
         remapStatus.textContent = `Done — ${isRefresh ? 'refreshed' : 'remapped'} ${done} book${done === 1 ? '' : 's'} across ${affectedUids.length} user${affectedUids.length === 1 ? '' : 's'}`
           + `, updated ${activityFixed} feed event${activityFixed === 1 ? '' : 's'}`
+          + (listEntriesDone ? `, ${listEntriesDone} list entr${listEntriesDone === 1 ? 'y' : 'ies'}` : '')
+          + (listsCollapsed ? ` (${listsCollapsed} collapsed into an entry already on the same list)` : '')
           + (mergedAway ? `, merged ${mergedAway} duplicate${mergedAway === 1 ? '' : 's'} away` : ', no duplicates to merge')
           + (isRefresh ? '.' : ', and saved the redirect for search.');
         remapStatus.style.color = 'var(--accent)';
         await renderRemaps();
         remapHits = [];
+        remapListHits = [];
         remapApplyBtn.style.display = 'none';
       } catch (err) {
         console.error(err);
@@ -1096,6 +1169,158 @@
     }
 
     renderRemaps().catch(() => {});
+
+    // -- Retitle book (global) -------------------------------------------------
+    // Not a remap: the record is right, its name is not. Nothing about identity
+    // moves, so no duplicates can appear and there is nothing to merge
+    // afterwards -- which is why this is a separate tool rather than another
+    // field on the remap above.
+    const retitleSlugInput  = document.getElementById('retitle-slug');
+    const retitleTitleInput = document.getElementById('retitle-title');
+    const retitlePreviewBtn = document.getElementById('retitle-preview-btn');
+    const retitlePreviewEl  = document.getElementById('retitle-preview');
+    const retitleApplyBtn   = document.getElementById('retitle-apply-btn');
+    const retitleStatus     = document.getElementById('retitle-status');
+
+    let retitlePlan = null;
+
+    function retitleSay(el, msg, colour) {
+      el.textContent = msg;
+      el.style.color = colour || 'var(--text-muted)';
+      el.style.display = '';
+    }
+
+    const plural  = (n, word) => n + ' ' + word + (n === 1 ? '' : 's');
+    const entries_ = n => n + ' list ' + (n === 1 ? 'entry' : 'entries');
+
+    retitlePreviewBtn.addEventListener('click', async () => {
+      const slug  = retitleSlugInput.value.trim();
+      const title = retitleTitleInput.value.trim();
+      retitlePreviewEl.style.display = 'none';
+      retitleApplyBtn.style.display  = 'none';
+      retitleStatus.style.display    = 'none';
+      retitlePlan = null;   // a failed preview must not leave a stale plan applyable
+      if (!slug || !title) {
+        retitleSay(retitleStatus, 'Enter a slug and a title.', 'var(--danger,#d44)');
+        return;
+      }
+      retitlePreviewBtn.disabled = true;
+      retitleSay(retitlePreviewEl, 'Looking up the book\u2026');
+      try {
+        // The current title, shown back so a mistyped slug is obvious before
+        // anything is written. A slug Hardcover no longer knows is still worth
+        // overriding -- copies of it survive in libraries -- so this warns
+        // rather than refusing.
+        let currentTitle = '';
+        try {
+          const hcData = await hcQuery(
+            `query($slug:String!){books(where:{slug:{_eq:$slug}},limit:1){slug title}}`,
+            { slug }
+          );
+          currentTitle = hcData?.data?.books?.[0]?.title || '';
+        } catch (e) { console.warn('Title lookup failed', e); }
+
+        const counts = await retitleForSlug(slug, title, {
+          dryRun: true,
+          onProgress: (i, n) => retitleSay(retitlePreviewEl, `Checking user ${i + 1}/${n}\u2026`),
+        });
+        retitlePlan = { slug, title, counts, currentTitle };
+
+        const found = currentTitle
+          ? `"${currentTitle}" \u2192 "${title}".`
+          : `Hardcover has no book with slug "${slug}" \u2014 existing copies will still be renamed to "${title}".`;
+        const total = counts.books + counts.lists + counts.activity;
+        retitleSay(retitlePreviewEl, total
+          ? `${found} ${plural(counts.books, 'book')} across ${plural(counts.users, 'user')}, `
+            + `${entries_(counts.lists)} and ${plural(counts.activity, 'feed event')}.`
+          : `${found} Nothing to rename \u2014 the title is still worth saving, so it applies to anyone adding this book from now on.`);
+        retitleApplyBtn.textContent = total ? `Rename ${plural(total, 'record')}` : 'Save title';
+        retitleApplyBtn.style.display = '';
+      } catch (err) {
+        console.error(err);
+        retitleSay(retitlePreviewEl, 'Preview failed. Check the console.', 'var(--danger,#d44)');
+      } finally {
+        retitlePreviewBtn.disabled = false;
+      }
+    });
+
+    retitleApplyBtn.addEventListener('click', async () => {
+      if (!retitlePlan) return;
+      const { slug, title, counts } = retitlePlan;
+      const total = counts.books + counts.lists + counts.activity;
+      if (!confirm(total
+        ? `Rename "${slug}" to "${title}" in ${total} place${total === 1 ? '' : 's'}?\n\nLibraries, lists and past feed events are all rewritten, and the title applies to anyone adding this book from now on.`
+        : `Show "${slug}" as "${title}" from now on?\n\nNobody holds a copy, so nothing changes today.`)) return;
+      retitleApplyBtn.disabled = true;
+      retitlePreviewBtn.disabled = true;
+      retitleSay(retitleStatus, 'Saving the title\u2026');
+      try {
+        // Saved before the sweep, not after: if the pass fails halfway, the
+        // books it did reach agree with the table rather than contradicting it.
+        await setBookTitleOverride(slug, title);
+        const done = await retitleForSlug(slug, title, {
+          onProgress: (i, n) => retitleSay(retitleStatus, `Renaming\u2026 user ${i + 1}/${n}`),
+        });
+        retitleSay(retitleStatus,
+          `Done \u2014 renamed ${plural(done.books, 'book')} across ${plural(done.users, 'user')}, `
+          + `${entries_(done.lists)} and ${plural(done.activity, 'feed event')}, `
+          + 'and saved the title for search.',
+          'var(--accent)');
+        await renderTitleOverrides();
+        retitlePlan = null;
+        retitleApplyBtn.style.display  = 'none';
+        retitlePreviewEl.style.display = 'none';
+      } catch (err) {
+        console.error(err);
+        retitleSay(retitleStatus, 'Apply failed. Check the console.', 'var(--danger,#d44)');
+      } finally {
+        retitleApplyBtn.disabled = false;
+        retitlePreviewBtn.disabled = false;
+      }
+    });
+
+    retitleSlugInput.addEventListener('keydown',  e => { if (e.key === 'Enter') retitleTitleInput.focus(); });
+    retitleTitleInput.addEventListener('keydown', e => { if (e.key === 'Enter') retitlePreviewBtn.click(); });
+
+    // -- Existing titles -------------------------------------------------------
+    const retitleListEl    = document.getElementById('retitle-list');
+    const retitleListCount = document.getElementById('retitle-list-count');
+
+    async function renderTitleOverrides() {
+      const titles  = await getBookTitleOverrides({ force: true });
+      const rows    = Object.entries(titles).sort((a, b) => a[0].localeCompare(b[0]));
+      retitleListCount.textContent = rows.length ? `(${rows.length})` : '';
+      retitleListEl.innerHTML = '';
+      if (!rows.length) {
+        retitleListEl.innerHTML = '<span style="font-size:.82rem;color:var(--text-muted)">No title overrides yet.</span>';
+        return;
+      }
+      for (const [slug, title] of rows) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.5rem;font-size:.85rem';
+        const label = document.createElement('span');
+        label.style.cssText = 'flex:1;min-width:0;word-break:break-word';
+        label.textContent = `${slug} \u2192 ${title}`;
+        const del = document.createElement('button');
+        del.textContent = 'Remove';
+        del.style.cssText = 'padding:.2rem .5rem;font-size:.8rem;font-family:inherit;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;color:var(--text-muted);flex-shrink:0';
+        del.addEventListener('click', async () => {
+          if (!confirm(`Remove the title override for "${slug}"? Books already renamed keep the new title \u2014 only Hardcover's name comes back for anyone adding it from now on.`)) return;
+          del.disabled = true;
+          try {
+            await deleteBookTitleOverride(slug);
+            await renderTitleOverrides();
+          } catch (err) {
+            console.error(err);
+            del.disabled = false;
+          }
+        });
+        row.append(label, del);
+        retitleListEl.appendChild(row);
+      }
+    }
+
+    renderTitleOverrides().catch(() => {});
 
     // Both country fields are pickers, not free text: a typo used to become a
     // country of its own, counted separately and absent from the map.

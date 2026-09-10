@@ -36,7 +36,7 @@ import {
   writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { compareLists, normalisePronouns } from './utils.js';
-import { viewerSeesOnlyPublic, planWorkMerge, dupeGroupsForSlug, sameBook, resolveBookLanguage } from './book-utils.js';
+import { viewerSeesOnlyPublic, planWorkMerge, dupeGroupsForSlug, sameBook, resolveBookLanguage, retitleListBooks } from './book-utils.js';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const firebaseConfig = {
@@ -443,6 +443,89 @@ export async function setBookRemap(fromSlug, target) {
 export async function deleteBookRemap(fromSlug) {
   await updateDoc(REMAPS_DOC(), { [`remaps.${String(fromSlug).trim()}`]: deleteField() });
   remapCache = null;
+}
+
+// ── Book title overrides ──────────────────────────────────────────────────────
+//
+// A display title that replaces Hardcover's, per slug. Not a remap: the record
+// is the right one, only its name is wrong, so nothing about identity moves and
+// no duplicates can appear.
+const TITLES_DOC = () => doc(db, 'config', 'bookTitles');
+
+let titleCache = null;
+
+export async function getBookTitleOverrides({ force = false } = {}) {
+  if (titleCache && !force) return titleCache;
+  try {
+    const snap = await getDoc(TITLES_DOC());
+    titleCache = snap.exists() ? (snap.data().titles || {}) : {};
+  } catch {
+    titleCache = {};   // search must still work if the config read fails
+  }
+  return titleCache;
+}
+
+export async function setBookTitleOverride(slug, title) {
+  const key   = String(slug  || '').trim();
+  const value = String(title || '').trim();
+  if (!key || !value) throw new Error('A title override needs both a slug and a title.');
+  await setDoc(TITLES_DOC(), { titles: { [key]: value } }, { merge: true });
+  titleCache = null;
+  return value;
+}
+
+export async function deleteBookTitleOverride(slug) {
+  await updateDoc(TITLES_DOC(), { [`titles.${String(slug).trim()}`]: deleteField() });
+  titleCache = null;
+}
+
+// Renaming a book has to reach every copy of the name, because three places
+// each keep their own: the book doc in a library, the feed card, and the entry
+// inside a list. The override alone would only fix books added afterwards.
+//
+// Walks every user once doing books and lists together, then activity. Pass
+// `dryRun` to count without writing — that is what the admin preview runs.
+export async function retitleForSlug(slug, title, { dryRun = false, onProgress } = {}) {
+  const counts = { books: 0, lists: 0, activity: 0, users: 0 };
+  if (!slug || !title) return counts;
+
+  const users = await getDocs(collection(db, 'users'));
+  for (let i = 0; i < users.docs.length; i++) {
+    if (onProgress) onProgress(i, users.docs.length);
+    const uid = users.docs[i].id;
+    let touched = false;
+
+    const booksSnap = await getDocs(query(collection(db, 'users', uid, 'books'), where('gbid', '==', slug)));
+    for (const d of booksSnap.docs) {
+      if (d.data().title === title) continue;
+      counts.books++;
+      touched = true;
+      if (!dryRun) await updateDoc(d.ref, { title });
+    }
+
+    // Lists keep their books in an array, so there is no field to query on and
+    // every list has to be read and checked.
+    const listsSnap = await getDocs(collection(db, 'users', uid, 'lists'));
+    for (const d of listsSnap.docs) {
+      const { books, changed } = retitleListBooks(d.data().books || [], slug, title);
+      if (!changed) continue;
+      counts.lists += changed;
+      touched = true;
+      if (!dryRun) await updateDoc(d.ref, { books });
+    }
+
+    if (touched) counts.users++;
+  }
+
+  const actSnap = await getDocs(query(collection(db, 'activity'), where('gbid', '==', slug)));
+  for (const d of actSnap.docs) {
+    if (d.data().bookTitle === title) continue;
+    if (dryRun) { counts.activity++; continue; }
+    // One unwritable event should not abandon the rest of the sweep half done.
+    try { await updateDoc(d.ref, { bookTitle: title }); counts.activity++; }
+    catch (err) { console.warn('Activity retitle failed for', d.id, err); }
+  }
+  return counts;
 }
 
 // Country name remaps, e.g. "Castile" -> "Spain". Historic and regional names

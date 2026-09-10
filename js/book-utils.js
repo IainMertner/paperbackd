@@ -177,6 +177,94 @@ export function resolveRemappedSlug(slug, remaps) {
   return walkRemap(slug, remaps).slug;
 }
 
+// ── Book title overrides ─────────────────────────────────────────────────────
+//
+// Hardcover's title is not always the one worth showing. "God's Children Are
+// Little Broken Things: Stories" is the same book as "God's Children Are Little
+// Broken Things", and the subtitle is noise on a shelf. An admin sets a display
+// title per slug and every surface that renders a Hardcover title asks here.
+//
+// Not a remap: the record is the right one, only its name is wrong. Keyed by the
+// final slug, so retitling the record a redirect points at covers the redirected
+// one too.
+
+// `titles[slug]` alone would answer `constructor` with a function, so the type
+// is checked rather than the truthiness — the same trap that has bitten every
+// other plain object used as a lookup here.
+export function titleForSlug(slug, titles, fallback = '') {
+  if (!slug || !titles) return fallback;
+  const override = titles[slug];
+  if (typeof override !== 'string') return fallback;
+  return override.trim() || fallback;
+}
+
+// Rewrites Hardcover search and listing results. Run after applyBookRemaps, not
+// before: a redirected record arrives here already wearing its target's slug.
+export function applyTitleOverrides(docs, titles) {
+  if (!Array.isArray(docs)) return [];
+  if (!titles) return docs;
+  return docs.map(doc => {
+    const title = titleForSlug(doc?.slug, titles, '');
+    return title && title !== doc.title ? { ...doc, title } : doc;
+  });
+}
+
+// A list stores its books as an array of copies, with no subcollection to query,
+// so a book renamed everywhere else keeps its old name here unless the array is
+// rewritten. Returns the new array and how many entries moved, so a caller can
+// skip the write when nothing did.
+export function retitleListBooks(books, slug, title) {
+  if (!Array.isArray(books)) return { books: [], changed: 0 };
+  if (!slug || !title) return { books, changed: 0 };
+  let changed = 0;
+  const out = books.map(book => {
+    if (book?.gbid !== slug || book.title === title) return book;
+    changed++;
+    return { ...book, title };
+  });
+  return { books: changed ? out : books, changed };
+}
+
+// The same problem for a remap, which moves a book's identity rather than just
+// its name. A list keeps its own copy of the slug, title, author and cover, so
+// a remap that only rewrites libraries leaves the old record sitting in every
+// list it was on, still linking to the book it was redirected away from.
+//
+// Two entries can collapse into one here: anyone holding both the translation
+// and the original on the same list ends up with the target twice. Only entries
+// landing on the target slug are considered for that — a remap should not
+// quietly tidy up duplicates it was never asked about — and the earliest copy
+// wins, keeping the addedAt that put it in its place on the list.
+export function remapListBooks(books, fromSlug, target) {
+  if (!Array.isArray(books)) return { books: [], changed: 0, removed: 0 };
+  if (!fromSlug || !target?.slug) return { books, changed: 0, removed: 0 };
+
+  let changed = 0;
+  const rewritten = books.map(book => {
+    if (book?.gbid !== fromSlug) return book;
+    const next = { ...book, gbid: target.slug };
+    // Guarded one by one: a target resolved without a cover should not blank
+    // the cover a list entry already has.
+    if (target.title)    next.title    = target.title;
+    if (target.author)   next.author   = target.author;
+    if (target.coverUrl) next.coverUrl = target.coverUrl;
+    // A refresh points a slug at itself, so most entries come back identical.
+    // Returning the original keeps them out of the count and off the write.
+    const moved = ['gbid', 'title', 'author', 'coverUrl'].some(k => next[k] !== book[k]);
+    if (!moved) return book;
+    changed++;
+    return next;
+  });
+  if (!changed) return { books, changed: 0, removed: 0 };
+
+  const out = [];
+  for (const book of rewritten) {
+    if (book?.gbid === target.slug && out.some(kept => sameBook(kept, book))) continue;
+    out.push(book);
+  }
+  return { books: out, changed, removed: rewritten.length - out.length };
+}
+
 // The key two books must share to be considered the same work.
 export function workKey(book) {
   if (!book) return null;

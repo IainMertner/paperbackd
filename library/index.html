@@ -3446,22 +3446,13 @@
 
     async function fetchSuggestions(q) {
       try {
-        const res = await fetch(HARDCOVER_PROXY, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: `query Search($q: String!) {
-              search(query: $q, query_type: "Book", per_page: 10) { results }
-            }`,
-            variables: { q }
-          })
-        });
-        if (res.status === 429) { showToast('Our servers are busy - give it a moment and try again.'); return; }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const hits = data.data?.search?.results?.hits || [];
+        // searchBooks, not a raw call to the proxy: it is the only path that
+        // applies the admin remap table, so a record an admin has redirected is
+        // never offered here. Going direct is why the wrong slug kept appearing
+        // when adding a book.
+        const docs = await searchBooks(q, 10);
         const seen = new Set();
-        const items = hits.map(h => h.document).filter(doc => {
+        const items = docs.filter(doc => {
           const author = Array.isArray(doc.author_names) ? (doc.author_names[0] || '') : (doc.author_names || '');
           const key = `${(doc.title || '').toLowerCase()}||${author.toLowerCase()}`;
           if (seen.has(key)) return false;
@@ -3470,6 +3461,12 @@
         }).slice(0, 8);
         renderSuggestions(items);
       } catch (err) {
+        // searchBooks backs off and retries a 429 before giving up, so reaching
+        // here means it stayed busy.
+        if (String(err?.message || '').includes('429')) {
+          showToast('Our servers are busy - give it a moment and try again.');
+          return;
+        }
         console.error('Book search failed:', err);
       }
     }

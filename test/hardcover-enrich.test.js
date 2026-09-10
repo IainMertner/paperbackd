@@ -8,15 +8,17 @@ const getHcCache = vi.fn();
 const setHcCache = vi.fn();
 
 const getBookRemaps = vi.fn();
+const getBookTitleOverrides = vi.fn();
 
 vi.mock('../js/firebase.js', () => ({
   getHcCache: (...a) => getHcCache(...a),
   setHcCache: (...a) => setHcCache(...a),
   getBookRemaps: (...a) => getBookRemaps(...a),
+  getBookTitleOverrides: (...a) => getBookTitleOverrides(...a),
 }));
 
 import {
-  hcQuery, searchHardcover, enrichBatch, enrichFromHardcover, HARDCOVER_PROXY,
+  hcQuery, searchBooks, searchHardcover, enrichBatch, enrichFromHardcover, HARDCOVER_PROXY,
 } from '../js/hardcover.js';
 
 // Builds a fetch Response stand-in.
@@ -32,6 +34,7 @@ const searchRes = docs => jsonRes({
 beforeEach(() => {
   getHcCache.mockReset().mockResolvedValue(null);
   getBookRemaps.mockReset().mockResolvedValue({});
+  getBookTitleOverrides.mockReset().mockResolvedValue({});
   setHcCache.mockReset().mockResolvedValue(undefined);
   global.fetch = vi.fn();
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -153,6 +156,45 @@ describe('hcQuery', () => {
   it('propagates a network-level rejection', async () => {
     global.fetch.mockRejectedValue(new Error('network down'));
     await expect(hcQuery('q', {})).rejects.toThrow('network down');
+  });
+});
+
+// ── searchBooks ───────────────────────────────────────────────────────────────
+//
+// The one path every book search in the app goes through, so both the admin
+// remap table and the admin title table have to land here or a corrected record
+// reappears the moment someone adds a book.
+
+describe('searchBooks', () => {
+  it('applies the admin title override to a result', async () => {
+    getBookTitleOverrides.mockResolvedValue({ gods: "God's Children Are Little Broken Things" });
+    global.fetch.mockResolvedValue(searchRes([{ slug: 'gods', title: "God's Children Are Little Broken Things: Stories" }]));
+    const docs = await searchBooks('gods children');
+    expect(docs[0].title).toBe("God's Children Are Little Broken Things");
+  });
+
+  it('leaves a result with no override alone', async () => {
+    getBookTitleOverrides.mockResolvedValue({ gods: 'Renamed' });
+    global.fetch.mockResolvedValue(searchRes([{ slug: 'dune', title: 'Dune' }]));
+    expect((await searchBooks('dune'))[0].title).toBe('Dune');
+  });
+
+  // Order matters: a redirected record arrives wearing its target's slug, so a
+  // title keyed on the target covers it too. Keyed on the old slug it would not.
+  it('keys the title on the slug a remap points at', async () => {
+    getBookRemaps.mockResolvedValue({ old: { slug: 'new', title: 'Stale Copy' } });
+    getBookTitleOverrides.mockResolvedValue({ new: 'The Right Name' });
+    global.fetch.mockResolvedValue(searchRes([{ slug: 'old', title: 'Wrong Record' }]));
+    const docs = await searchBooks('x');
+    expect(docs).toHaveLength(1);
+    expect(docs[0].slug).toBe('new');
+    expect(docs[0].title).toBe('The Right Name');
+  });
+
+  it('still returns results when the title table cannot be read', async () => {
+    getBookTitleOverrides.mockResolvedValue({});
+    global.fetch.mockResolvedValue(searchRes([{ slug: 'dune', title: 'Dune' }]));
+    expect(await searchBooks('dune')).toHaveLength(1);
   });
 });
 

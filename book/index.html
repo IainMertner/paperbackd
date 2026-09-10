@@ -134,11 +134,11 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getFollowing, getBookByGbid, getFriendBookStatus, getFriendListStatus, addBook, addFinishedBook, getLists, ensureDefaultList, addBookToList, removeBookFromList, getBookRemaps, DEFAULT_LIST_NAME } from '../js/firebase.js';
+    import { getFollowing, getBookByGbid, getFriendBookStatus, getFriendListStatus, addBook, addFinishedBook, getLists, ensureDefaultList, addBookToList, removeBookFromList, getBookRemaps, getBookTitleOverrides, DEFAULT_LIST_NAME } from '../js/firebase.js';
     import { initSearchWidget } from '../js/search-widget.js';
     import { metaForSlug } from '../js/hardcover.js';
     import { fetchBookMeta, awaitMeta } from '../js/enrich.js';
-    import { resolveRemappedSlug, wantToReadBlock, primaryAuthor, mergeBookFacts } from '../js/book-utils.js';
+    import { resolveRemappedSlug, titleForSlug, wantToReadBlock, primaryAuthor, mergeBookFacts } from '../js/book-utils.js';
     import { autoFit } from '../js/dropdown.js';
 
     const params = new URLSearchParams(location.search);
@@ -281,7 +281,10 @@
       try { if (hcRes.ok) hcData = await hcRes.json(); } catch {}
       const hcBook = hcData.data?.books?.[0] || {};
 
-      const title       = hcBook.title  || myBook?.title  || 'Unknown title';
+      // gbid is the final slug by now — anything redirected was sent onward
+      // above — so the admin's display title, if there is one, wins here.
+      const title       = titleForSlug(gbid, await getBookTitleOverrides(),
+                                       hcBook.title || myBook?.title || 'Unknown title');
       // find(c => c.author) took whoever was listed first, which on an audiobook
       // is the narrator. The slug has to come from the same contribution as the
       // name, or the author link points at a different person than it names.
