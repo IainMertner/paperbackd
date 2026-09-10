@@ -1730,6 +1730,49 @@ export async function redoCountriesForAllUsers(lookup, { onProgress } = {}) {
   return counts;
 }
 
+// ── Book issue reports ────────────────────────────────────────────────────────
+//
+// A reader saying something about a book is wrong. Since readers can no longer
+// edit catalogue books themselves, this is the way a bad country or a wrong year
+// gets to someone who can fix it — the report is the replacement for the edit
+// box that used to be there.
+//
+// Stored top level rather than under the book: the book is a shared record with
+// no document of its own, and an admin wants one queue across every title.
+
+const REPORT_MAX = 1000;
+
+export async function reportBookIssue({ gbid, title, author, text }, user, profile) {
+  const body = String(text || '').trim();
+  if (!body) throw new Error('Describe the problem first.');
+  await addDoc(collection(db, 'bookReports'), {
+    gbid:      gbid || '',
+    title:     title || '',
+    author:    author || '',
+    text:      body.slice(0, REPORT_MAX),
+    uid:       user.uid,
+    username:  profile?.username || '',
+    createdAt: serverTimestamp(),
+    resolved:  false,
+  });
+}
+
+// Newest first. Resolved reports are kept rather than deleted — a report is the
+// only record of why a book was changed, and the admin list shows them behind a
+// fold instead of losing them.
+export async function getBookReports(max = 200) {
+  const snap = await getDocs(query(collection(db, 'bookReports'), orderBy('createdAt', 'desc'), limit(max)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function setBookReportResolved(id, resolved) {
+  await updateDoc(doc(db, 'bookReports', id), { resolved: !!resolved });
+}
+
+export async function deleteBookReport(id) {
+  await deleteDoc(doc(db, 'bookReports', id));
+}
+
 export async function toggleReaction(activityId, emoji, uid, add) {
   await updateDoc(doc(db, 'activity', activityId), {
     [`reactions.${emoji}`]: add ? arrayUnion(uid) : arrayRemove(uid)

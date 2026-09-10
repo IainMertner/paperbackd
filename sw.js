@@ -1,6 +1,6 @@
 // Bump on any release that changes what a JS module exports — activate() drops
 // every older cache, which is what clears a stale module out of existing clients.
-const CACHE = 'paperbackd-v171';
+const CACHE = 'paperbackd-v173';
 
 // Firebase API hosts — never intercept these
 const PASS_THROUGH = [
@@ -62,6 +62,7 @@ const PRECACHE = [
   '/js/search-widget.js',
   '/js/stats-utils.js',
   '/js/utils.js',
+  '/js/report-issue.js',
 ];
 
 self.addEventListener('install', event => {

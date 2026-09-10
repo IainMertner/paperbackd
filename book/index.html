@@ -139,6 +139,7 @@
     import { metaForSlug } from '../js/hardcover.js';
     import { fetchBookMeta, awaitMeta } from '../js/enrich.js';
     import { resolveRemappedSlug, titleForSlug, wantToReadBlock, primaryAuthor, mergeBookFacts } from '../js/book-utils.js';
+    import { openReportDialog } from '../js/report-issue.js';
     import { autoFit } from '../js/dropdown.js';
 
     const params = new URLSearchParams(location.search);
@@ -386,6 +387,28 @@
         }
       }
       renderFacts();
+
+      // Since readers cannot edit a catalogue book any more, this is how a wrong
+      // country or year reaches someone who can fix it. Quiet by design: it sits
+      // under the facts it is about, and nobody comes to a book page to file a
+      // report.
+      const reportBtn = document.createElement('button');
+      reportBtn.type = 'button';
+      reportBtn.textContent = 'Report an issue';
+      reportBtn.style.cssText = 'align-self:flex-start;margin-top:.5rem;padding:0;background:none;border:none;font-family:inherit;font-size:.75rem;color:var(--text-muted);cursor:pointer;text-decoration:underline';
+      reportBtn.addEventListener('click', () => openReportDialog(
+        { gbid, title, author },
+        // Confirmed in place rather than by toast: this page has no toast, and
+        // the button turning into its own receipt is clearer than a message
+        // that slides away.
+        { user, profile, onDone: () => {
+          reportBtn.textContent = 'Thanks — reported';
+          reportBtn.disabled = true;
+          reportBtn.style.textDecoration = 'none';
+          reportBtn.style.cursor = 'default';
+        } }
+      ));
+      card.querySelector('.book-detail-body').appendChild(reportBtn);
 
       // Fills whatever the reader's copy did not already have. Decoration on a
       // page that is complete without it, so a Wikidata outage costs nothing.
