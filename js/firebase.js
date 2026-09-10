@@ -671,7 +671,7 @@ export async function getRecentlyFinishedBooks(uid) {
     .sort((a, b) => (b.finishedAt?.seconds ?? 0) - (a.finishedAt?.seconds ?? 0));
 }
 
-export async function addFinishedBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, rating, review, releaseYear, country, authorGender, genres, seriesId, seriesName, language, format, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
+export async function addFinishedBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, rating, review, releaseYear, country, countryStd, authorGender, genres, seriesId, seriesName, language, format, finishedAt, finishedAtPrecision, addedAt, addedAtPrecision }, username) {
   const data = {
     title,
     author:      author || '',
@@ -696,6 +696,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, wo
   if (review)         data.review         = review;
   if (releaseYear)    data.releaseYear    = releaseYear;
   if (country)        data.country        = country;
+  if (countryStd)     data.countryStd     = countryStd;
   if (authorGender)   data.authorGender   = authorGender;
   if (genres?.length) data.genres         = genres;
   // Series identity, for the most-read-authors stat: a trilogy should count
@@ -738,7 +739,7 @@ export async function addFinishedBook(uid, { title, author, totalPages, gbid, wo
   return bookRef.id;
 }
 
-export async function addBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, releaseYear, country, authorGender, genres, seriesId, seriesName, language }, username) {
+export async function addBook(uid, { title, author, totalPages, gbid, workId, isbn13, coverUrl, releaseYear, country, countryStd, authorGender, genres, seriesId, seriesName, language }, username) {
   const bookData = {
     title,
     author:           author || '',
@@ -758,6 +759,7 @@ export async function addBook(uid, { title, author, totalPages, gbid, workId, is
   if (overrideCover || coverUrl) bookData.coverUrl    = overrideCover || coverUrl;
   if (releaseYear)           bookData.releaseYear  = releaseYear;
   if (country)               bookData.country      = country;
+  if (countryStd)            bookData.countryStd   = countryStd;
   if (authorGender)          bookData.authorGender = authorGender;
   if (genres?.length)        bookData.genres       = genres;
   if (seriesId !== undefined) bookData.seriesId    = String(seriesId);
@@ -1649,6 +1651,83 @@ export async function backfillWorkIdsForAllUsers(resolve, onProgress) {
     }
   }
   return { users: users.docs.length, scanned, written, failed };
+}
+
+// ── Redoing every book's country ──────────────────────────────────────────────
+//
+// Country is a property of the author, not of the book. The same author read by
+// forty people is one question, so the pass groups every copy in every library
+// under its author name and asks once — a few hundred lookups instead of tens of
+// thousands.
+//
+// `lookup` is injected rather than imported, the way backfillWorkIds takes
+// `resolve`: it keeps Wikidata out of this module and lets the caller decide the
+// order of precedence between an admin override and the lookup.
+
+// Every distinct author across every library, with the book docs naming them.
+export async function collectAuthorBooks(onProgress) {
+  const users = await getDocs(collection(db, 'users'));
+  const byAuthor = new Map();
+  let books = 0;
+  for (let i = 0; i < users.docs.length; i++) {
+    if (onProgress) onProgress(i, users.docs.length);
+    const snap = await getDocs(collection(db, 'users', users.docs[i].id, 'books'));
+    for (const d of snap.docs) {
+      books++;
+      const name = String(d.data().author || '').trim();
+      if (!name) continue;
+      // Keyed on the lowercased name so "Ursula K. Le Guin" and "ursula k. le
+      // guin" are one lookup; the first spelling seen is the one asked about.
+      const key = name.toLowerCase();
+      if (!byAuthor.has(key)) byAuthor.set(key, { name, refs: [] });
+      byAuthor.get(key).refs.push(d.ref);
+    }
+  }
+  return { byAuthor, books, users: users.docs.length };
+}
+
+// Rewrites `country` and `countryStd` on every book, across every library.
+//
+// `lookup(name)` returns `{ country, countryStd }` for an author, or null when
+// there is no answer. Null means "leave these books alone": an author Wikidata
+// has never heard of, or a lookup that failed, must not blank a country that is
+// already there. Only a real answer overwrites.
+export async function redoCountriesForAllUsers(lookup, { onProgress } = {}) {
+  const { byAuthor, books, users } = await collectAuthorBooks(
+    (i, n) => onProgress?.({ phase: 'scan', done: i, total: n })
+  );
+
+  const authors = [...byAuthor.values()];
+  const counts = { users, books, authors: authors.length, resolved: 0, unresolved: 0, written: 0 };
+
+  // Writes are batched, but never across authors: a batch is committed before
+  // the next lookup so an interrupted pass leaves whole authors done rather
+  // than half of one.
+  const LIMIT = 400;
+  for (let i = 0; i < authors.length; i++) {
+    const { name, refs } = authors[i];
+    onProgress?.({ phase: 'lookup', done: i, total: authors.length, name });
+
+    let facts = null;
+    try { facts = await lookup(name); }
+    catch (err) { console.warn('Country lookup failed for', name, err); }
+    if (!facts?.country) { counts.unresolved++; continue; }
+    counts.resolved++;
+
+    const update = { country: facts.country, countryStd: facts.countryStd || null };
+    for (let start = 0; start < refs.length; start += LIMIT) {
+      const batch = writeBatch(db);
+      for (const ref of refs.slice(start, start + LIMIT)) batch.update(ref, update);
+      try {
+        await batch.commit();
+        counts.written += Math.min(LIMIT, refs.length - start);
+      } catch (err) {
+        // One unwritable library should not abandon the rest of the pass.
+        console.warn('Country write failed for', name, err);
+      }
+    }
+  }
+  return counts;
 }
 
 export async function toggleReaction(activityId, emoji, uid, add) {

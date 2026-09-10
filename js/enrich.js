@@ -10,7 +10,7 @@
 
 import { hcQuery } from './hardcover.js';
 import { getAuthorCountryOverrides, getCountryRemaps } from './firebase.js';
-import { normalizeCountry } from './utils.js';
+import { standardCountry } from './stats-utils.js';
 import { pickSeries } from './book-utils.js';
 
 const WIKIDATA = 'https://www.wikidata.org/w/api.php';
@@ -60,15 +60,48 @@ async function fetchBookFields(slug) {
   return out;
 }
 
+// The country label Wikidata gives for an author, in its own words.
+//
+// Exported for the admin pass that redoes every book's country: the free-text
+// field wants exactly this, unflattened, and the standardised one is derived
+// from it afterwards. Returns '' for an author Wikidata cannot answer for,
+// which a caller must read as "no answer" rather than "no country" — blanking a
+// stored country because a lookup timed out would lose real data.
+export async function wikidataCountry(author) {
+  if (!author) return '';
+  try {
+    const search = await fetch(`${WIKIDATA}?action=wbsearchentities&search=${encodeURIComponent(author)}&language=en&type=item&format=json&origin=*&limit=1`);
+    if (!search.ok) return '';
+    const qid = (await search.json()).search?.[0]?.id;
+    if (!qid) return '';
+
+    const entity = await fetch(`${WIKIDATA}?action=wbgetentities&ids=${qid}&props=claims&format=json&origin=*`);
+    if (!entity.ok) return '';
+    const claims = (await entity.json()).entities?.[qid]?.claims || {};
+    const countryQid = bestClaim(claims.P27 || [])?.mainsnak?.datavalue?.value?.id;
+    if (!countryQid) return '';
+
+    const labels = await fetch(`${WIKIDATA}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
+    if (!labels.ok) return '';
+    return (await labels.json()).entities?.[countryQid]?.labels?.en?.value || '';
+  } catch {
+    return '';
+  }
+}
+
 async function fetchAuthorFacts(author) {
   const out = {};
   if (!author) return out;
 
   // An admin override beats Wikidata: it exists precisely because Wikidata got
-  // one wrong.
+  // one wrong. It is picked from COUNTRIES, so it is already standardised and
+  // fills both fields.
   const key = author.toLowerCase().trim();
   const override = (await overrides())[key];
-  if (override) out.country = override;
+  if (override) {
+    out.country    = override;
+    out.countryStd = standardCountry(override, await getCountryRemaps());
+  }
 
   const search = await fetch(`${WIKIDATA}?action=wbsearchentities&search=${encodeURIComponent(author)}&language=en&type=item&format=json&origin=*&limit=1`);
   if (!search.ok) return out;
@@ -85,7 +118,15 @@ async function fetchAuthorFacts(author) {
       const labels = await fetch(`${WIKIDATA}?action=wbgetentities&ids=${countryQid}&props=labels&languages=en&format=json&origin=*`);
       if (labels.ok) {
         const name = (await labels.json()).entities?.[countryQid]?.labels?.en?.value;
-        if (name) out.country = normalizeCountry(name, await getCountryRemaps());
+        if (name) {
+          // Wikidata's own words go in the free-text field, unflattened. It
+          // answers "Czechoslovakia" or "Kingdom of Prussia" for authors who
+          // lived there, and that is worth keeping — normalizing on the way in
+          // is what used to throw it away. The standardised field is what the
+          // stats count, so nothing is lost by recording both.
+          out.country    = name;
+          out.countryStd = standardCountry(name, await getCountryRemaps());
+        }
       }
     }
   }
@@ -95,7 +136,8 @@ async function fetchAuthorFacts(author) {
   return out;
 }
 
-// Returns whatever could be found — `{ genres?, country?, authorGender?, seriesId?, seriesName? }`.
+// Returns whatever could be found —
+// `{ genres?, country?, countryStd?, authorGender?, seriesId?, seriesName? }`.
 // Start it as soon as a book is chosen and await it when saving, so the lookups
 // overlap with the reader deciding rather than delaying the write.
 export async function fetchBookMeta(slug, author) {

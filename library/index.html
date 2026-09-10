@@ -213,8 +213,8 @@
     import { requireAuth } from '../js/auth.js';
     import { getBooks, addBook, getCountryRemaps, resolveBookLanguage, addFinishedBook, updateBookProgress, finishBook, deleteBook, dnfBook, setDnfNote, undnfBook, unfinishBook, updateBookRating, updateBookDates, clearBookDate, updateBookCover, updateShelf, getProfileByUsername, updateBookMeta, updateBookReads, getLists, addBookToList, removeBookFromList, syncBookActivity, getAuthorCountryOverrides, getFollowing, setBookPrivate } from '../js/firebase.js';
     import { deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-    import { normalizeCountry, serialiseCalls } from '../js/utils.js';
-    import { COUNTRIES, finishedDate } from '../js/stats-utils.js';
+    import { serialiseCalls } from '../js/utils.js';
+    import { COUNTRIES, finishedDate, standardCountry } from '../js/stats-utils.js';
     import { periodBarHtml, initPeriodBar, periodFromParams, describeRange } from '../js/period-filter.js';
     import { openCoverPicker as openPicker } from '../js/cover-picker.js';
     import { fitDropdown, releaseDropdown, autoFit } from '../js/dropdown.js';
@@ -240,6 +240,10 @@
       const flags = [];
       if (!book.coverUrl)              flags.push('no-cover');
       if (!book.country)               flags.push('no-country');
+      // Separate from the above: a book can have a free-text country that no
+      // standardised one fits ("Kurdistan"), and only the second kind is
+      // missing from the stats.
+      if (!book.countryStd)            flags.push('no-country-std');
       if (!book.authorGender)          flags.push('no-gender');
       if (!book.genres?.length)        flags.push('no-genre');
       if (book.releaseYear == null)    flags.push('no-year');
@@ -256,7 +260,7 @@
       el.dataset.author   = (book.author   || '').toLowerCase();
       el.dataset.language = (book.language || '').toLowerCase();
       el.dataset.format   = (book.format   || '').toLowerCase();
-      el.dataset.country  = (book.country      || '').toLowerCase();
+      el.dataset.country  = (book.countryStd   || '').toLowerCase();
       el.dataset.gender   = (book.authorGender || '').toLowerCase();
       el.dataset.genre    = (book.genres || []).map(g => g.toLowerCase()).join(',');
       el.dataset.rating   = book.rating != null ? String(book.rating) : '';
@@ -387,11 +391,14 @@
         } catch (e) { console.warn('Repair: numeric genre query failed', e); }
       }
 
-      // Phase 2.5: re-normalize stored country
+      // Phase 2.5: backfill the standardised country from the free-text one.
+      // The free text is left exactly as written — that is the whole point of
+      // it — so this only ever fills the second field in, never rewrites the
+      // first. A book whose country cannot be placed keeps its blank.
       const cRemaps = await getCountryRemaps();
-      const storedCountry = book.country;
-      if (storedCountry && normalizeCountry(storedCountry, cRemaps) !== storedCountry) {
-        updates.country = normalizeCountry(storedCountry, cRemaps);
+      if (book.country && !book.countryStd) {
+        const std = standardCountry(book.country, cRemaps);
+        if (std) updates.countryStd = std;
       }
 
       // Phase 3: country + gender lookup — overrides first, then Wikidata
@@ -402,7 +409,10 @@
         if (needCountry) {
           const overrides = await getOverrides();
           const overrideKey = authorForCountry.toLowerCase().trim();
-          if (overrides[overrideKey]) updates.country = overrides[overrideKey];
+          if (overrides[overrideKey]) {
+            updates.country    = overrides[overrideKey];
+            updates.countryStd = standardCountry(overrides[overrideKey], cRemaps);
+          }
         }
         if (needCountry && !updates.country || needGender) {
           try {
@@ -426,7 +436,11 @@
                       if (lr.ok) {
                         const ld = await lr.json();
                         const countryName = ld.entities?.[countryQid]?.labels?.en?.value;
-                        if (countryName) updates.country = normalizeCountry(countryName, await getCountryRemaps());
+                        // Wikidata's own words, unflattened — see fetchAuthorFacts.
+                        if (countryName) {
+                          updates.country    = countryName;
+                          updates.countryStd = standardCountry(countryName, cRemaps);
+                        }
                       }
                     }
                   }
@@ -613,7 +627,7 @@
       cell.dataset.author   = (book.author   || '').toLowerCase();
       cell.dataset.language = (book.language || '').toLowerCase();
       cell.dataset.format   = (book.format   || '').toLowerCase();
-      cell.dataset.country  = (book.country      || '').toLowerCase();
+      cell.dataset.country  = (book.countryStd   || '').toLowerCase();
       cell.dataset.gender   = (book.authorGender || '').toLowerCase();
       cell.dataset.genre    = (book.genres || []).map(g => g.toLowerCase()).join(',');
       cell.dataset.rating   = book.rating != null ? String(book.rating) : '';
@@ -940,9 +954,24 @@
       const section = document.createElement('div');
       section.style.cssText = 'border-top:1px solid var(--border);padding-top:.625rem;margin-top:.625rem';
 
+      // Facts about the work belong to the catalogue, not to one reader's copy.
+      // The same record is shared by everyone who has the book, so an author
+      // corrected here would disagree with every other library holding it, and
+      // an admin fixing the record centrally would be silently contradicted.
+      // Fields marked `catalogue` are therefore shown but not editable — unless
+      // the book was added by hand, in which case there is no shared record to
+      // disagree with and the reader is the only authority there is.
+      //
+      // Total pages is deliberately not one of them: it describes the edition in
+      // someone's hands, the progress bar divides by it, and a reader whose
+      // paperback runs to 604 pages has to be able to say so.
+      const fromCatalogue = !!book.gbid;
+      const locked = def => def.catalogue && fromCatalogue;
+
       const inputs = {};
       let firstGroup = true;
-      fieldDefs.forEach(({ label, key, type, options, groupLabel }) => {
+      fieldDefs.forEach(def => {
+        const { label, key, type, options, groupLabel } = def;
         if (groupLabel) {
           const gh = document.createElement('div');
           gh.style.cssText = `font-size:.7rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.3rem${firstGroup ? '' : ';margin-top:.6rem;padding-top:.5rem;border-top:1px solid var(--border)'}`;
@@ -955,6 +984,17 @@
         const lbl = document.createElement('label');
         lbl.style.cssText = 'font-size:.75rem;color:var(--text-muted);min-width:90px';
         lbl.textContent = label;
+
+        if (locked(def)) {
+          const stored = type === 'tags' ? (book[key] || []).join(', ') : book[key];
+          const textEl = document.createElement('span');
+          textEl.style.cssText = 'flex:1;min-width:0;font-size:.8rem;color:var(--text)';
+          textEl.textContent = (stored === null || stored === undefined || stored === '') ? '—' : String(stored);
+          row.append(lbl, textEl);
+          section.appendChild(row);
+          return;
+        }
+
         let control;
         if (type === 'select') {
           control = document.createElement('select');
@@ -1005,9 +1045,25 @@
         section.appendChild(row);
       });
 
+      // Typing a free-text country fills in the standardised one, but only
+      // while that is still empty. An explicit choice has to survive — including
+      // the deliberate blank on "Kurdistan", which is a real answer and not an
+      // omission waiting to be helpfully corrected.
+      if (inputs.country && inputs.countryStd) {
+        inputs.country.addEventListener('input', () => {
+          if (inputs.countryStd.value) return;
+          const guess = standardCountry(inputs.country.value);
+          if (guess) inputs.countryStd.value = guess;
+        });
+      }
+
       async function doSaveBookMeta() {
         const updates = {};
-        fieldDefs.forEach(({ key, type }) => {
+        fieldDefs.forEach(def => {
+          // Nothing was rendered for a locked field, so there is nothing to read
+          // and nothing it could have changed into.
+          if (locked(def)) return;
+          const { key, type } = def;
           const raw = inputs[key].value.trim();
           let val;
           if (type === 'number') {
@@ -1035,7 +1091,7 @@
           if (el) {
             if (updates.title    != null) { el.dataset.title    = updates.title.toLowerCase(); }
             if ('author'   in updates)    { el.dataset.author   = (updates.author   || '').toLowerCase(); }
-            if ('country'      in updates) { el.dataset.country = (updates.country      || '').toLowerCase(); }
+            if ('countryStd'   in updates) { el.dataset.country = (updates.countryStd   || '').toLowerCase(); }
             if ('authorGender' in updates) { el.dataset.gender  = (updates.authorGender || '').toLowerCase(); }
             if ('genres'       in updates) { el.dataset.genre   = (updates.genres || []).map(g => g.toLowerCase()).join(','); }
             const titleEl  = el.querySelector('.book-title');
@@ -1209,7 +1265,7 @@
             card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
           }
           const keys = Object.keys(updates);
-          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country', isbn13: 'ISBN', authorGender: 'Gender', genres: 'Genres' };
+          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country', countryStd: 'Standardised country', isbn13: 'ISBN', authorGender: 'Gender', genres: 'Genres' };
           const toast = document.createElement('div');
           toast.style.cssText = 'position:absolute;bottom:.75rem;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:.7rem;padding:.25rem .65rem;border-radius:20px;white-space:nowrap;z-index:2;opacity:0;transition:opacity .2s;pointer-events:none';
           toast.textContent = keys.length ? `Updated: ${keys.map(k => LABELS[k] || k).join(', ')}` : 'Already up to date';
@@ -1531,12 +1587,13 @@
       });
 
       const { section: detailsSection, doSaveBookMeta } = addDetailsEditor(card, book, coverCell, [
-        { label: 'Title',         key: 'title',        type: 'text'   },
-        { label: 'Author',        key: 'author',       type: 'text'   },
-        { label: 'Gender',        key: 'authorGender', type: 'select', options: ['Male', 'Female', 'Non-binary', 'Other'] },
-        { label: 'Country',       key: 'country',      type: 'select', options: COUNTRIES },
-        { label: 'Release year',  key: 'releaseYear',  type: 'number' },
-        { label: 'Genres',        key: 'genres',       type: 'tags'   },
+        { label: 'Title',         key: 'title',        type: 'text',   catalogue: true },
+        { label: 'Author',        key: 'author',       type: 'text',   catalogue: true },
+        { label: 'Gender',        key: 'authorGender', type: 'select', options: ['Male', 'Female', 'Non-binary', 'Other'], catalogue: true },
+        { label: 'Country',       key: 'country',      type: 'text',   options: COUNTRIES, catalogue: true },
+        { label: 'Standardised',  key: 'countryStd',   type: 'select', options: COUNTRIES, catalogue: true },
+        { label: 'Release year',  key: 'releaseYear',  type: 'number', catalogue: true },
+        { label: 'Genres',        key: 'genres',       type: 'tags',   catalogue: true },
       ]);
       detailsSection.style.cssText = 'display:none;padding-top:.6rem;margin-top:.5rem;border-top:1px solid var(--border)';
       detailsSection.querySelectorAll('.page-input').forEach(el => el.style.background = 'var(--bg)');
@@ -1756,7 +1813,7 @@
             card.querySelectorAll('[data-key]').forEach(inp => { if (inp.dataset.key in updates && updates[inp.dataset.key] != null) inp.value = updates[inp.dataset.key]; });
           }
           const keys = Object.keys(updates);
-          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country', isbn13: 'ISBN', authorGender: 'Gender', genres: 'Genres' };
+          const LABELS = { gbid: 'ID', coverUrl: 'Cover', totalPages: 'Pages', releaseYear: 'Year', author: 'Author', title: 'Title', country: 'Country', countryStd: 'Standardised country', isbn13: 'ISBN', authorGender: 'Gender', genres: 'Genres' };
           const toast = document.createElement('div');
           toast.style.cssText = 'position:absolute;bottom:.75rem;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:.7rem;padding:.25rem .65rem;border-radius:20px;white-space:nowrap;z-index:2;opacity:0;transition:opacity .2s;pointer-events:none';
           toast.textContent = keys.length ? `Updated: ${keys.map(k => LABELS[k] || k).join(', ')}` : 'Already up to date';
@@ -2078,13 +2135,14 @@
       reviewTa.addEventListener('blur', () => { setReviewDisplay(reviewTa.value.trim()); reviewTa.style.display = 'none'; reviewText.style.display = ''; });
 
       const { section: detailsSection, doSaveBookMeta } = addDetailsEditor(card, book, coverCell, [
-        { label: 'Title',         key: 'title',        type: 'text'   },
-        { label: 'Author',        key: 'author',       type: 'text'   },
-        { label: 'Gender',        key: 'authorGender', type: 'select', options: ['Male', 'Female', 'Non-binary', 'Other'] },
-        { label: 'Country',       key: 'country',      type: 'select', options: COUNTRIES },
-        { label: 'Release year',  key: 'releaseYear',  type: 'number' },
+        { label: 'Title',         key: 'title',        type: 'text',   catalogue: true },
+        { label: 'Author',        key: 'author',       type: 'text',   catalogue: true },
+        { label: 'Gender',        key: 'authorGender', type: 'select', options: ['Male', 'Female', 'Non-binary', 'Other'], catalogue: true },
+        { label: 'Country',       key: 'country',      type: 'text',   options: COUNTRIES, catalogue: true },
+        { label: 'Standardised',  key: 'countryStd',   type: 'select', options: COUNTRIES, catalogue: true },
+        { label: 'Release year',  key: 'releaseYear',  type: 'number', catalogue: true },
         { label: 'Total pages',   key: 'totalPages',   type: 'number' },
-        { label: 'Genres',        key: 'genres',       type: 'tags'   },
+        { label: 'Genres',        key: 'genres',       type: 'tags',   catalogue: true },
       ]);
       detailsSection.style.cssText = 'display:none;padding-top:.6rem;margin-top:.5rem;border-top:1px solid var(--border)';
       detailsSection.querySelectorAll('.page-input').forEach(el => el.style.background = 'var(--bg)');
@@ -2292,6 +2350,8 @@
         ['Author',       book.author],
         ['Gender',       book.authorGender],
         ['Country',      book.country],
+        // Only when it says something the line above does not.
+        ['Standardised', book.countryStd && book.countryStd !== book.country ? book.countryStd : null],
         ['Release year', book.releaseYear],
         ['Genres',       book.genres?.length ? book.genres.join(', ') : null],
       ].forEach(([lbl, val]) => {
@@ -2406,6 +2466,7 @@
         ['Author',       book.author],
         ['Gender',       book.authorGender],
         ['Country',      book.country],
+        ['Standardised', book.countryStd && book.countryStd !== book.country ? book.countryStd : null],
         ['Release year', book.releaseYear],
         ['Total pages',  book.totalPages],
         ['Genres',       book.genres?.length ? book.genres.join(', ') : null],
@@ -3191,7 +3252,9 @@
         const cb = allBooks;
         const formats   = [...new Set(cb.map(b => b.format).filter(Boolean))].sort();
         const languages = [...new Set(cb.map(b => b.language).filter(Boolean))].sort();
-        const countries = [...new Set(cb.map(b => b.country).filter(Boolean))].sort();
+        // Standardised, so the section matches what the stats charts count and
+        // a click through from the map lands on the same set of books.
+        const countries = [...new Set(cb.map(b => b.countryStd).filter(Boolean))].sort();
 
         addSection('Format',   'format',   formats.map(v => ({ val: v.toLowerCase(), label: v, count: cb.filter(b => b.format === v).length })));
         addSection('Language', 'language', languages.map(v => ({ val: v.toLowerCase(), label: v, count: cb.filter(b => b.language === v).length })));
@@ -3213,6 +3276,7 @@
         const completenessItems = [
           { val: 'no-cover',    label: 'Missing cover',    count: cb.filter(b => !b.coverUrl).length },
           { val: 'no-country',  label: 'Missing country',  count: cb.filter(b => !b.country).length },
+          { val: 'no-country-std', label: 'Missing standardised country', count: cb.filter(b => !b.countryStd).length },
           { val: 'no-gender',   label: 'Missing gender',   count: cb.filter(b => !b.authorGender).length },
           { val: 'no-genre',    label: 'Missing genre',    count: cb.filter(b => !b.genres?.length).length },
           { val: 'no-year',     label: 'Missing year',     count: cb.filter(b => b.releaseYear == null).length },
@@ -3222,8 +3286,8 @@
         ].filter(i => i.count > 0);
         addSection('Completeness', 'completeness', completenessItems, { sort: false });
 
-        const countryEntries = countries.map(v => ({ val: v.toLowerCase(), label: v, count: cb.filter(b => b.country === v).length }));
-        const noCountryCount = cb.filter(b => !b.country).length;
+        const countryEntries = countries.map(v => ({ val: v.toLowerCase(), label: v, count: cb.filter(b => b.countryStd === v).length }));
+        const noCountryCount = cb.filter(b => !b.countryStd).length;
         if (noCountryCount > 0) countryEntries.push({ val: '', label: 'No country', count: noCountryCount });
         addSection('Country', 'country', countryEntries);
 
@@ -3622,14 +3686,14 @@
       if (selectedBook._countryFetch) {
         await Promise.race([selectedBook._countryFetch, new Promise(r => setTimeout(r, 5000))]);
       }
-      const { title, author, pages, gbid, cover, releaseYear, country, authorGender, genres } = selectedBook;
+      const { title, author, pages, gbid, cover, releaseYear, country, countryStd, authorGender, genres } = selectedBook;
       const { workId, isbn13 } = await metaForSlug(gbid);
 
       const language = resolveBookLanguage(profile.defaultLanguage);
-      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, workId, isbn13, coverUrl: cover, releaseYear, country, authorGender, genres, language }, profile.username);
+      const id   = await addBook(user.uid, { title, author, totalPages: pages, gbid, workId, isbn13, coverUrl: cover, releaseYear, country, countryStd, authorGender, genres, language }, profile.username);
       const isPrivate = privateCheck.checked;
       if (isPrivate) await setBookPrivate(user.uid, id, true);
-      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, authorGender, genres, language, addedAt: { toDate: () => new Date() }, addedAtPrecision: 'day', private: isPrivate || undefined };
+      const book = { id, title, author, totalPages: pages, currentPage: 0, status: 'reading', gbid, coverUrl: cover, releaseYear, country, countryStd, authorGender, genres, language, addedAt: { toDate: () => new Date() }, addedAtPrecision: 'day', private: isPrivate || undefined };
 
       allBooks.push(book);
       document.getElementById('reading-empty')?.remove();
@@ -3701,7 +3765,7 @@
         if (selectedBook._countryFetch) {
           await Promise.race([selectedBook._countryFetch, new Promise(r => setTimeout(r, 5000))]);
         }
-        const { country, authorGender, genres } = selectedBook;
+        const { country, countryStd, authorGender, genres } = selectedBook;
         const rating = picker.getValue();
         const review = ta.value.trim() || null;
         const { date: addedAt,    precision: startedPrec  } = startedPicker.getDate();
@@ -3739,7 +3803,7 @@
           const finishedLanguage = resolveBookLanguage(profile.defaultLanguage);
           const id = await addFinishedBook(user.uid, {
             title, author, totalPages: pages, gbid, ...(await metaForSlug(gbid)),
-            coverUrl: cover, rating, review, releaseYear, country, authorGender, genres,
+            coverUrl: cover, rating, review, releaseYear, country, countryStd, authorGender, genres,
             language: finishedLanguage,
             finishedAt, finishedAtPrecision: finishedAt ? finishedPrec : undefined,
             addedAt,    addedAtPrecision:    addedAt    ? startedPrec  : undefined
@@ -3752,7 +3816,7 @@
             addedAtPrecision:    addedAt    ? startedPrec  : null,
             finishedAt:          finishedAt ? { toDate: () => finishedAt } : null,
             finishedAtPrecision: finishedAt ? finishedPrec : null,
-            gbid, rating, review, releaseYear, country, authorGender, genres, language: finishedLanguage,
+            gbid, rating, review, releaseYear, country, countryStd, authorGender, genres, language: finishedLanguage,
             reads: [{ startedAt: addedAt ? { toDate: () => addedAt } : null, startedAtPrecision: addedAt ? startedPrec : null, finishedAt: finishedAt ? { toDate: () => finishedAt } : { toDate: () => new Date() }, finishedAtPrecision: finishedAt ? finishedPrec : null, language: finishedLanguage, format: null, rating, review }],
           };
           allBooks.push(book);

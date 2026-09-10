@@ -1,5 +1,7 @@
 // Pure stats computation — no Firebase, no DOM.
 
+import { normalizeCountry } from './utils.js';
+
 export const ISO_CONTINENT = {
   ng:'AF', za:'AF', eg:'AF', ke:'AF', gh:'AF', et:'AF', ma:'AF', tz:'AF', ug:'AF', zw:'AF', rw:'AF', ao:'AF',
   jp:'AS', cn:'AS', kr:'AS', tw:'AS', in:'AS', pk:'AS', bd:'AS', lk:'AS', vn:'AS', th:'AS', id:'AS', ph:'AS',
@@ -137,6 +139,55 @@ export const COUNTRIES = [
   "Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe",
 ];
 
+// ── The two country fields ───────────────────────────────────────────────────
+//
+// A book carries `country`, free text, and `countryStd`, one of COUNTRIES above.
+//
+// Free text is what is true: "Ancient Athens", "Czechoslovakia", "Kurdistan",
+// "Scotland" — places that never existed as ISO countries, no longer do, or are
+// one part of one. countryStd is what can be counted: Greece, Czech Republic,
+// blank, United Kingdom. Stats read only countryStd, which is why an unplaceable
+// free-text value can no longer invent a country on the map.
+//
+// Built from COUNTRIES rather than written out: every canonical name reaches its
+// own ISO code, so this is exactly the reverse of COUNTRY_ISO restricted to the
+// names that are offered. A code with several names in COUNTRIES would keep the
+// first, but test/country-select.test.js already forbids that.
+const ISO_CANONICAL = {};
+for (const name of COUNTRIES) {
+  const code = COUNTRY_ISO[name.toLowerCase()];
+  if (typeof code === 'string' && !ISO_CANONICAL[code]) ISO_CANONICAL[code] = name;
+}
+
+// Both country fields for one free-text answer, or null when there was no
+// answer at all. The null matters: a caller rewriting stored countries must be
+// able to tell "this author has no country" from "nobody replied", and only the
+// second is a reason to leave what is already there alone.
+export function countryFacts(raw, remaps = null) {
+  const country = String(raw ?? '').trim();
+  if (!country) return null;
+  return { country, countryStd: standardCountry(country, remaps) || null };
+}
+
+// The standardised country for a free-text one, or '' when there is no honest
+// answer. '' is a real answer here, not a failure: "Kurdistan" is a place, and
+// refusing to guess between Iraq and Turkey is the point of having two fields.
+//
+// normalizeCountry does the interpreting — admin remaps, historic names, the
+// "Kingdom of" prefixes, and a word-boundary match that turns "Ancient Greece"
+// into Greece. What it cannot place it hands back unchanged, so the ISO lookup
+// below is the gate: a value only counts if it lands on a real country code.
+export function standardCountry(raw, remaps = null) {
+  if (!raw) return '';
+  const normalized = normalizeCountry(String(raw).trim(), remaps);
+  if (typeof normalized !== 'string') return '';
+  // Not a plain lookup: COUNTRY_ISO['constructor'] finds the one on
+  // Object.prototype and would hand back a function to index ISO_CANONICAL with.
+  const code = COUNTRY_ISO[normalized.trim().toLowerCase()];
+  if (typeof code !== 'string') return '';
+  return ISO_CANONICAL[code] || '';
+}
+
 
 // Lanczos lgamma, regularised incomplete beta, and two-tailed t p-value
 export function lgamma(z) {
@@ -226,14 +277,16 @@ export function calcStats(bks, now = new Date()) {
   const totalPages = withPages.reduce((s, b) => s + b.totalPages, 0);
   const avgPages = withPages.length ? Math.round(totalPages / withPages.length) : null;
   const uniqueAuthors   = new Set(bks.map(b => b.author).filter(Boolean)).size;
-  const uniqueCountries = new Set(bks.map(b => b.country).filter(Boolean)).size;
+  // countryStd, not country: a book whose free-text country cannot be placed on
+  // a map is not a country to count. See standardCountry.
+  const uniqueCountries = new Set(bks.map(b => b.countryStd).filter(Boolean)).size;
   const uniqueLanguages = new Set(bks.map(b => b.language).filter(Boolean)).size;
   const thisYear  = bks.filter(b => { const d = b.finishedAt?.toDate?.() ?? null; return d && d.getFullYear() === now.getFullYear(); }).length;
   const thisMonth = bks.filter(b => { const d = b.finishedAt?.toDate?.() ?? null; return d && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); }).length;
   const continentCounts = { AF: 0, AS: 0, EU: 0, NA: 0, OC: 0, SA: 0 };
   for (const b of bks) {
-    if (!b.country) continue;
-    const iso = COUNTRY_ISO[b.country.toLowerCase()];
+    if (!b.countryStd) continue;
+    const iso = COUNTRY_ISO[b.countryStd.toLowerCase()];
     const cont = iso && ISO_CONTINENT[iso];
     if (cont) continentCounts[cont]++;
   }

@@ -22,9 +22,27 @@ describe('mergeBookFacts', () => {
     expect(mergeBookFacts(null, fetched)).toEqual({
       genres: ['Science Fiction', 'Space Opera'],
       country: 'United Kingdom',
+      countryStd: null,
       authorGender: 'Male',
       isbn13: null,
     });
+  });
+
+  // The two country fields are taken independently, so a reader holding only
+  // free text still picks up a standardised country the lookup knows.
+  it('takes the standardised country from the lookup when the copy has none', () => {
+    const out = mergeBookFacts({ country: 'Ancient Athens' }, { country: 'Greece', countryStd: 'Greece' });
+    expect(out.country).toBe('Ancient Athens');
+    expect(out.countryStd).toBe('Greece');
+  });
+
+  it("prefers the copy's own standardised country", () => {
+    const out = mergeBookFacts({ country: 'Scotland', countryStd: 'United Kingdom' }, { countryStd: 'Greece' });
+    expect(out.countryStd).toBe('United Kingdom');
+  });
+
+  it('leaves the standardised country null when neither side has one', () => {
+    expect(mergeBookFacts({ country: 'Kurdistan' }, {}).countryStd).toBeNull();
   });
 
   it('prefers the reader\'s own copy over the lookup', () => {

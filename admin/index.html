@@ -96,6 +96,19 @@
     </div>
 
     <div class="settings-group">
+      <div class="settings-group-label">Redo countries (global)</div>
+      <div class="settings-list">
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.75rem;padding:.875rem 1rem">
+          <p style="font-size:.82rem;color:var(--text-muted);margin:0">Look every author up again and rewrite both country fields on every book, in every library. Author overrides win; an author Wikidata cannot answer for is left exactly as they are. One lookup per author, not per book.</p>
+          <button class="btn-update" id="redo-countries-preview-btn" type="button">Preview</button>
+          <div id="redo-countries-preview" style="display:none;font-size:.85rem;color:var(--text-muted)"></div>
+          <button class="btn-update" id="redo-countries-apply-btn" type="button" style="display:none">Apply</button>
+          <div id="redo-countries-status" style="display:none;font-size:.85rem"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
       <div class="settings-group-label">Remap country (global)</div>
       <div class="settings-list">
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:.75rem;padding:.875rem 1rem">
@@ -239,12 +252,13 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { ROOT, db, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, backfillWorkIds, backfillWorkIdsForAllUsers, setBookRemap, deleteBookRemap, getBookRemaps, getBookTitleOverrides, setBookTitleOverride, deleteBookTitleOverride, retitleForSlug, getCountryRemaps, setCountryRemap, deleteCountryRemap, mergeDuplicatesForSlug, remapActivityForSlug } from '../js/firebase.js';
+    import { ROOT, db, getProfileByUsername, getBooks, getBookCount, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, mergeListsByName, repairActivityDocs, repairStartedActivityForFinishedBooks, getAuthorCountryOverrides, setAuthorCountryOverride, deleteAuthorCountryOverride, backfillWorkIds, backfillWorkIdsForAllUsers, setBookRemap, deleteBookRemap, getBookRemaps, getBookTitleOverrides, setBookTitleOverride, deleteBookTitleOverride, retitleForSlug, collectAuthorBooks, redoCountriesForAllUsers, getCountryRemaps, setCountryRemap, deleteCountryRemap, mergeDuplicatesForSlug, remapActivityForSlug } from '../js/firebase.js';
     import { deleteField, collection, doc, getDocs, query as fsQuery, where, updateDoc, Timestamp, limit, getCountFromServer, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, resolveWorkIds, workIdForSlug } from '../js/hardcover.js';
+    import { wikidataCountry } from '../js/enrich.js';
     import { computeDupeGroups, planWorkMerge, primaryAuthor, pickSeries, remapListBooks } from '../js/book-utils.js';
-    import { COUNTRIES } from '../js/stats-utils.js';
-    import { normalizeCountry, esc } from '../js/utils.js';
+    import { COUNTRIES, standardCountry, countryFacts } from '../js/stats-utils.js';
+    import { esc } from '../js/utils.js';
 
     let currentUser = null;
     let targetUid   = null;
@@ -530,10 +544,13 @@
       status.textContent = 'Loading books…';
       try {
         const books = await getBooks(targetUid);
-        const withCountry = books.filter(b => b.country);
+        // Both fields: clearing one and leaving the other would put the book
+        // in a state nothing else can produce, and Repair fills the
+        // standardised one from the free text it would no longer have.
+        const withCountry = books.filter(b => b.country || b.countryStd);
         status.textContent = `Clearing ${withCountry.length} countr${withCountry.length === 1 ? 'y' : 'ies'}…`;
         for (const book of withCountry) {
-          await updateBookMeta(targetUid, book.id, { country: null });
+          await updateBookMeta(targetUid, book.id, { country: null, countryStd: null });
         }
         status.textContent = `Cleared country from ${withCountry.length} book${withCountry.length === 1 ? '' : 's'}. Run Repair to re-fetch.`;
         status.style.color = 'var(--accent)';
@@ -597,9 +614,13 @@
         let incomplete        = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author || !b.genres?.length || b.seriesId === undefined));
         let needsGenreNumeric = books.filter(b => b.gbid && /^\d+$/.test(b.gbid) && !b.genres?.length);
         let needsCountry      = books.filter(b => !b.country && b.author);
+        // A free-text country with no standardised one: fixable without a
+        // lookup, since the answer is already written down.
+        const cRemapsEarly = await getCountryRemaps();
+        let needsStd          = books.filter(b => b.country && !b.countryStd && standardCountry(b.country, cRemapsEarly));
         let needsGender       = books.filter(b => !b.authorGender && b.author);
 
-        if (!dupeGroups.length && !unmatched.length && !incomplete.length && !needsGenreNumeric.length && !needsCountry.length && !needsGender.length) {
+        if (!dupeGroups.length && !unmatched.length && !incomplete.length && !needsGenreNumeric.length && !needsCountry.length && !needsGender.length && !needsStd.length) {
           repairStatus.textContent = 'Nothing to repair — all books are matched and complete.';
           repairStatus.style.color = 'var(--accent)';
           repairBtn.disabled = false;
@@ -662,6 +683,7 @@
               if (!primary.author      && s.author)      metaUpdates.author      = s.author;
               if (!primary.releaseYear && s.releaseYear) metaUpdates.releaseYear = s.releaseYear;
               if (!primary.country     && s.country)     metaUpdates.country     = s.country;
+              if (!primary.countryStd  && s.countryStd)  metaUpdates.countryStd  = s.countryStd;
               if (!primary.gbid        && s.gbid)        metaUpdates.gbid        = s.gbid;
             }
 
@@ -681,6 +703,7 @@
           incomplete        = books.filter(b => b.gbid && !/^\d+$/.test(b.gbid) && (b.releaseYear == null || !b.totalPages || !b.author || !b.genres?.length || b.seriesId === undefined));
           needsGenreNumeric = books.filter(b => b.gbid && /^\d+$/.test(b.gbid) && !b.genres?.length);
           needsCountry      = books.filter(b => !b.country && b.author);
+          needsStd          = books.filter(b => b.country && !b.countryStd && standardCountry(b.country, cRemapsEarly));
           needsGender       = books.filter(b => !b.authorGender && b.author);
         }
 
@@ -757,13 +780,15 @@
           }
         }
 
-        // ── Phase 2.5: re-normalize stored country values ────────────────────
-        const cRemaps = await getCountryRemaps();
-        const toRenormalize = books.filter(b => b.country && normalizeCountry(b.country, cRemaps) !== b.country);
+        // ── Phase 2.5: fill in the standardised country ──────────────────────
+        // Never rewrites the free text — that field is the record of what was
+        // actually said, and flattening it is what this replaced.
+        const cRemaps = cRemapsEarly;
+        const toRenormalize = needsStd;
         if (toRenormalize.length) {
           repairStatus.textContent = `Normalizing ${toRenormalize.length} countr${toRenormalize.length === 1 ? 'y' : 'ies'}…`;
           for (const book of toRenormalize) {
-            await updateBookMeta(targetUid, book.id, { country: normalizeCountry(book.country, cRemaps) });
+            await updateBookMeta(targetUid, book.id, { countryStd: standardCountry(book.country, cRemaps) });
             fixed++;
           }
         }
@@ -809,7 +834,8 @@
                   if (lr.ok) {
                     const ld = await lr.json();
                     const country = ld.entities?.[countryQid]?.labels?.en?.value;
-                    if (country) countryMap.set(authorName, normalizeCountry(country, await getCountryRemaps()));
+                    // Wikidata's own words; the standardised one is derived below.
+                    if (country) countryMap.set(authorName, country);
                   }
                 }
               }
@@ -823,7 +849,12 @@
           }
           for (const book of needsCountry) {
             const country = countryMap.get(book.author);
-            if (country) { await updateBookMeta(targetUid, book.id, { country }); fixed++; }
+            if (!country) continue;
+            const patch = { country };
+            const std = standardCountry(country, cRemaps);
+            if (std) patch.countryStd = std;
+            await updateBookMeta(targetUid, book.id, patch);
+            fixed++;
           }
           for (const book of needsGender) {
             const gender = genderMap.get(book.author);
@@ -834,7 +865,7 @@
         repairStatus.textContent = 'Merging duplicate lists…';
         await mergeListsByName(targetUid);
 
-        const total = mergedGroupsCount + unmatched.length + incomplete.length + needsGenreNumeric.length + needsCountry.length + needsGender.length;
+        const total = mergedGroupsCount + unmatched.length + incomplete.length + needsGenreNumeric.length + needsCountry.length + needsGender.length + needsStd.length;
         repairStatus.textContent = `Done — updated ${fixed} of ${total} book${total === 1 ? '' : 's'}.`;
         repairStatus.style.color = 'var(--accent)';
       } catch (err) {
@@ -1321,6 +1352,106 @@
     }
 
     renderTitleOverrides().catch(() => {});
+
+    // -- Redo countries (global) -----------------------------------------------
+    // A one-shot repair of data the old code damaged on the way in: every
+    // country was flattened by normalizeCountry before it was stored, so
+    // "Kingdom of Greece" was written down as "Greece" and the real answer was
+    // lost. Now that the free-text field keeps what Wikidata actually says, the
+    // only way to recover it is to ask again.
+    const redoPreviewBtn = document.getElementById('redo-countries-preview-btn');
+    const redoPreviewEl  = document.getElementById('redo-countries-preview');
+    const redoApplyBtn   = document.getElementById('redo-countries-apply-btn');
+    const redoStatus     = document.getElementById('redo-countries-status');
+
+    let redoPlan = null;
+
+    function redoSay(el, msg, colour) {
+      el.textContent = msg;
+      el.style.color = colour || 'var(--text-muted)';
+      el.style.display = '';
+    }
+
+    redoPreviewBtn.addEventListener('click', async () => {
+      redoPreviewEl.style.display = 'none';
+      redoApplyBtn.style.display  = 'none';
+      redoStatus.style.display    = 'none';
+      redoPlan = null;
+      redoPreviewBtn.disabled = true;
+      try {
+        const { byAuthor, books, users } = await collectAuthorBooks(
+          (i, n) => redoSay(redoPreviewEl, `Scanning library ${i + 1}/${n}\u2026`)
+        );
+        const authors = byAuthor.size;
+        redoPlan = { authors, books, users };
+        redoSay(redoPreviewEl,
+          `${books.toLocaleString()} book${books === 1 ? '' : 's'} across ${users} librar${users === 1 ? 'y' : 'ies'}, `
+          + `naming ${authors.toLocaleString()} distinct author${authors === 1 ? '' : 's'}. `
+          + `That is ${authors.toLocaleString()} lookup${authors === 1 ? '' : 's'} \u2014 roughly ${Math.max(1, Math.round(authors * 1.5 / 60))} minute(s).`);
+        redoApplyBtn.textContent = `Redo ${books.toLocaleString()} book${books === 1 ? '' : 's'}`;
+        redoApplyBtn.style.display = authors ? '' : 'none';
+      } catch (err) {
+        console.error(err);
+        redoSay(redoPreviewEl, 'Preview failed. Check the console.', 'var(--danger,#d44)');
+      } finally {
+        redoPreviewBtn.disabled = false;
+      }
+    });
+
+    redoApplyBtn.addEventListener('click', async () => {
+      if (!redoPlan) return;
+      const { authors, books, users } = redoPlan;
+      if (!confirm(
+        `Redo the country on ${books.toLocaleString()} book${books === 1 ? '' : 's'} across ${users} librar${users === 1 ? 'y' : 'ies'}?\n\n`
+        + `Both country fields are overwritten from ${authors.toLocaleString()} Wikidata lookups. `
+        + `Author overrides win, and an author Wikidata cannot answer for keeps whatever they have.\n\n`
+        + `This rewrites other people's libraries and cannot be undone. Leave this tab open until it finishes.`
+      )) return;
+
+      redoApplyBtn.disabled    = true;
+      redoPreviewBtn.disabled  = true;
+      redoSay(redoStatus, 'Starting\u2026');
+
+      // Read once for the whole pass rather than per author: both tables are
+      // small, and re-reading them a few hundred times would dwarf the writes.
+      const authorOverrides = await getAuthorCountryOverrides();
+      const cRemaps         = await getCountryRemaps();
+
+      // An admin override is a correction of Wikidata, so it wins outright and
+      // saves the lookup entirely. It is picked from COUNTRIES, so it already
+      // stands as its own free text. Not a plain truthiness check: the override
+      // table is a bare object, and overrides['constructor'] is a function.
+      const lookup = async name => {
+        const override = authorOverrides[name.toLowerCase().trim()];
+        const raw = typeof override === 'string' && override
+          ? override
+          : await wikidataCountry(name);
+        return countryFacts(raw, cRemaps);
+      };
+
+      try {
+        const counts = await redoCountriesForAllUsers(lookup, {
+          onProgress: p => redoSay(redoStatus, p.phase === 'scan'
+            ? `Scanning library ${p.done + 1}/${p.total}\u2026`
+            : `Looking up author ${p.done + 1}/${p.total}\u2026 ${p.name}`),
+        });
+        redoSay(redoStatus,
+          `Done \u2014 rewrote ${counts.written.toLocaleString()} book${counts.written === 1 ? '' : 's'} `
+          + `from ${counts.resolved.toLocaleString()} author${counts.resolved === 1 ? '' : 's'}`
+          + (counts.unresolved
+              ? `; ${counts.unresolved.toLocaleString()} author${counts.unresolved === 1 ? '' : 's'} had no answer and were left alone.`
+              : '.'),
+          'var(--accent)');
+        redoApplyBtn.style.display = 'none';
+        redoPlan = null;
+      } catch (err) {
+        console.error(err);
+        redoSay(redoStatus, 'Pass failed. Check the console \u2014 books already rewritten keep their new country.', 'var(--danger,#d44)');
+      } finally {
+        redoApplyBtn.disabled   = false;
+        redoPreviewBtn.disabled = false;
+      }
+    });
 
     // Both country fields are pickers, not free text: a typo used to become a
     // country of its own, counted separately and absent from the map.

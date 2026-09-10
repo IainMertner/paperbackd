@@ -651,7 +651,7 @@
         if (type === 'books')     return bs.length;
         if (type === 'pages')     return bs.reduce((s, b) => s + (b.totalPages || 0), 0);
         if (type === 'languages') return new Set(bs.map(b => b.language).filter(Boolean)).size;
-        if (type === 'countries') return new Set(bs.map(b => b.country).filter(Boolean)).size;
+        if (type === 'countries') return new Set(bs.map(b => b.countryStd).filter(Boolean)).size;
         if (type === 'female_pct' || type === 'nb_pct') {
           const withGender = bs.filter(b => b.authorGender);
           if (!withGender.length) return 0;
@@ -660,7 +660,7 @@
         }
         const contKey = CONTINENT_TYPE[type];
         if (contKey) return bs.filter(b => {
-          const iso = b.country && COUNTRY_ISO[b.country.toLowerCase()];
+          const iso = b.countryStd && COUNTRY_ISO[b.countryStd.toLowerCase()];
           return iso && ISO_CONTINENT[iso] === contKey;
         }).length;
         return 0;

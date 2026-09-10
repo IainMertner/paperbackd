@@ -217,7 +217,7 @@ describe('calcStats — empty / minimal', () => {
   });
 
   it('single unrated book', () => {
-    const s = calcStats([{ author: 'Author A', country: 'France', language: 'French' }], NOW);
+    const s = calcStats([{ author: 'Author A', country: 'France', countryStd: 'France', language: 'French' }], NOW);
     expect(s.total).toBe(1);
     expect(s.avgRating).toBeNull();
     expect(s.uniqueAuthors).toBe(1);
@@ -306,11 +306,22 @@ describe('calcStats — unique counts', () => {
     expect(calcStats(books, NOW).uniqueAuthors).toBe(1);
   });
 
+  // countryStd, not country: free text can say anything, and a place that is
+  // not a country must not become one just by being written down.
   it('counts unique countries', () => {
     const books = [
-      { country: 'France' }, { country: 'Germany' }, { country: 'France' },
+      { countryStd: 'France' }, { countryStd: 'Germany' }, { countryStd: 'France' },
     ];
     expect(calcStats(books, NOW).uniqueCountries).toBe(2);
+  });
+
+  it('ignores free text with no standardised country', () => {
+    const books = [
+      { country: 'Ancient Athens' },
+      { country: 'Kurdistan' },
+      { country: 'Ancient Athens', countryStd: 'Greece' },
+    ];
+    expect(calcStats(books, NOW).uniqueCountries).toBe(1);
   });
 
   it('counts unique languages', () => {
@@ -352,12 +363,12 @@ describe('calcStats — this year / this month', () => {
 describe('calcStats — continent counts', () => {
   it('correctly buckets countries into continents', () => {
     const books = [
-      { country: 'France' },          // EU
-      { country: 'United States' },   // NA
-      { country: 'Brazil' },          // SA
-      { country: 'Japan' },           // AS
-      { country: 'Australia' },       // OC
-      { country: 'Nigeria' },         // AF
+      { countryStd: 'France' },          // EU
+      { countryStd: 'United States' },   // NA
+      { countryStd: 'Brazil' },          // SA
+      { countryStd: 'Japan' },           // AS
+      { countryStd: 'Australia' },       // OC
+      { countryStd: 'Nigeria' },         // AF
     ];
     const { continentCounts } = calcStats(books, NOW);
     expect(continentCounts.EU).toBe(1);
@@ -369,13 +380,19 @@ describe('calcStats — continent counts', () => {
   });
 
   it('ignores unknown countries', () => {
-    const books = [{ country: 'Narnia' }];
+    const books = [{ countryStd: 'Narnia' }];
+    const { continentCounts } = calcStats(books, NOW);
+    expect(Object.values(continentCounts).every(n => n === 0)).toBe(true);
+  });
+
+  it('ignores free text with no standardised country', () => {
+    const books = [{ country: 'France' }, { country: 'Ancient Athens' }];
     const { continentCounts } = calcStats(books, NOW);
     expect(Object.values(continentCounts).every(n => n === 0)).toBe(true);
   });
 
   it('is case-insensitive for country lookup', () => {
-    const books = [{ country: 'FRANCE' }, { country: 'france' }];
+    const books = [{ countryStd: 'FRANCE' }, { countryStd: 'france' }];
     const { continentCounts } = calcStats(books, NOW);
     expect(continentCounts.EU).toBe(2);
   });

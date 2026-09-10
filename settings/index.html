@@ -245,7 +245,7 @@
     import { logOut, ROOT, importBooks, getBooks, getCountryRemaps, updateBookMeta, updateBookReads, deleteBookDoc, exportLibraryData, importLibraryData, mergeListsByName, changeUsername, clearLibrary, addEmailToAccount, deleteAccountData, getSyncToken, createSyncToken, revokeSyncToken, setDefaultLanguage, setDiscordJoined, resolveBookLanguage } from '../js/firebase.js';
     import { hcQuery, enrichBatch, enrichFromHardcover, applyHardcoverBook, cleanTitle, cleanAuthor, searchHardcover } from '../js/hardcover.js';
     import { computeDupeGroups, planWorkMerge, normaliseIsbn13, primaryAuthor, pickSeries, BOOK_LANGUAGES } from '../js/book-utils.js';
-    import { normalizeCountry } from '../js/utils.js';
+    import { standardCountry } from '../js/stats-utils.js';
     import { updatePassword, reauthenticateWithCredential, EmailAuthProvider, deleteUser } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
     let currentUser = null;
@@ -766,7 +766,13 @@
         // Phase 3: books missing country (computed early so the guard below sees it)
         let needsAuthorFacts = books.filter(b => b.author && (!b.country || !b.authorGender));
 
-        if (!dupeGroups.length && !unmatched.length && !incomplete.length && !needsAuthorFacts.length) {
+        // Phase 2.5: books with a free-text country and no standardised one.
+        // Computed here too, so a library whose only fault is the missing second
+        // field does not report "nothing to repair".
+        const cRemaps = await getCountryRemaps();
+        const needsStd = books.filter(b => b.country && !b.countryStd && standardCountry(b.country, cRemaps));
+
+        if (!dupeGroups.length && !unmatched.length && !incomplete.length && !needsAuthorFacts.length && !needsStd.length) {
           repairStatus.textContent = 'Nothing to repair - all books are matched and complete.';
           repairStatus.style.color = 'var(--accent)';
           repairBtn.disabled = false;
@@ -839,6 +845,7 @@
               if (!primary.author      && s.author)      metaUpdates.author      = s.author;
               if (!primary.releaseYear && s.releaseYear) metaUpdates.releaseYear = s.releaseYear;
               if (!primary.country     && s.country)     metaUpdates.country     = s.country;
+              if (!primary.countryStd  && s.countryStd)  metaUpdates.countryStd  = s.countryStd;
               if (!primary.gbid        && s.gbid)        metaUpdates.gbid        = s.gbid;
             }
 
@@ -924,13 +931,14 @@
           }
         }
 
-        // ── Phase 2.5: re-normalize stored country values ────────────────────
-        const cRemaps = await getCountryRemaps();
-        const toRenormalize = books.filter(b => b.country && normalizeCountry(b.country, cRemaps) !== b.country);
-        if (toRenormalize.length) {
-          repairStatus.textContent = `Normalizing ${toRenormalize.length} countr${toRenormalize.length === 1 ? 'y' : 'ies'}…`;
-          for (const book of toRenormalize) {
-            await updateBookMeta(currentUser.uid, book.id, { country: normalizeCountry(book.country, cRemaps) });
+        // ── Phase 2.5: fill in the standardised country ──────────────────────
+        // The free text is never touched. It used to be rewritten here — every
+        // "Kingdom of Greece" flattened to "Greece" on the way past — which is
+        // exactly the information the second field now exists to keep.
+        if (needsStd.length) {
+          repairStatus.textContent = `Standardising ${needsStd.length} countr${needsStd.length === 1 ? 'y' : 'ies'}…`;
+          for (const book of needsStd) {
+            await updateBookMeta(currentUser.uid, book.id, { countryStd: standardCountry(book.country, cRemaps) });
             fixed++;
           }
         }
@@ -978,7 +986,11 @@
               if (!lr.ok) { if (Object.keys(facts).length) authorMap.set(authorName, facts); continue; }
               const ld = await lr.json();
               const country = ld.entities?.[countryQid]?.labels?.en?.value;
-              if (country) facts.country = normalizeCountry(country, await getCountryRemaps());
+              // Wikidata's own words in the free-text field, placed separately.
+              if (country) {
+                facts.country    = country;
+                facts.countryStd = standardCountry(country, cRemaps);
+              }
               if (Object.keys(facts).length) authorMap.set(authorName, facts);
             } catch (e) { /* skip author */ }
           }
@@ -990,6 +1002,7 @@
             // by a lookup, since it may have been corrected by hand.
             const patch = {};
             if (!book.country && facts.country) patch.country = facts.country;
+            if (!book.countryStd && facts.countryStd) patch.countryStd = facts.countryStd;
             if (!book.authorGender && facts.authorGender) patch.authorGender = facts.authorGender;
             if (!Object.keys(patch).length) continue;
             await updateBookMeta(currentUser.uid, book.id, patch);
@@ -1000,7 +1013,7 @@
         repairStatus.textContent = 'Merging duplicate lists…';
         await mergeListsByName(currentUser.uid);
 
-        const total = mergedGroupsCount + unmatched.length + incomplete.length + needsAuthorFacts.length;
+        const total = mergedGroupsCount + unmatched.length + incomplete.length + needsAuthorFacts.length + needsStd.length;
         repairStatus.textContent = `Done - updated ${fixed} of ${total} book${total === 1 ? '' : 's'}.`;
         repairStatus.style.color = 'var(--accent)';
       } catch (err) {

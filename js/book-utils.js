@@ -581,6 +581,9 @@ export function mergeBookFacts(own, fetched = {}, isbnFallback = null) {
                 : meta.genres?.length ? meta.genres
                 : null,
     country:      own?.country      || meta.country      || null,
+    // Taken independently of the free text: a book can hold "Ancient Athens"
+    // with nothing standardised, and the fetched facts may know it is Greece.
+    countryStd:   own?.countryStd   || meta.countryStd   || null,
     authorGender: own?.authorGender || meta.authorGender || null,
     // Never fetched — the page works this one out from the editions it already
     // asked Hardcover for.

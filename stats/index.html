@@ -1132,7 +1132,7 @@
             .map(({ label, value }) => [label, value])[0];
 
           const countryCounts = {};
-          for (const b of publicBooks) if (b.country) countryCounts[b.country] = (countryCounts[b.country] || 0) + 1;
+          for (const b of publicBooks) if (b.countryStd) countryCounts[b.countryStd] = (countryCounts[b.countryStd] || 0) + 1;
           const topCountry = Object.entries(countryCounts).sort((a, b) => b[1] - a[1])[0];
 
           const pubWithPages = publicBooks.filter(b => b.totalPages > 0);
@@ -1191,7 +1191,7 @@
       if (type === 'books')     return finished.length;
       if (type === 'pages')     return finished.reduce((s, b) => s + (b.totalPages || 0), 0);
       if (type === 'languages') return new Set(finished.map(b => b.language).filter(Boolean)).size;
-      if (type === 'countries') return new Set(finished.map(b => b.country).filter(Boolean)).size;
+      if (type === 'countries') return new Set(finished.map(b => b.countryStd).filter(Boolean)).size;
       if (type === 'female_pct' || type === 'nb_pct') {
         // Per book, not per unique author — matches the summary and the chart.
         const withGender = finished.filter(b => b.authorGender);
@@ -1202,7 +1202,7 @@
       }
       const contKey = CONTINENT_TYPE[type];
       if (contKey) return finished.filter(b => {
-        const iso = b.country && COUNTRY_ISO[b.country.toLowerCase()];
+        const iso = b.countryStd && COUNTRY_ISO[b.countryStd.toLowerCase()];
         return iso && ISO_CONTINENT[iso] === contKey;
       }).length;
       return 0;
@@ -1637,7 +1637,7 @@
 
       const counts = {};
       for (const b of books) {
-        if (b.country) counts[b.country] = (counts[b.country] || 0) + 1;
+        if (b.countryStd) counts[b.countryStd] = (counts[b.countryStd] || 0) + 1;
       }
       const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
       if (!entries.length) return false;
@@ -1873,9 +1873,9 @@
       // Reverse map: ISO code → original country string from user's books (for library link)
       const isoToName = {};
       for (const b of books) {
-        if (b.country) {
-          const code = COUNTRY_ISO[b.country.toLowerCase()];
-          if (code && !isoToName[code]) isoToName[code] = b.country;
+        if (b.countryStd) {
+          const code = COUNTRY_ISO[b.countryStd.toLowerCase()];
+          if (code && !isoToName[code]) isoToName[code] = b.countryStd;
         }
       }
 
@@ -2480,8 +2480,8 @@
       // Build counts map (lowercase country name → count)
       const countryCounts = {};
       for (const b of books) {
-        if (b.country) {
-          const code = COUNTRY_ISO[b.country.toLowerCase()];
+        if (b.countryStd) {
+          const code = COUNTRY_ISO[b.countryStd.toLowerCase()];
           if (code) countryCounts[code] = (countryCounts[code] || 0) + 1;
         }
       }

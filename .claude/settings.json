@@ -13,7 +13,8 @@
       "Bash(awk 'NR>=1062 && NR<=1080 {printf \"%d|%s\\\\n\", NR, $0}' stats/index.html)",
       "Bash(awk 'NR>=322 && NR<=342 {printf \"%d|%s\\\\n\", NR, $0}' stats/index.html)",
       "Bash(awk 'NR>=378 && NR<=385 {printf \"%d|%s\\\\n\", NR, $0}' stats/index.html)",
-      "Bash(awk 'NR>=945 && NR<=960 {printf \"%d|%s\\\\n\", NR, $0}' stats/index.html)"
+      "Bash(awk 'NR>=945 && NR<=960 {printf \"%d|%s\\\\n\", NR, $0}' stats/index.html)",
+      "Bash(node \"C:/Program Files/nodejs/node_modules/npm/bin/npm-cli.js\" test)"
     ]
   }
 }
