@@ -4,8 +4,10 @@ function setActiveNav() {
 
   let page = null;
   if (/\/home\/?$/.test(path))                     page = 'home';
-  else if (path === '/' || /\/feed\/?$/.test(path)) page = 'feed';
   else if (/\/search\/?$/.test(path))             page = 'search';
+  // Matches /club/ as well as /clubs/, so one club's page keeps Clubs lit,
+  // the same way a single list keeps Lists lit.
+  else if (/\/clubs?\/?$/.test(path))              page = 'clubs';
   else if (/\/stats\/?$/.test(path)   && !hasU)   page = 'stats';
   else if (/\/settings\/?$/.test(path))           page = 'settings';
   else if (/\/library\/?$/.test(path) && !hasU)   page = 'library';
@@ -16,7 +18,11 @@ function setActiveNav() {
   if (page) {
     localStorage.setItem('nav-active', page);
   } else {
-    page = localStorage.getItem('nav-active') || 'feed';
+    // The feed, a book, an author, an announcement: pages that are not a nav
+    // section of their own. They leave whichever section you came from lit
+    // rather than going dark. With nothing stored yet, nothing is lit, which
+    // is honest - guessing a section would light one you have never opened.
+    page = localStorage.getItem('nav-active');
   }
 
   document.querySelectorAll('[data-nav]').forEach(el => {

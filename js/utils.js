@@ -119,6 +119,80 @@ export function aggregateFollows(events, myUid, getDayKey = () => '') {
   return out;
 }
 
+// The colours a profile or a club can be themed with. Kept here rather than on
+// the profile page because clubs pick from the same set, and a second copy would
+// be a second thing to remember to change.
+export const THEMES = [
+  { label: 'Grey',       color: '#6C6460' },
+  { label: 'Olive',      color: '#6B7B3A' },
+  { label: 'Yellow',     color: '#D4AA55' },
+  { label: 'Terracotta', color: '#B85C3A' },
+  { label: 'Teal',       color: '#3A9E8C' },
+  { label: 'Burgundy',   color: '#8B2252' },
+  { label: 'Slate',      color: '#2E62A0' },
+  { label: 'Rose',       color: '#C95C80' },
+];
+
+// One of THEMES, or null when the stored value is not a colour this app offers.
+// Guards against a hand-edited document putting arbitrary CSS into a style
+// attribute further down the page.
+export function themeColour(raw) {
+  const value = String(raw ?? '').trim();
+  return THEMES.some(t => t.color === value) ? value : null;
+}
+
+// A hex colour as hue, saturation and lightness, or null if it is not one.
+//
+// Wanted because a club's wheel is drawn in shades of its own colour: varying
+// lightness and saturation around a fixed hue is what makes a set of segments
+// read as one family rather than a random palette, and that is an HSL move.
+export function hexToHsl(hex) {
+  const match = /^#?([0-9a-f]{6})$/i.exec(String(hex ?? '').trim());
+  if (!match) return null;
+  const n = parseInt(match[1], 16);
+  const r = ((n >> 16) & 255) / 255;
+  const g = ((n >> 8) & 255) / 255;
+  const b = (n & 255) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+
+  if (d === 0) return { h: 0, s: 0, l: l * 100 };
+
+  const s = d / (1 - Math.abs(2 * l - 1));
+  let h;
+  if (max === r)      h = ((g - b) / d) % 6;
+  else if (max === g) h = (b - r) / d + 2;
+  else                h = (r - g) / d + 4;
+  h *= 60;
+  if (h < 0) h += 360;
+
+  return { h, s: s * 100, l: l * 100 };
+}
+
+// Which of two inks to put on a themed background.
+//
+// The palette runs from a near-black burgundy to a light yellow, so a single
+// hardcoded text colour is wrong at one end or the other: white on the yellow
+// comes out around 2:1, which is unreadable.
+//
+// The threshold is 0.35 rather than the midpoint because white text holds up
+// further down the luminance scale than dark text holds up coming the other way.
+export function readableInk(hex, light = '#FFFFFF', dark = '#33302B') {
+  const match = /^#?([0-9a-f]{6})$/i.exec(String(hex ?? '').trim());
+  if (!match) return light;
+  const n = parseInt(match[1], 16);
+  // sRGB gamma expansion, per WCAG's relative luminance.
+  const channels = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  const luminance = 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  return luminance > 0.35 ? dark : light;
+}
+
 export function normalizeCountry(raw, remaps = null) {
   if (!raw) return raw;
 

@@ -67,6 +67,80 @@ service cloud.firestore {
       allow delete: if request.auth != null && (request.auth.uid == resource.data.uid || request.auth.uid == resource.data.targetUid || isAdmin());
     }
 
+    // Book clubs — private. Only a member can read one at all, which is why
+    // joining goes through the joinClubByCode callable: finding a club by its
+    // code means reading clubs you are not yet in, and a client that could run
+    // that query could enumerate every club on the site.
+    match /clubs/{clubId} {
+      function club()     { return resource.data; }
+      function isMember() { return request.auth != null && request.auth.uid in club().members; }
+      function isAdmin_()  { return isMember() && club().members[request.auth.uid].role == 'admin'; }
+      function isOwner()  { return request.auth != null && request.auth.uid == club().ownerUid; }
+
+      allow read: if isMember() || isAdmin();
+
+      // Created with yourself as the sole member, and as an admin: a club that
+      // arrived with other people already in it would be a way to add someone to
+      // a group without asking them.
+      allow create: if request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.members.keys().hasOnly([request.auth.uid])
+        && request.resource.data.members[request.auth.uid].role == 'admin'
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 80
+        && !('iconUrl' in request.resource.data);
+
+      // Admins change the club. A member may also edit their own entry in the
+      // members map, which is what lets someone leave and what keeps their name
+      // and avatar current without an admin doing it for them.
+      // An icon is a base64 data URL. Capped so a club document cannot be grown
+      // without limit, which would slow every member's page load, not just the
+      // admin who set it.
+      function iconWithinLimit() {
+        return !('iconUrl' in request.resource.data)
+          || (request.resource.data.iconUrl is string && request.resource.data.iconUrl.size() <= 120000);
+      }
+
+      allow update: if (isAdmin_() && iconWithinLimit())
+        || isAdmin()
+        || (isMember()
+            && request.resource.data.diff(club()).affectedKeys().hasOnly(['members'])
+            && request.resource.data.members.diff(club().members).affectedKeys().hasOnly([request.auth.uid]));
+
+      // Only the founder can dissolve a club, and never merely by leaving it.
+      allow delete: if isOwner() || isAdmin();
+
+      match /meetings/{meetingId} {
+        function parent() { return get(/databases/$(database)/documents/clubs/$(clubId)).data; }
+        function memberOfParent() { return request.auth != null && request.auth.uid in parent().members; }
+        function adminOfParent()  { return memberOfParent() && parent().members[request.auth.uid].role == 'admin'; }
+
+        allow read:  if memberOfParent() || isAdmin();
+        // The history is the club's shared record, so only an admin writes it.
+        allow write: if adminOfParent() || isAdmin();
+      }
+
+      // One recommendation per member, keyed by uid. Writing your own is the
+      // only write a member gets, which is what makes "one each" structural
+      // rather than something the client has to be trusted to honour.
+      match /recommendations/{recUid} {
+        function parent() { return get(/databases/$(database)/documents/clubs/$(clubId)).data; }
+        function memberOfParent() { return request.auth != null && request.auth.uid in parent().members; }
+        function adminOfParent()  { return memberOfParent() && parent().members[request.auth.uid].role == 'admin'; }
+
+        allow read: if memberOfParent() || isAdmin();
+        allow create, update: if memberOfParent()
+          && request.auth.uid == recUid
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 500;
+        // An admin deletes too: taking the winner off the wheel after a spin is
+        // a write to somebody else's recommendation.
+        allow delete: if (memberOfParent() && request.auth.uid == recUid) || adminOfParent() || isAdmin();
+      }
+    }
+
     // Book issue reports — a reader saying something about a book is wrong.
     //
     // Write-only for readers: anyone signed in can file one under their own uid,

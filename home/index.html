@@ -121,6 +121,32 @@
     }
     .home-feed-item:last-child { border-bottom: none; }
 
+    /* A club in the sideways strip on home. No card chrome: the vertical rule
+       between entries does the separating, the same way it does between people
+       in the currently-reading strip above. */
+    .home-club-card {
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+      flex: 0 0 auto;
+      max-width: 15rem;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    /* The clubs strip needs its own scroller rather than the reading one: an
+       icon ring reaches 29% beyond its circle, and a strip that clips at its
+       edges cuts the first club's spikes off on the left and every club's off
+       top and bottom. The padding is that overhang, with a little to spare. */
+    .home-clubs-scroll {
+      display: flex;
+      align-items: center;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding: .55rem .6rem;
+    }
+    .home-clubs-scroll::-webkit-scrollbar { display: none; }
+
     /* Currently reading — single horizontal scroll strip */
     .home-reading-scroll {
       display: flex;
@@ -250,13 +276,13 @@
     <div class="header-inner">
       <a class="logo" href="/home/" data-nav="home">paperbackd<span class="title-dot">.</span></a>
       <nav class="desktop-nav">
-        <a href="../feed/" data-nav="feed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>feed</a>
-        <a href="../search/"   data-nav="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>search</a>
-        <a href="../network/"  data-nav="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><line x1="8.7" y1="10.7" x2="15.3" y2="7.3"/><line x1="8.7" y1="13.3" x2="15.3" y2="16.7"/></svg>network</a>
-        <a href="../library/"  data-nav="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>library</a>
-        <a href="../lists/"    data-nav="lists"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg>lists</a>
-        <a href="../stats/"    data-nav="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="13" width="4" height="7" rx="0.5"/><rect x="10" y="3" width="4" height="17" rx="0.5"/><rect x="17" y="9" width="4" height="11" rx="0.5"/></svg>stats</a>
-        <a href="../profile/"  data-nav="profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>profile</a>
+        <a href="../search/" data-nav="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>search</a>
+        <a href="../clubs/" data-nav="clubs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>clubs</a>
+        <a href="../network/" data-nav="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><line x1="8.7" y1="10.7" x2="15.3" y2="7.3"/><line x1="8.7" y1="13.3" x2="15.3" y2="16.7"/></svg>network</a>
+        <a href="../library/" data-nav="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>library</a>
+        <a href="../lists/" data-nav="lists"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg>lists</a>
+        <a href="../stats/" data-nav="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="13" width="4" height="7" rx="0.5"/><rect x="10" y="3" width="4" height="17" rx="0.5"/><rect x="17" y="9" width="4" height="11" rx="0.5"/></svg>stats</a>
+        <a href="../profile/" data-nav="profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>profile</a>
         <a href="../settings/" data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>settings</a>
       </nav>
     </div>
@@ -289,6 +315,20 @@
           <div class="home-card-fade-top"    id="feed-fade-top"></div>
           <div id="feed-preview" class="home-feed-scroll"></div>
           <div class="home-card-fade-bottom" id="feed-fade-bottom"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="home-section">
+      <div class="card">
+        <div class="home-section-head">
+          <a href="../clubs/" class="home-section-title">clubs</a>
+          <a href="../clubs/" class="home-see-all">see all &rarr;</a>
+        </div>
+        <div class="home-reading-wrap">
+          <div id="clubs-preview"></div>
+          <div class="home-card-fade-left"  id="clubs-fade-left"></div>
+          <div class="home-card-fade-right" id="clubs-fade-right"></div>
         </div>
       </div>
     </div>
@@ -351,7 +391,11 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    import { getFollowing, getReadingBooks, getFeed, getAnnouncements, toggleReaction, toggleAnnouncementReaction, getBookByGbid } from '../js/firebase.js';
+    import { getFollowing, getReadingBooks, getFeed, getAnnouncements, toggleReaction, toggleAnnouncementReaction, getBookByGbid, getMyClubs, getClubNextBook } from '../js/firebase.js';
+    import { memberList } from '../js/club-utils.js';
+    // esc is already defined further down this page, so only themeColour is
+    // taken from utils here.
+    import { clubIconEl } from '../js/club-icon.js';
     import { timeAgo } from '../js/utils.js';
     import { openQuickProgress } from '../js/quick-progress.js';
     import { orderReaders, progressBarPercent } from '../js/book-utils.js';
@@ -930,6 +974,106 @@
       .catch(() => {});
 
     // — Explore nav ————————————————————————————————————————————————
+    // ── clubs ─────────────────────────────────────────────────────────────────
+    //
+    // On a phone the nav bar has five slots and search earns one of them, so
+    // this card is how anyone finds clubs at all. It carries what each club is
+    // reading rather than being a link, because a link nobody has a reason to
+    // tap is not discovery.
+    async function renderClubs() {
+      const wrap = document.getElementById('clubs-preview');
+      if (!wrap) return;
+
+      let clubs;
+      try {
+        clubs = await getMyClubs(user.uid);
+      } catch (err) {
+        // Decoration on a page that is complete without it.
+        console.warn('Could not load clubs', err);
+        wrap.closest('.home-section')?.remove();
+        return;
+      }
+
+      if (!clubs.length) {
+        // Shown rather than hidden: someone in no clubs is exactly who needs to
+        // know the feature is here.
+        wrap.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem;margin:0">'
+          + 'Read a book together. <a href="../clubs/" style="color:var(--accent)">Start a club</a>'
+          + ' or join one with an invite code.</p>';
+        return;
+      }
+
+      clubs.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+      wrap.innerHTML = '';
+      wrap.className = 'home-clubs-scroll';
+      const rows = new Map();
+      for (const club of clubs) {
+        // A rule between clubs, not before the first one.
+        if (rows.size) {
+          const sep = document.createElement('span');
+          sep.className = 'home-reading-sep';
+          sep.style.cssText = 'height:2.4rem;margin:0 1.1rem';
+          wrap.appendChild(sep);
+        }
+
+        const row = document.createElement('a');
+        row.href = `../club/?id=${encodeURIComponent(club.id)}`;
+        row.className = 'home-club-card';
+
+        const icon = clubIconEl(club, 40);
+
+        const body = document.createElement('div');
+        body.style.cssText = 'flex:1;min-width:0';
+        const name = document.createElement('div');
+        name.className = 'club-name';
+        // The strip is fixed width, so a long club name has to be trimmed
+        // rather than pushing the card open.
+        name.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+        name.textContent = club.name;
+
+        const count = memberList(club).length;
+        const current = document.createElement('div');
+        current.className = 'club-current';
+        current.style.cssText = 'margin-top:.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+        current.textContent = `${count} member${count === 1 ? '' : 's'}`;
+        body.append(name, current);
+
+        row.append(icon, body);
+        wrap.appendChild(row);
+        // The name line is what the book gets appended to, so the member count
+        // keeps a line of its own underneath.
+        rows.set(club.id, name);
+      }
+
+      // Same fades the reading strip uses, so the card says there is more to
+      // the side rather than ending in a hard edge.
+      const fadeL = document.getElementById('clubs-fade-left');
+      const fadeR = document.getElementById('clubs-fade-right');
+      function updateClubFades() {
+        const atStart = wrap.scrollLeft <= 1;
+        const atEnd = wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 1;
+        fadeL.style.opacity = atStart ? '0' : '1';
+        fadeR.style.opacity = atEnd ? '0' : '1';
+      }
+      wrap.addEventListener('scroll', updateClubFades, { passive: true });
+      requestAnimationFrame(updateClubFades);
+
+      // One small query per club, after the names are already on screen, so a
+      // slow answer never holds up the card.
+      for (const club of clubs) {
+        getClubNextBook(club.id).then(book => {
+          const el = rows.get(club.id);
+          if (!el || !book?.title) return;
+          // text-transform:none on the tail: .club-name lowercases the club, and
+          // a book's title is not the club's to lowercase.
+          el.innerHTML = `${esc(club.name)}<span style="color:var(--text-muted);font-weight:400;text-transform:none">`
+            + ` · reading <em>${esc(book.title)}</em></span>`;
+        }).catch(() => {});
+      }
+    }
+    renderClubs();
+
     const exploreNav = document.getElementById('explore-nav');
     const username = myProfile.username || '';
     const chevron = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" style="color:var(--text-muted);flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>`;
@@ -937,6 +1081,7 @@
     [
       { label: 'feed',     href: '../feed/',     icon: navIcon(`<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>`) },
       { label: 'search',   href: '../search/',   icon: navIcon(`<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>`) },
+      { label: 'clubs',    href: '../clubs/',    icon: navIcon(`<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>`) },
       { label: 'network',  href: '../network/',  icon: navIcon(`<circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><line x1="8.7" y1="10.7" x2="15.3" y2="7.3"/><line x1="8.7" y1="13.3" x2="15.3" y2="16.7"/>`) },
       { label: 'library',  href: '../library/',  icon: navIcon(`<path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>`) },
       { label: 'lists',    href: '../lists/',    icon: navIcon(`<line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/>`) },

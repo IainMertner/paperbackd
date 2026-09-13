@@ -286,3 +286,61 @@ exports.announceToDiscord = onDocumentCreated(
     logger.info('Announcement mirrored to Discord', { id: event.params.id });
   }
 );
+
+// Joining a club by invite code.
+//
+// Server side because the lookup crosses clubs the caller cannot read: rules
+// allow a club read only to someone already in its members map, and a client
+// able to run this query could enumerate every club on the site. The callable
+// sees one code at a time and answers only about the club it matches.
+exports.joinClubByCode = onCall({ cors: true, region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Sign in first.');
+
+  // Same normalising the client does, repeated here because the client's copy
+  // is a convenience and this one is the rule.
+  const code = String(request.data?.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (code.length !== 8) throw new HttpsError('invalid-argument', 'That is not a valid invite code.');
+
+  const db = admin.firestore();
+  const found = await db.collection('clubs').where('inviteCode', '==', code).limit(1).get();
+  // Deliberately the same message as a code that is merely wrong: distinguishing
+  // them would confirm which codes exist.
+  if (found.empty) throw new HttpsError('not-found', 'No club with that code.');
+
+  const clubRef = found.docs[0].ref;
+
+  // A transaction, so two people joining at once cannot each write a members map
+  // built from the state before the other.
+  const name = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(clubRef);
+    if (!snap.exists) throw new HttpsError('not-found', 'No club with that code.');
+    const club = snap.data();
+
+    if (club.members && Object.prototype.hasOwnProperty.call(club.members, uid)) {
+      return club.name;   // already in; joining again is a no-op, not an error
+    }
+    if (Object.keys(club.members || {}).length >= 200) {
+      throw new HttpsError('resource-exhausted', 'That club is full.');
+    }
+
+    // The profile is read here rather than trusted from the client: these fields
+    // are shown to everyone else in the club.
+    const profileSnap = await tx.get(db.collection('users').doc(uid));
+    const profile = profileSnap.exists ? profileSnap.data() : {};
+
+    tx.update(clubRef, {
+      [`members.${uid}`]: {
+        role: 'member',
+        username: profile.username || '',
+        // No avatarUrl: those are base64 data URLs of about 30KB, and a members
+        // map holding them would push a large club past the 1MB doc limit.
+        avatarBorderColor: profile.avatarBorderColor || '',
+        joinedAt: Date.now(),
+      },
+    });
+    return club.name;
+  });
+
+  return { clubId: clubRef.id, name };
+});

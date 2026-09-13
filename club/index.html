@@ -1,0 +1,1935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js" crossorigin>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>club - paperbackd</title>
+  <link rel="stylesheet" href="../css/main.css">
+  <style>
+    /* Inked edge on every card on the page. isolation:isolate because these sit
+       in normal page flow: with no stacking context of their own, the z-index:-1
+       layer falls behind the opaque page background and disappears. */
+    .card {
+      position: relative;
+      isolation: isolate;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      background: var(--bg-card);
+      box-shadow: var(--shadow);
+      filter: url(#ink-edge);
+      z-index: -1;
+    }
+    /* Same tab bar as the stats page, so the two read as one pattern. */
+    .stats-tab-bar {
+      display: flex;
+      border-bottom: 2px solid var(--border);
+      margin: .25rem 0 .75rem;
+    }
+    .stats-tab-btn {
+      flex: 1;
+      padding: .5rem .25rem;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      font-size: .7rem;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      transition: color .15s;
+    }
+    .stats-tab-btn.active {
+      /* The club's own colour, which renderHeader puts on the document root.
+         Falls back to the accent for a club that has not picked one. */
+      border-bottom-color: var(--ring-color, var(--accent));
+      color: var(--text);
+    }
+    .meeting-row {
+      display: flex;
+      gap: .75rem;
+      align-items: flex-start;
+      padding: .625rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .meeting-row:last-child { border-bottom: none; }
+    .meeting-cover {
+      width: 42px;
+      aspect-ratio: 2 / 3;
+      object-fit: cover;
+      border-radius: 2px;
+      flex-shrink: 0;
+      background: var(--bg-alt);
+    }
+    .meeting-date { font-size: .72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+    .meeting-book { font-weight: 600; font-size: .9rem; margin-top: .1rem; }
+    .meeting-who  { font-size: .78rem; color: var(--text-muted); margin-top: .2rem; }
+    /* The one button on the site that is meant to feel like pressing a button.
+       Chunky, in the club's own colour, with a hard shadow it sinks into when
+       pressed rather than a soft glow. --spin-ink is set from JS so the label
+       stays legible on the lighter theme colours. */
+    .spin-btn {
+      display: block;
+      margin: .9rem auto 0;
+      padding: .7rem 2.6rem;
+      font-family: 'Arvo', serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .16em;
+      color: var(--spin-ink, #fff);
+      background: var(--ring-color, var(--accent));
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      box-shadow: 0 3px 0 rgba(0, 0, 0, .22);
+      transition: transform .12s, box-shadow .12s, filter .12s;
+    }
+    .spin-btn:hover:not(:disabled) {
+      filter: brightness(1.07);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 0 rgba(0, 0, 0, .22);
+    }
+    .spin-btn:active:not(:disabled) {
+      transform: translateY(2px);
+      box-shadow: 0 1px 0 rgba(0, 0, 0, .22);
+    }
+    /* Grey and flat: a disabled button that still looks pressable reads as
+       broken rather than unavailable. */
+    .spin-btn:disabled {
+      background: var(--bg-alt);
+      color: var(--text-muted);
+      box-shadow: none;
+      cursor: default;
+      filter: none;
+      transform: none;
+    }
+    /* Mid-spin it keeps the club colour and breathes, so the page looks busy
+       rather than broken while the wheel turns. */
+    .spin-btn.is-spinning:disabled {
+      background: var(--ring-color, var(--accent));
+      color: var(--spin-ink, #fff);
+      animation: spin-pulse 1s ease-in-out infinite;
+    }
+    @keyframes spin-pulse {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: .72; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .spin-btn { transition: none; }
+      .spin-btn.is-spinning:disabled { animation: none; }
+    }
+    /* The star is drawn at its full size inside the box rather than spilling
+       out of it, so the spikes cannot be clipped. -22px on a 76px avatar makes
+       the box 120px, which is what the viewBox below assumes. */
+    .club-ring-svg {
+      position: absolute;
+      inset: -22px;
+      width: calc(100% + 44px);
+      height: calc(100% + 44px);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .club-code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 1rem;
+      letter-spacing: .12em;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: .4rem .6rem;
+      display: inline-block;
+    }
+    .member-row {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      padding: .5rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .member-row:last-child { border-bottom: none; }
+    .club-suggest {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      margin-top: .35rem;
+      max-height: 260px;
+      overflow-y: auto;
+      background: var(--bg-card);
+    }
+    .club-suggest-item {
+      display: flex;
+      gap: .5rem;
+      align-items: center;
+      padding: .45rem .55rem;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+    }
+    .club-suggest-item:last-child { border-bottom: none; }
+    .club-suggest-item:hover { background: var(--bg-alt); }
+  </style>
+</head>
+<body>
+
+  <!-- The card edges below are drawn through this. filter: url() pointing at a
+       missing id stops the element rendering entirely, so a card would lose its
+       whole background rather than just its roughness. -->
+  <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <defs>
+      <filter id="ink-edge" x="-25%" y="-25%" width="150%" height="150%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" seed="5" result="noise"/>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/home/">paperbackd<span class="title-dot">.</span></a>
+      <nav class="desktop-nav">
+        <a href="../search/" data-nav="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>search</a>
+        <a href="../clubs/" data-nav="clubs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>clubs</a>
+        <a href="../network/" data-nav="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><line x1="8.7" y1="10.7" x2="15.3" y2="7.3"/><line x1="8.7" y1="13.3" x2="15.3" y2="16.7"/></svg>network</a>
+        <a href="../library/" data-nav="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>library</a>
+        <a href="../lists/" data-nav="lists"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg>lists</a>
+        <a href="../stats/" data-nav="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="13" width="4" height="7" rx="0.5"/><rect x="10" y="3" width="4" height="17" rx="0.5"/><rect x="17" y="9" width="4" height="11" rx="0.5"/></svg>stats</a>
+        <a href="../profile/" data-nav="profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>profile</a>
+        <a href="../settings/" data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>settings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-content">
+    <div id="club-header"></div>
+
+    <div class="stats-tab-bar" id="tab-bar" style="display:none">
+      <button class="stats-tab-btn active" id="tab-meetings">Meetings</button>
+      <button class="stats-tab-btn"        id="tab-recs">Books</button>
+      <button class="stats-tab-btn"        id="tab-settings">Settings</button>
+    </div>
+
+    <div id="panel-meetings"></div>
+    <div id="panel-recs" style="display:none"></div>
+    <div id="panel-settings" style="display:none"></div>
+  </main>
+
+  <nav class="mobile-nav">
+    <a class="mobile-nav-item" href="../home/" data-nav="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+      home
+    </a>
+    <a class="mobile-nav-item" href="../search/" data-nav="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      search
+    </a>
+    <a class="mobile-nav-item" href="../library/" data-nav="library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
+        <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+      </svg>
+      library
+    </a>
+    <a class="mobile-nav-item" href="../stats/" data-nav="stats">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="13" width="4" height="7" rx="0.5"/>
+        <rect x="10" y="3" width="4" height="17" rx="0.5"/>
+        <rect x="17" y="9" width="4" height="11" rx="0.5"/>
+      </svg>
+      stats
+    </a>
+    <a class="mobile-nav-item" href="../profile/" data-nav="profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      profile
+    </a>
+  </nav>
+
+  <script src="../js/main.js"></script>
+  <script>document.body.classList.add('auth-loading');</script>
+  <script type="module">
+    import { requireAuth } from '../js/auth.js';
+    import {
+      watchClub, watchClubMeetings, updateClub, deleteClub,
+      createClubMeeting, updateClubMeeting, deleteClubMeeting,
+      setClubMemberRole, removeClubMember, refreshClubMemberProfile, leaveClub,
+      watchClubRecommendations, setClubRecommendation, clearClubRecommendation, applySpinResult,
+      setClubIcon, getProfilesByUids,
+    } from '../js/firebase.js';
+    import { searchBooks } from '../js/hardcover.js';
+    import {
+      isClubMember, isClubAdmin, isClubOwner, memberList, canDemote,
+      splitMeetings, attendanceLabel, suggesterLabel,
+      wheelOrder, canSpin, segmentBounds, segmentColour, targetRotation, pickWinnerIndex, uniformWeights,
+      selectionWeights, selectionChances, SELECTION_DEFAULTS,
+      spikeRingPath, spikeRingPoints, spikeCountFor,
+    } from '../js/club-utils.js';
+    import { esc, THEMES, themeColour, readableInk } from '../js/utils.js';
+    import { openCropModal } from '../js/crop-image.js';
+
+    let user, profile;
+    try { ({ user, profile } = await requireAuth()); }
+    finally { document.body.classList.remove('auth-loading'); }
+
+    const clubId = new URLSearchParams(location.search).get('id');
+    const headerEl   = document.getElementById('club-header');
+    const tabBar     = document.getElementById('tab-bar');
+    const panels = {
+      meetings: document.getElementById('panel-meetings'),
+      recs:     document.getElementById('panel-recs'),
+      settings: document.getElementById('panel-settings'),
+    };
+
+    if (!clubId) {
+      headerEl.innerHTML = '<p style="color:var(--text-muted)">No club specified.</p>';
+      throw new Error('no club id');
+    }
+
+    let club = null;
+    let meetings = [];
+    let recommendations = [];
+    let profileSynced = false;
+    let spinning = false;
+    // Avatars are not kept on the club document, so the roster reads them from
+    // the user documents once per load. uid -> { avatarUrl, avatarBorderColor }.
+    let memberFaces = new Map();
+
+    // ── tabs ──────────────────────────────────────────────────────────────────
+    const tabBtns = {
+      meetings: document.getElementById('tab-meetings'),
+      recs:     document.getElementById('tab-recs'),
+      settings: document.getElementById('tab-settings'),
+    };
+    let activeTab = localStorage.getItem('club-tab') || 'meetings';
+
+    function switchTab(tab) {
+      activeTab = tab;
+      for (const key of Object.keys(panels)) {
+        panels[key].style.display = key === tab ? '' : 'none';
+        tabBtns[key].classList.toggle('active', key === tab);
+      }
+      localStorage.setItem('club-tab', tab);
+    }
+    for (const key of Object.keys(tabBtns)) {
+      tabBtns[key].addEventListener('click', () => switchTab(key));
+    }
+
+    function fmtDate(ts) {
+      const d = ts?.toDate?.() ?? (ts instanceof Date ? ts : null);
+      if (!d) return 'No date set';
+      return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+    }
+
+    function avatarEl(member) {
+      const face = memberFaces.get(member.uid) || {};
+      const av = document.createElement('div');
+      av.className = 'friend-avatar';
+      av.style.flexShrink = '0';
+      const border = face.avatarBorderColor || member.avatarBorderColor;
+      if (border) av.style.borderColor = border;
+      if (face.avatarUrl) av.innerHTML = `<img src="${esc(face.avatarUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+      else av.textContent = (member.username?.[0] || '?').toUpperCase();
+      return av;
+    }
+
+    // One pass over the roster's user documents. Decoration on a page that is
+    // complete without it, so a failure just leaves initials in place.
+    async function loadMemberFaces() {
+      const uids = memberList(club).map(m => m.uid);
+      if (!uids.length) return;
+      try {
+        const profiles = await getProfilesByUids(uids);
+        memberFaces = new Map(profiles.map(pr => [pr.uid, {
+          avatarUrl: pr.avatarUrl || '',
+          avatarBorderColor: pr.avatarBorderColor || '',
+        }]));
+        renderSettings();
+      } catch (err) {
+        console.warn('Could not load member avatars', err);
+      }
+    }
+
+    // ── header ────────────────────────────────────────────────────────────────
+    // Built from the profile page's own header parts rather than a card, so a
+    // club reads as a place with a name and a face the way a person does. The
+    // club's initial stands in for the avatar until clubs have images of their
+    // own, and the ring falls back to the accent since there is no club colour
+    // to take it from yet.
+    function renderHeader() {
+      const count = memberList(club).length;
+      // Set on the document rather than the header, so every --ring-color in the
+      // page follows the club: the ring now, anything themed later.
+      const colour = themeColour(club.ringColor);
+      if (colour) document.documentElement.style.setProperty('--ring-color', colour);
+      else document.documentElement.style.removeProperty('--ring-color');
+      headerEl.innerHTML = `<div class="profile-meta-row">
+        <div class="avatar-ink-ring">
+          <svg class="club-ring-svg" viewBox="0 0 120 120" aria-hidden="true"><path d="${spikeRingPath(60, 60, 43, 47, 14)}" style="fill:var(--ring-color,var(--accent))"/></svg>
+          <div class="profile-avatar-sm">${club.iconUrl
+            ? `<img src="${esc(club.iconUrl)}" alt="">`
+            : esc((club.name[0] || '?').toUpperCase())}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0;flex:1;min-width:0">
+          <div class="profile-display-name">${esc(club.name)}<span class="title-dot">.</span></div>
+          <div class="profile-username">${count} member${count === 1 ? '' : 's'}</div>
+          ${club.description ? `<div class="club-current" style="margin-top:.35rem">${esc(club.description)}</div>` : ''}
+        </div>
+      </div>`;
+    }
+
+    // Who put a book forward. Weighted selection reads this back to work out who
+    // has been winning lately, so a meeting recorded without it counts against
+    // nobody - which is right for a book an admin chose, and wrong for one a
+    // member suggested. Hence the field.
+    function suggesterSelect(selected) {
+      const sel = document.createElement('select');
+      sel.className = 'join-club-input';
+      sel.style.cssText = 'width:100%;box-sizing:border-box';
+      sel.appendChild(new Option('Nobody', ''));
+      for (const member of memberList(club)) {
+        sel.appendChild(new Option(member.username || '(no name)', member.uid));
+      }
+      // A suggester who has since left the club is not in the roster, so their
+      // uid would vanish from the list and be silently reassigned on save.
+      if (selected && !memberList(club).some(m => m.uid === selected)) {
+        sel.appendChild(new Option('A former member', selected));
+      }
+      sel.value = selected || '';
+      return sel;
+    }
+
+    // ── book picker ───────────────────────────────────────────────────────────
+    // A compact search used when choosing the book for a meeting. Goes through
+    // searchBooks so admin remaps and title overrides apply, same as everywhere.
+    function bookPicker(onPick, initial) {
+      const wrap = document.createElement('div');
+      const chosen = document.createElement('div');
+      chosen.style.cssText = 'font-size:.85rem;margin-bottom:.35rem';
+
+      const input = document.createElement('input');
+      input.className = 'join-club-input';
+      input.type = 'text';
+      input.placeholder = 'Search for a book';
+      input.autocomplete = 'off';
+      input.style.cssText = 'width:100%;box-sizing:border-box';
+
+      const suggest = document.createElement('div');
+      suggest.className = 'club-suggest';
+      suggest.style.display = 'none';
+
+      let picked = initial || null;
+
+      function showChosen() {
+        if (!picked) { chosen.textContent = ''; return; }
+        chosen.innerHTML = `<strong>${esc(picked.title)}</strong>${picked.author ? ` - ${esc(picked.author)}` : ''}
+          <button type="button" id="bp-clear" style="margin-left:.4rem;background:none;border:none;color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:.8rem;text-decoration:underline">change</button>`;
+        chosen.querySelector('#bp-clear').addEventListener('click', () => {
+          picked = null;
+          onPick(null);
+          showChosen();
+          input.style.display = '';
+          input.focus();
+        });
+        input.style.display = 'none';
+      }
+
+      let timer;
+      input.addEventListener('input', () => {
+        clearTimeout(timer);
+        const q = input.value.trim();
+        if (q.length < 2) { suggest.style.display = 'none'; return; }
+        timer = setTimeout(async () => {
+          try {
+            const docs = await searchBooks(q, 8);
+            suggest.innerHTML = '';
+            if (!docs.length) { suggest.style.display = 'none'; return; }
+            for (const d of docs) {
+              const author = Array.isArray(d.author_names) ? (d.author_names[0] || '') : (d.author_names || '');
+              const item = document.createElement('div');
+              item.className = 'club-suggest-item';
+              item.innerHTML = `${d.image?.url ? `<img src="${esc(d.image.url)}" alt="" style="width:28px;aspect-ratio:2/3;object-fit:cover;border-radius:2px;flex-shrink:0">` : ''}
+                <div style="min-width:0"><div style="font-size:.85rem;font-weight:600">${esc(d.title || '')}</div>
+                <div style="font-size:.75rem;color:var(--text-muted)">${esc(author)}${d.release_year ? ` - ${esc(String(d.release_year))}` : ''}</div></div>`;
+              item.addEventListener('click', () => {
+                picked = { gbid: d.slug || String(d.id), title: d.title || '', author, coverUrl: d.image?.url || '' };
+                onPick(picked);
+                suggest.style.display = 'none';
+                input.value = '';
+                showChosen();
+              });
+              suggest.appendChild(item);
+            }
+            suggest.style.display = '';
+          } catch (err) {
+            console.error('Book search failed', err);
+            suggest.style.display = 'none';
+          }
+        }, 280);
+      });
+
+      wrap.append(chosen, input, suggest);
+      showChosen();
+      return wrap;
+    }
+
+    // ── meetings tab ──────────────────────────────────────────────────────────
+    function meetingRow(meeting, { showAttendance }) {
+      const row = document.createElement('div');
+      row.className = 'meeting-row';
+
+      if (meeting.coverUrl) {
+        const img = document.createElement('img');
+        img.className = 'meeting-cover';
+        img.src = meeting.coverUrl;
+        img.alt = '';
+        row.appendChild(img);
+      } else {
+        const ph = document.createElement('div');
+        ph.className = 'meeting-cover';
+        row.appendChild(ph);
+      }
+
+      const body = document.createElement('div');
+      body.style.cssText = 'flex:1;min-width:0';
+
+      // Only a meeting that has happened carries a date, so a missing one is
+      // the normal state of the next meeting rather than something to announce.
+      const when = meeting.date?.toDate?.() ?? (meeting.date instanceof Date ? meeting.date : null);
+      let date = null;
+      if (when) {
+        date = document.createElement('div');
+        date.className = 'meeting-date';
+        date.textContent = fmtDate(meeting.date);
+      }
+
+      const book = document.createElement('div');
+      book.className = 'meeting-book';
+      if (meeting.gbid) {
+        const a = document.createElement('a');
+        a.href = `../book/?gbid=${encodeURIComponent(meeting.gbid)}`;
+        a.textContent = meeting.title || 'Untitled';
+        a.style.color = 'inherit';
+        book.appendChild(a);
+      } else {
+        book.textContent = meeting.title || 'No book chosen yet';
+      }
+      if (meeting.author) {
+        const by = document.createElement('span');
+        by.style.cssText = 'font-weight:400;color:var(--text-muted)';
+        by.textContent = ` - ${meeting.author}`;
+        book.appendChild(by);
+      }
+
+      if (date) body.appendChild(date);
+      body.appendChild(book);
+
+      // Shown on the next meeting too, not just the history: whose book the
+      // club is currently reading is worth knowing before the meeting as well
+      // as after it.
+      const pick = suggesterLabel(meeting, club);
+      if (pick) {
+        const picked = document.createElement('div');
+        picked.className = 'meeting-who';
+        picked.textContent = pick;
+        body.appendChild(picked);
+      }
+
+      if (showAttendance) {
+        const who = document.createElement('div');
+        who.className = 'meeting-who';
+        who.textContent = attendanceLabel(meeting, club);
+        body.appendChild(who);
+      }
+
+      if (meeting.notes) {
+        const notes = document.createElement('div');
+        notes.className = 'meeting-who';
+        notes.style.whiteSpace = 'pre-wrap';
+        notes.textContent = meeting.notes;
+        body.appendChild(notes);
+      }
+
+      row.appendChild(body);
+      return row;
+    }
+
+    function renderMeetings() {
+      const admin = isClubAdmin(club, user.uid);
+      const { next, alsoPlanned, history } = splitMeetings(meetings);
+      panels.meetings.innerHTML = '';
+
+      // -- next meeting --
+      const nextCard = document.createElement('div');
+      nextCard.className = 'card';
+      nextCard.style.marginBottom = '.75rem';
+      const nextTitle = document.createElement('p');
+      nextTitle.className = 'section-title';
+      nextTitle.style.marginTop = '0';
+      nextTitle.textContent = 'Next meeting';
+      nextCard.appendChild(nextTitle);
+
+      // Nothing here is scheduled. A meeting has no date until it has happened,
+      // at which point an admin says so and it drops into the history. What the
+      // card shows before then is simply the book the wheel landed on.
+      if (next) {
+        nextCard.appendChild(meetingRow(next, { showAttendance: false }));
+      } else {
+        const none = document.createElement('p');
+        none.style.cssText = 'color:var(--text-muted);font-size:.85rem;margin:0';
+        none.textContent = admin
+          ? 'No book chosen yet. Spin the wheel on the Books tab to pick one.'
+          : 'No book chosen yet. An admin will spin the wheel to pick one.';
+        nextCard.appendChild(none);
+      }
+
+      if (admin) {
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem';
+
+        // Offered whether or not a book has been chosen: a club that met without
+        // using the wheel still has a meeting worth recording.
+        const happened = document.createElement('button');
+        happened.className = 'btn-update';
+        happened.textContent = 'Meeting happened';
+        happened.addEventListener('click', () => openMeetingHappened(next));
+        actions.appendChild(happened);
+
+        if (next) {
+          const edit = document.createElement('button');
+          edit.className = 'btn-update';
+          edit.style.cssText = 'background:none;border:1px solid var(--border);color:var(--text-muted)';
+          edit.textContent = 'Change book';
+          edit.addEventListener('click', () => openMeetingForm(next));
+
+          const del = document.createElement('button');
+          del.className = 'btn-update';
+          del.style.cssText = 'background:none;border:1px solid var(--border);color:var(--text-muted)';
+          del.textContent = 'Clear';
+          del.addEventListener('click', async () => {
+            if (!confirm('Clear the next book? It will not appear in the history.')) return;
+            await deleteClubMeeting(clubId, next.id);
+          });
+
+          actions.append(edit, del);
+        }
+        nextCard.appendChild(actions);
+      }
+      panels.meetings.appendChild(nextCard);
+
+      // More than one unheld meeting should not happen, but if it does it is
+      // better seen than silently dropped.
+      if (alsoPlanned.length) {
+        const extra = document.createElement('div');
+        extra.className = 'card';
+        extra.style.marginBottom = '.75rem';
+        const t = document.createElement('p');
+        t.className = 'section-title';
+        t.style.marginTop = '0';
+        t.textContent = 'Also planned';
+        extra.appendChild(t);
+        for (const m of alsoPlanned) extra.appendChild(meetingRow(m, { showAttendance: false }));
+        panels.meetings.appendChild(extra);
+      }
+
+      // -- history --
+      const histCard = document.createElement('div');
+      histCard.className = 'card';
+      const histTitle = document.createElement('p');
+      histTitle.className = 'section-title';
+      histTitle.style.marginTop = '0';
+      histTitle.textContent = `Meeting history${history.length ? ` (${history.length})` : ''}`;
+      histCard.appendChild(histTitle);
+
+      if (!history.length) {
+        const none = document.createElement('p');
+        none.style.cssText = 'color:var(--text-muted);font-size:.85rem;margin:0';
+        none.textContent = 'No meetings yet.';
+        histCard.appendChild(none);
+      } else {
+        const linkBtn = 'background:none;border:none;color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:.75rem;text-decoration:underline;padding:0;text-align:right';
+        for (const m of history) {
+          const row = meetingRow(m, { showAttendance: true });
+          if (admin) {
+            const actions = document.createElement('div');
+            actions.style.cssText = 'display:flex;flex-direction:column;gap:.25rem;flex-shrink:0;align-self:flex-start';
+
+            const edit = document.createElement('button');
+            edit.textContent = 'Edit';
+            edit.style.cssText = linkBtn;
+            // The full dialog, not the change-book one: a past meeting's
+            // attendance is the thing most likely to need correcting.
+            edit.addEventListener('click', () => openMeetingHappened(m));
+
+            const del = document.createElement('button');
+            del.textContent = 'Delete';
+            del.style.cssText = linkBtn;
+            del.addEventListener('click', async () => {
+              // Names what goes, and says what else it changes: the weighting is
+              // computed from this history every time the wheel is drawn, so
+              // removing a meeting quietly alters everyone's odds.
+              const what = m.title ? `"${m.title}"` : 'this meeting';
+              if (!confirm(`Delete ${what} from ${fmtDate(m.date)}?
+
+Its attendance and whose pick it was go with it, which changes the wheel's weighting. This cannot be undone.`)) return;
+              del.disabled = true;
+              try { await deleteClubMeeting(clubId, m.id); }
+              catch (err) { console.error('Deleting meeting failed', err); del.disabled = false; }
+            });
+
+            actions.append(edit, del);
+            row.appendChild(actions);
+          }
+          histCard.appendChild(row);
+        }
+      }
+      panels.meetings.appendChild(histCard);
+    }
+
+    // -- schedule / edit a meeting --
+    function openMeetingForm(existing) {
+      const overlay = document.createElement('div');
+      overlay.className = 'cover-picker-overlay';
+      const modal = document.createElement('div');
+      modal.className = 'cover-picker-modal';
+      modal.style.maxWidth = '30rem';
+      // Only ever the meeting that has not happened yet - a past one is edited
+      // through openMeetingHappened, which has attendance too. So there is no
+      // date here: a club picks a book, then meets when it meets, and the date
+      // is set at the point someone says the meeting took place.
+      modal.innerHTML = `<div style="font-weight:600;margin-bottom:.75rem">Change book</div>
+        <label style="font-size:.78rem;color:var(--text-muted)">Book</label>
+        <div id="mf-book" style="margin:.2rem 0 .75rem"></div>
+        <label style="font-size:.78rem;color:var(--text-muted)">Whose pick</label>
+        <div id="mf-suggester" style="margin:.2rem 0 .75rem"></div>
+        <label style="font-size:.78rem;color:var(--text-muted)">Notes</label>
+        <textarea id="mf-notes" class="join-club-input" rows="3" maxlength="1000" style="width:100%;box-sizing:border-box;font-family:inherit;text-align:left;resize:vertical;margin-top:.2rem"></textarea>
+        <div id="mf-status" style="display:none;font-size:.82rem;margin-top:.5rem"></div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.75rem">
+          <button type="button" id="mf-cancel" class="btn-update" style="background:none;border:1px solid var(--border);color:var(--text-muted)">Cancel</button>
+          <button type="button" id="mf-save" class="btn-update">Save</button>
+        </div>`;
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      modal.querySelector('#mf-cancel').addEventListener('click', () => overlay.remove());
+
+      const notesEl = modal.querySelector('#mf-notes');
+      const status  = modal.querySelector('#mf-status');
+
+      let book = existing?.gbid || existing?.title
+        ? { gbid: existing.gbid, title: existing.title, author: existing.author, coverUrl: existing.coverUrl }
+        : null;
+      modal.querySelector('#mf-book').appendChild(bookPicker(b => { book = b; }, book));
+
+      // Editable here too, so a wrong attribution in the history can be put
+      // right - the weighting is computed from it every time the wheel is drawn.
+      const mfSuggester = suggesterSelect(existing?.suggestedBy);
+      modal.querySelector('#mf-suggester').appendChild(mfSuggester);
+
+      if (existing) notesEl.value = existing.notes || '';
+
+      modal.querySelector('#mf-save').addEventListener('click', async () => {
+        const saveBtn = modal.querySelector('#mf-save');
+        saveBtn.disabled = true;
+        status.textContent = 'Saving...';
+        status.style.color = 'var(--text-muted)';
+        status.style.display = '';
+        try {
+          // Parsed as local midnight rather than through Date(string), which
+          // reads a bare yyyy-mm-dd as UTC and lands on the previous day west
+          // of Greenwich.
+          const payload = {
+            gbid: book?.gbid || '',
+            title: book?.title || '',
+            author: book?.author || '',
+            coverUrl: book?.coverUrl || '',
+            notes: notesEl.value.trim(),
+            suggestedBy: mfSuggester.value || '',
+          };
+          if (existing) await updateClubMeeting(clubId, existing.id, payload);
+          else await createClubMeeting(clubId, payload);
+          overlay.remove();
+        } catch (err) {
+          console.error('Saving meeting failed', err);
+          status.textContent = 'Could not save that.';
+          status.style.color = '#c84f4f';
+          saveBtn.disabled = false;
+        }
+      });
+    }
+
+    // -- the meeting happened --
+    //
+    // This is the only place a meeting gets a date, and the only thing that
+    // moves it into the history. It works with no book chosen too, so a club
+    // that met without the wheel can still record what it read.
+    function openMeetingHappened(meeting) {
+      // Doubles as the editor for a meeting already in the history: everything
+      // a past meeting has lives in this one dialog, attendance included. A
+      // meeting that has happened is being corrected; one that has not is being
+      // recorded for the first time.
+      const editing = !!meeting?.held;
+      const overlay = document.createElement('div');
+      overlay.className = 'cover-picker-overlay';
+      const modal = document.createElement('div');
+      modal.className = 'cover-picker-modal';
+      modal.style.maxWidth = '24rem';
+      modal.innerHTML = `<div style="font-weight:600;margin-bottom:.75rem">${editing ? 'Edit meeting' : 'Meeting happened'}</div>
+        <label style="font-size:.78rem;color:var(--text-muted)">When</label>
+        <input type="date" id="at-date" class="join-club-input" style="width:100%;box-sizing:border-box;margin:.2rem 0 .75rem">
+        <label style="font-size:.78rem;color:var(--text-muted)">Book</label>
+        <div id="at-book" style="margin:.2rem 0 .75rem"></div>
+        <label style="font-size:.78rem;color:var(--text-muted)">Whose pick</label>
+        <div id="at-suggester" style="margin:.2rem 0 .75rem"></div>
+        <label style="font-size:.78rem;color:var(--text-muted)">Attendees</label>
+        <div id="at-list" style="display:flex;flex-direction:column;gap:.1rem;margin-top:.2rem"></div>
+        <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-top:.75rem">Notes</label>
+        <textarea id="at-notes" class="join-club-input" rows="3" maxlength="1000" style="width:100%;box-sizing:border-box;font-family:inherit;text-align:left;resize:vertical;margin-top:.2rem"></textarea>
+        <div id="at-status" style="display:none;font-size:.82rem;margin-top:.5rem"></div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.75rem">
+          <button type="button" id="at-cancel" class="btn-update" style="background:none;border:1px solid var(--border);color:var(--text-muted)">Cancel</button>
+          <button type="button" id="at-save" class="btn-update">${editing ? 'Save' : 'Add to history'}</button>
+        </div>`;
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      modal.querySelector('#at-cancel').addEventListener('click', () => overlay.remove());
+
+      // The meeting's own date when there is one, today otherwise: recording is
+      // pressed on the night, but editing must not quietly move a past meeting
+      // to today just because the dialog was opened.
+      const dateEl  = modal.querySelector('#at-date');
+      const notesEl = modal.querySelector('#at-notes');
+      const pad = n => String(n).padStart(2, '0');
+      const existingDate = meeting?.date?.toDate?.() ?? (meeting?.date instanceof Date ? meeting.date : null);
+      const when = existingDate || new Date();
+      dateEl.value = `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}`;
+      notesEl.value = meeting?.notes || '';
+
+      let book = meeting?.gbid || meeting?.title
+        ? { gbid: meeting.gbid, title: meeting.title, author: meeting.author, coverUrl: meeting.coverUrl }
+        : null;
+      modal.querySelector('#at-book').appendChild(bookPicker(b => { book = b; }, book));
+
+      // Pre-filled from the meeting: a book the wheel chose already knows whose
+      // it was, and an admin recording an old meeting picks from the roster.
+      const suggesterEl = suggesterSelect(meeting?.suggestedBy);
+      modal.querySelector('#at-suggester').appendChild(suggesterEl);
+
+      const listEl = modal.querySelector('#at-list');
+      const already = new Set(Array.isArray(meeting?.attendees) ? meeting.attendees : []);
+      const boxes = new Map();
+      for (const member of memberList(club)) {
+        const row = document.createElement('label');
+        row.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.3rem 0;cursor:pointer;font-size:.88rem';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = already.has(member.uid);
+        boxes.set(member.uid, box);
+        const name = document.createElement('span');
+        name.textContent = member.username || '(no name)';
+        row.append(box, avatarEl(member), name);
+        listEl.appendChild(row);
+      }
+
+      modal.querySelector('#at-save').addEventListener('click', async () => {
+        const btn = modal.querySelector('#at-save');
+        const status = modal.querySelector('#at-status');
+        btn.disabled = true;
+        status.textContent = 'Saving...';
+        status.style.color = 'var(--text-muted)';
+        status.style.display = '';
+        try {
+          const attendees = [...boxes.entries()].filter(([, box]) => box.checked).map(([uid]) => uid);
+          const [y, m, d] = dateEl.value ? dateEl.value.split('-').map(Number) : [];
+          const payload = {
+            // Parsed as local midnight: Date('2026-09-11') is read as UTC and
+            // lands on the previous day for anyone west of Greenwich.
+            date: dateEl.value ? new Date(y, m - 1, d) : null,
+            gbid: book?.gbid || '',
+            title: book?.title || '',
+            author: book?.author || '',
+            coverUrl: book?.coverUrl || '',
+            notes: notesEl.value.trim(),
+            suggestedBy: suggesterEl.value || '',
+            attendees,
+            // held: true is what moves it out of "next" and into the history.
+            held: true,
+          };
+          // No book was chosen, so there is no meeting document yet to close.
+          if (meeting) await updateClubMeeting(clubId, meeting.id, payload);
+          else await createClubMeeting(clubId, payload);
+          overlay.remove();
+        } catch (err) {
+          console.error('Saving attendance failed', err);
+          status.textContent = 'Could not save that.';
+          status.style.color = '#c84f4f';
+          btn.disabled = false;
+        }
+      });
+    }
+
+    // ── recommendations tab ───────────────────────────────────────────────────
+    //
+    // One book each, everyone can see the rest, and an admin spins the wheel to
+    // decide what the club reads next. The winner leaves the wheel; everything
+    // else stays on for the round after.
+
+    // Drawn rather than animated with CSS so the pointer and the slices can
+    // never disagree: one rotation value drives both.
+    function drawWheel(canvas, entries, bounds, rotation, base, { hubImg = null, highlight = null } = {}) {
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const size = canvas.clientWidth;
+      // A hidden panel has no layout, so clientWidth is 0 and every coordinate
+      // below collapses. Bail rather than resizing the canvas to nothing: the
+      // ResizeObserver draws it properly the moment the tab is shown.
+      if (!size) return;
+      if (canvas.width !== size * dpr) {
+        canvas.width = size * dpr;
+        canvas.height = size * dpr;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, size, size);
+
+      const cx = size / 2;
+      const cy = size / 2;
+      // The ring is a fixed thickness in pixels, not a proportion of the wheel.
+      // The icon's ring is about 12% of its diameter, which is a few delicate
+      // pixels at 48px and a thirty-pixel slab at 320. Same structure - a solid
+      // band, then teeth rising off it - held to roughly the same weight the
+      // icon has in absolute terms.
+      const BAND = 6;    // solid ring off the wheel's edge
+      const SPIKE = 4;   // how far the points reach past it
+      // The halo spreads this far past the points, and a canvas clips at its
+      // own edge: with the tips hard against it the glow was cut flat down both
+      // sides. Reserved before anything else is sized.
+      const GLOW = Math.max(7, size * 0.045);
+      const tip = size / 2 - GLOW;
+      const r   = tip - SPIKE - BAND;
+      const count = entries.length;
+      if (!count || !bounds.length) return;
+
+      // Big enough to hold the club's icon, and scaled with the wheel so it is
+      // the same fraction of it at any width.
+      const hubR = Math.max(20, r * 0.2);
+
+      for (let i = 0; i < count; i++) {
+        const start = bounds[i].start + rotation;
+        const end   = bounds[i].end + rotation;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, start, end);
+        ctx.closePath();
+        ctx.fillStyle = segmentColour(i, count, base);
+        ctx.globalAlpha = highlight != null && highlight !== i ? 0.35 : 1;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        // Dark, not white: a white divider disappears on a pastel wedge.
+        ctx.strokeStyle = 'rgba(0,0,0,.14)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // The title along the slice, trimmed to what the band between the hub
+        // and the rim can hold. A slice too thin for a line of text is left
+        // blank rather than scribbled over its neighbours.
+        if (end - start < 0.12) continue;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate((start + end) / 2);
+        // Centred in the slice rather than hung off its outer edge, so the
+        // titles sit in a ring at one radius instead of crowding the rim.
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // The same dark ink readableInk falls back to. The shades are
+        // pastels by design, so white would vanish into them.
+        ctx.fillStyle = '#33302B';
+        ctx.font = '600 11px system-ui, sans-serif';
+        let label = entries[i].title || '(untitled)';
+        const from = hubR + 6;
+        const to = r - 8;
+        const room = to - from;
+        while (label.length > 4 && ctx.measureText(label).width > room) {
+          label = label.slice(0, -2);
+        }
+        if (label !== (entries[i].title || '(untitled)')) label += '...';
+        ctx.fillText(label, (from + to) / 2, 0);
+        ctx.restore();
+      }
+
+      // The same torn ring the club's icon wears, in the club's own colour, and
+      // drawn outside the rotation so it stays still while the wheel turns.
+      // Valleys away from the rim, not on it: r to r + BAND is the solid part of
+      // the ring, and the teeth rise from the far side of it.
+      // A coarser tooth than the default: at wheel size the standard spacing
+      // gives three dozen of them, which reads as a serration rather than a
+      // ring with points on it.
+      const ring = spikeRingPoints(cx, cy, r + BAND, tip, spikeCountFor(r, 42));
+      if (ring.length) {
+        ctx.beginPath();
+        ring.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.closePath();
+        // A star is a solid polygon, so filling it would paint over the whole
+        // wheel. The inner circle is a second subpath, punched out by evenodd,
+        // leaving just the band of teeth. moveTo before the arc, or the path
+        // draws a line across to reach it.
+        ctx.moveTo(cx + r, cy);
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = base;
+        // A soft halo in the club's own colour. The ring wraps the whole wheel,
+        // so glowing it lights the lot: outward onto the page, and inward across
+        // the rim of the segments. Drawn in one fill, since a canvas shadow is
+        // cast by the shape being painted.
+        ctx.save();
+        ctx.shadowColor = base + 'AA';
+        ctx.shadowBlur = GLOW;
+        ctx.fill('evenodd');
+        // Again without the shadow, so the ring's own edge stays crisp rather
+        // than being softened by its own glow.
+        ctx.restore();
+        ctx.fill('evenodd');
+      }
+
+      // The hub, carrying the club's own icon: its picture if it has one, its
+      // initial otherwise.
+      ctx.beginPath();
+      ctx.arc(cx, cy, hubR, 0, Math.PI * 2);
+      ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg-card').trim() || '#fff';
+      ctx.fill();
+
+      // Turned with the wheel. The clip stays a circle either way, so only what
+      // is inside it moves - which is the whole point of putting something with
+      // a top and a bottom in there.
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rotation);
+      if (hubImg) {
+        // Clipped to the hub, and drawn to cover rather than stretch: a club
+        // icon is square, but only because the crop made it so.
+        ctx.beginPath();
+        ctx.arc(0, 0, hubR, 0, Math.PI * 2);
+        ctx.clip();
+        const side = Math.min(hubImg.naturalWidth, hubImg.naturalHeight) || 1;
+        const sx = (hubImg.naturalWidth - side) / 2;
+        const sy = (hubImg.naturalHeight - side) / 2;
+        ctx.drawImage(hubImg, sx, sy, side, side, -hubR, -hubR, hubR * 2, hubR * 2);
+      } else {
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = base;
+        ctx.font = `700 ${Math.round(hubR * 0.9)}px Arvo, Georgia, serif`;
+        ctx.fillText((String(club?.name || '?')[0] || '?').toUpperCase(), 0, 1);
+      }
+      ctx.restore();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, hubR, 0, Math.PI * 2);
+      ctx.strokeStyle = base;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.lineWidth = 1;
+
+      ctx.beginPath();
+      ctx.moveTo(cx - 9, 2);
+      ctx.lineTo(cx + 9, 2);
+      ctx.lineTo(cx, 20);
+      ctx.closePath();
+      ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text') || '#000';
+      ctx.fill();
+    }
+
+    function renderRecs() {
+      const admin = isClubAdmin(club, user.uid);
+      const entries = wheelOrder(recommendations);
+      const mine = recommendations.find(r => r.uid === user.uid) || null;
+      // The weights the wheel is actually drawn and spun from. Uniform selection
+      // produces all ones, so there is one path through everything below.
+      const selection = { ...SELECTION_DEFAULTS, ...(club.selection || {}) };
+      const weights = selectionWeights(entries, meetings, selection);
+      const chances = selectionChances(weights);
+      // What this viewer is allowed to see. The spin still runs on the real
+      // weights below; only the drawing and the percentages change, so a member
+      // cannot read their own odds off the wheel. Admins always see the truth,
+      // since they set the dials and could not judge them otherwise.
+      const showWeights = admin || !selection.hideWeights;
+      const bounds = segmentBounds(showWeights ? weights : uniformWeights(entries.length));
+      // The club's colour drives both the ring and the slices, so the wheel
+      // belongs to the club rather than carrying a palette of its own.
+      const wheelBase = themeColour(club.ringColor) || '#6B7B3A';
+      panels.recs.innerHTML = '';
+
+      // -- the wheel --
+      const wheelCard = document.createElement('div');
+      wheelCard.className = 'card';
+      wheelCard.style.marginBottom = '.75rem';
+      const wTitle = document.createElement('p');
+      wTitle.className = 'section-title';
+      wTitle.style.marginTop = '0';
+      wTitle.textContent = 'Wheel';
+      wheelCard.appendChild(wTitle);
+
+      if (!entries.length) {
+        const none = document.createElement('p');
+        none.style.cssText = 'color:var(--text-muted);font-size:.85rem;margin:0';
+        none.textContent = 'Nothing on the wheel yet. Put a book forward below.';
+        wheelCard.appendChild(none);
+      } else {
+        const canvas = document.createElement('canvas');
+        canvas.style.cssText = 'width:100%;max-width:320px;aspect-ratio:1;display:block;margin:0 auto';
+        wheelCard.appendChild(canvas);
+
+        // Resting position, so the wheel looks settled rather than at zero.
+        let rotation = 0;
+        // The panel this sits in starts hidden whenever the remembered tab is a
+        // different one, and a hidden element has no width to draw against. An
+        // observer catches the moment it gains one - on a tab switch, a resize,
+        // or a rotation - which a single draw at render time cannot.
+        // The hub image, loaded once and redrawn into whenever it arrives. A
+        // data URL decodes fast, but not before the first frame.
+        let hubImg = null;
+        if (club.iconUrl) {
+          const img = new Image();
+          img.onload = () => {
+            hubImg = img;
+            drawWheel(canvas, entries, bounds, rotation, wheelBase, { hubImg });
+          };
+          img.src = club.iconUrl;
+        }
+
+        new ResizeObserver(() => drawWheel(canvas, entries, bounds, rotation, wheelBase, { hubImg })).observe(canvas);
+
+        const result = document.createElement('div');
+        result.style.cssText = 'text-align:center;font-size:.9rem;margin-top:.6rem;min-height:1.2rem';
+        wheelCard.appendChild(result);
+
+        if (admin) {
+          const spinBtn = document.createElement('button');
+          spinBtn.className = 'spin-btn';
+          spinBtn.textContent = 'Spin';
+          // The label has to stay readable on whatever colour the club picked,
+          // and the palette runs light enough that white is not always it.
+          spinBtn.style.setProperty('--spin-ink', readableInk(themeColour(club.ringColor) || '#6B7B3A'));
+          spinBtn.disabled = !canSpin(entries) || spinning;
+
+          spinBtn.addEventListener('click', () => {
+            const { next } = splitMeetings(meetings);
+            // An accidental second spin would quietly replace a book the club
+            // may already have started reading.
+            if (next?.title && !confirm(`The next meeting is already set to "${next.title}". Spin again and replace it?`)) return;
+
+            spinning = true;
+            spinBtn.disabled = true;
+            spinBtn.classList.add('is-spinning');
+            spinBtn.textContent = 'Spinning';
+            result.textContent = '';
+
+            // The winner is chosen first and the rotation derived from it, so
+            // the wheel cannot stop anywhere other than on the book it names.
+            // The real weights, never the displayed ones. Only an admin can
+            // spin, and an admin always sees the real wheel, so the segment the
+            // animation lands on is the one that was actually chosen.
+            const winnerIndex = pickWinnerIndex(weights);
+            const target = targetRotation(winnerIndex, bounds, 5);
+            const start = performance.now();
+            const DURATION = 4200;
+
+            function frame(now) {
+              const t = Math.min(1, (now - start) / DURATION);
+              // Ease out quintic: fast away, long slow settle.
+              const eased = 1 - Math.pow(1 - t, 5);
+              rotation = target * eased;
+              drawWheel(canvas, entries, bounds, rotation, wheelBase, { hubImg });
+              if (t < 1) { requestAnimationFrame(frame); return; }
+
+              const winner = entries[winnerIndex];
+              drawWheel(canvas, entries, bounds, target, wheelBase, { hubImg, highlight: winnerIndex });
+              result.innerHTML = `<strong>${esc(winner.title)}</strong>`
+                + (winner.username ? ` - ${esc(winner.username)}` : '');
+
+              applySpinResult(clubId, winner, next?.id || null)
+                .catch(err => {
+                  console.error('Could not apply the spin', err);
+                  result.textContent = 'The wheel landed on ' + (winner.title || 'a book') + ', but saving it failed.';
+                })
+                .finally(() => {
+                  spinning = false;
+                  spinBtn.disabled = false;
+                  spinBtn.classList.remove('is-spinning');
+                  spinBtn.textContent = 'Spin again';
+                });
+            }
+            requestAnimationFrame(frame);
+          });
+          wheelCard.appendChild(spinBtn);
+        }
+      }
+      panels.recs.appendChild(wheelCard);
+
+      // -- your own --
+      const mineCard = document.createElement('div');
+      mineCard.className = 'card';
+      mineCard.style.marginBottom = '.75rem';
+      const myTitle = document.createElement('p');
+      myTitle.className = 'section-title';
+      myTitle.style.marginTop = '0';
+      myTitle.textContent = 'Your book';
+      mineCard.appendChild(myTitle);
+
+      // Two states, never both. With a book in, it is shown and the only
+      // controls are Edit and Remove. Editing swaps the whole thing for the
+      // search box. Previously the card offered a "change" link beside the book
+      // and an Update button below it, which is two ways to do one thing plus a
+      // save button with nothing to save.
+      const myBody = document.createElement('div');
+      const myStatus = document.createElement('div');
+      myStatus.style.cssText = 'display:none;font-size:.82rem;margin-top:.5rem';
+
+      const ghostBtn = 'background:none;border:1px solid var(--border);color:var(--text-muted)';
+
+      function sayMine(msg, colour) {
+        myStatus.textContent = msg;
+        myStatus.style.color = colour;
+        myStatus.style.display = '';
+      }
+
+      function showChosen() {
+        myBody.innerHTML = '';
+
+        const row = document.createElement('div');
+        row.className = 'meeting-row';
+        row.style.borderBottom = 'none';
+        row.style.paddingTop = '0';
+
+        if (mine.coverUrl) {
+          const img = document.createElement('img');
+          img.className = 'meeting-cover';
+          img.src = mine.coverUrl;
+          img.alt = '';
+          row.appendChild(img);
+        }
+
+        const info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0';
+        const book = document.createElement('div');
+        book.className = 'meeting-book';
+        book.style.marginTop = '0';
+        book.textContent = mine.title || 'Untitled';
+        info.appendChild(book);
+        if (mine.author) {
+          const by = document.createElement('div');
+          by.className = 'meeting-who';
+          by.textContent = mine.author;
+          info.appendChild(by);
+        }
+        row.appendChild(info);
+        myBody.appendChild(row);
+
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:.5rem;margin-top:.6rem';
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn-update';
+        editBtn.textContent = 'Edit';
+        editBtn.addEventListener('click', () => showPicker());
+        actions.appendChild(editBtn);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn-update';
+        removeBtn.style.cssText = ghostBtn;
+        removeBtn.textContent = 'Remove';
+        removeBtn.addEventListener('click', async () => {
+          removeBtn.disabled = true;
+          try { await clearClubRecommendation(clubId, user.uid); }
+          catch (err) { console.error(err); removeBtn.disabled = false; }
+        });
+        actions.appendChild(removeBtn);
+
+        myBody.append(actions, myStatus);
+      }
+
+      function showPicker() {
+        myBody.innerHTML = '';
+        myStatus.style.display = 'none';
+
+        // Always starts empty, even when replacing a book: the point of pressing
+        // Edit is to search for a different one.
+        let picked = null;
+        myBody.appendChild(bookPicker(b => { picked = b; }, null));
+
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:.5rem;margin-top:.6rem';
+
+        const submitBtn = document.createElement('button');
+        submitBtn.className = 'btn-update';
+        submitBtn.textContent = 'Submit';
+        submitBtn.addEventListener('click', async () => {
+          if (!picked?.title) { sayMine('Search for a book and pick one first.', '#c84f4f'); return; }
+          submitBtn.disabled = true;
+          sayMine('Saving...', 'var(--text-muted)');
+          try {
+            await setClubRecommendation(clubId, user.uid, picked, profile);
+            // The snapshot listener redraws this card with the new book, so
+            // there is nothing to put back on screen here.
+          } catch (err) {
+            console.error('Saving recommendation failed', err);
+            sayMine('Could not save that.', '#c84f4f');
+            submitBtn.disabled = false;
+          }
+        });
+        actions.appendChild(submitBtn);
+
+        // Only when there is something to go back to.
+        if (mine) {
+          const cancelBtn = document.createElement('button');
+          cancelBtn.className = 'btn-update';
+          cancelBtn.style.cssText = ghostBtn;
+          cancelBtn.textContent = 'Cancel';
+          cancelBtn.addEventListener('click', () => showChosen());
+          actions.appendChild(cancelBtn);
+        }
+
+        myBody.append(actions, myStatus);
+      }
+
+      if (mine) showChosen(); else showPicker();
+      mineCard.appendChild(myBody);
+      panels.recs.appendChild(mineCard);
+
+      // -- everyone else's --
+      const listCard = document.createElement('div');
+      listCard.className = 'card';
+      const lTitle = document.createElement('p');
+      lTitle.className = 'section-title';
+      lTitle.style.marginTop = '0';
+      lTitle.textContent = `Submitted books (${entries.length})`;
+      listCard.appendChild(lTitle);
+
+      if (!entries.length) {
+        const none = document.createElement('p');
+        none.style.cssText = 'color:var(--text-muted);font-size:.85rem;margin:0';
+        none.textContent = 'Nobody has put a book forward yet.';
+        listCard.appendChild(none);
+      } else {
+        entries.forEach((rec, i) => {
+          const row = document.createElement('div');
+          row.className = 'meeting-row';
+
+          const swatch = document.createElement('div');
+          swatch.style.cssText = `width:10px;align-self:stretch;border-radius:2px;flex-shrink:0;background:${segmentColour(i, entries.length, wheelBase)}`;
+          row.appendChild(swatch);
+
+          if (rec.coverUrl) {
+            const img = document.createElement('img');
+            img.className = 'meeting-cover';
+            img.src = rec.coverUrl;
+            img.alt = '';
+            row.appendChild(img);
+          }
+
+          const body = document.createElement('div');
+          body.style.cssText = 'flex:1;min-width:0';
+          const who = document.createElement('div');
+          who.className = 'meeting-date';
+          who.textContent = rec.uid === user.uid ? 'You' : (rec.username || 'A member');
+          // The odds, but only when they are not all the same: on an even wheel
+          // the number is noise, and it is the weighting that needs explaining.
+          if (selection.method === 'weighted' && showWeights) {
+            const pct = document.createElement('span');
+            pct.style.cssText = 'margin-left:.4rem;color:var(--text-muted);text-transform:none;letter-spacing:0';
+            pct.textContent = `${Math.round(chances[i] * 100)}%`;
+            who.appendChild(pct);
+          }
+          const book = document.createElement('div');
+          book.className = 'meeting-book';
+          if (rec.gbid) {
+            const a = document.createElement('a');
+            a.href = `../book/?gbid=${encodeURIComponent(rec.gbid)}`;
+            a.textContent = rec.title || 'Untitled';
+            a.style.color = 'inherit';
+            book.appendChild(a);
+          } else {
+            book.textContent = rec.title || 'Untitled';
+          }
+          if (rec.author) {
+            const by = document.createElement('span');
+            by.style.cssText = 'font-weight:400;color:var(--text-muted)';
+            by.textContent = ` - ${rec.author}`;
+            book.appendChild(by);
+          }
+          body.append(who, book);
+          row.appendChild(body);
+
+          // An admin can clear somebody else's submission. Not their own: that
+          // is managed in the card above, and two Remove buttons for one book
+          // is one too many.
+          if (admin && rec.uid !== user.uid) {
+            const del = document.createElement('button');
+            del.textContent = 'Remove';
+            del.style.cssText = 'background:none;border:none;color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:.75rem;text-decoration:underline;padding:0;flex-shrink:0;align-self:flex-start';
+            del.addEventListener('click', async () => {
+              const whose = rec.username ? `${rec.username}'s` : 'this';
+              if (!confirm(`Take ${whose} book off the wheel?
+
+They can put another one forward whenever they like.`)) return;
+              del.disabled = true;
+              try { await clearClubRecommendation(clubId, rec.uid); }
+              catch (err) { console.error('Could not remove that submission', err); del.disabled = false; }
+            });
+            row.appendChild(del);
+          }
+
+          listCard.appendChild(row);
+        });
+      }
+      panels.recs.appendChild(listCard);
+    }
+
+    // ── settings tab ──────────────────────────────────────────────────────────
+    function renderSettings() {
+      const admin = isClubAdmin(club, user.uid);
+      const owner = isClubOwner(club, user.uid);
+      panels.settings.innerHTML = '';
+
+      if (admin) {
+        const detailsCard = document.createElement('div');
+        detailsCard.className = 'card';
+        detailsCard.style.marginBottom = '.75rem';
+        detailsCard.innerHTML = `<p class="section-title" style="margin-top:0">Club details</p>
+          <label style="font-size:.78rem;color:var(--text-muted)">Name</label>
+          <input type="text" id="set-name" class="join-club-input" maxlength="80" style="width:100%;box-sizing:border-box;margin:.2rem 0 .6rem">
+          <label style="font-size:.78rem;color:var(--text-muted)">Description</label>
+          <textarea id="set-desc" class="join-club-input" rows="2" maxlength="500" style="width:100%;box-sizing:border-box;font-family:inherit;text-align:left;resize:vertical;margin:.2rem 0 .6rem"></textarea>
+          <button class="btn-update" id="set-save" type="button">Save</button>
+          <div id="set-status" style="display:none;font-size:.82rem;margin-top:.5rem"></div>`;
+        detailsCard.querySelector('#set-name').value = club.name || '';
+        detailsCard.querySelector('#set-desc').value = club.description || '';
+        detailsCard.querySelector('#set-save').addEventListener('click', async () => {
+          const status = detailsCard.querySelector('#set-status');
+          const name = detailsCard.querySelector('#set-name').value.trim();
+          if (!name) {
+            status.textContent = 'A club needs a name.';
+            status.style.color = '#c84f4f';
+            status.style.display = '';
+            return;
+          }
+          try {
+            await updateClub(clubId, { name, description: detailsCard.querySelector('#set-desc').value.trim() });
+            status.textContent = 'Saved.';
+            status.style.color = 'var(--accent)';
+            status.style.display = '';
+          } catch (err) {
+            console.error(err);
+            status.textContent = 'Could not save that.';
+            status.style.color = '#c84f4f';
+            status.style.display = '';
+          }
+        });
+        panels.settings.appendChild(detailsCard);
+
+        // Same palette a person themes their profile with, so a club sits in the
+        // same world rather than inventing its own set of colours.
+        const colourCard = document.createElement('div');
+        colourCard.className = 'card';
+        colourCard.style.marginBottom = '.75rem';
+        const cTitle = document.createElement('p');
+        cTitle.className = 'section-title';
+        cTitle.style.marginTop = '0';
+        cTitle.textContent = 'Club colour';
+        colourCard.appendChild(cTitle);
+
+        const swatches = document.createElement('div');
+        swatches.style.cssText = 'display:flex;flex-wrap:wrap;gap:.5rem';
+        const colourStatus = document.createElement('div');
+        colourStatus.style.cssText = 'display:none;font-size:.82rem;margin-top:.5rem';
+
+        let chosenColour = themeColour(club.ringColor) || THEMES[0].color;
+
+        function renderSwatches() {
+          swatches.innerHTML = '';
+          for (const { label, color } of THEMES) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.title = label;
+            btn.setAttribute('aria-label', label);
+            btn.style.cssText = `width:1.75rem;height:1.75rem;border-radius:50%;background:${color};cursor:pointer;border:3px solid ${color === chosenColour ? 'var(--text)' : 'transparent'};transition:border-color .15s;flex-shrink:0`;
+            btn.addEventListener('click', async () => {
+              chosenColour = color;
+              // Applied straight away so the ring above answers the click, then
+              // saved. No separate save button: one choice, one write.
+              document.documentElement.style.setProperty('--ring-color', color);
+              renderSwatches();
+              colourStatus.textContent = 'Saving...';
+              colourStatus.style.color = 'var(--text-muted)';
+              colourStatus.style.display = '';
+              try {
+                await updateClub(clubId, { ringColor: color });
+                colourStatus.style.display = 'none';
+              } catch (err) {
+                console.error('Saving club colour failed', err);
+                colourStatus.textContent = 'Could not save that.';
+                colourStatus.style.color = '#c84f4f';
+              }
+            });
+            swatches.appendChild(btn);
+          }
+        }
+        renderSwatches();
+        colourCard.append(swatches, colourStatus);
+        panels.settings.appendChild(colourCard);
+
+        panels.settings.appendChild(iconCard());
+        panels.settings.appendChild(selectionCard());
+
+        const codeCard = document.createElement('div');
+        codeCard.className = 'card';
+        codeCard.style.marginBottom = '.75rem';
+        codeCard.innerHTML = `<p class="section-title" style="margin-top:0">Invite code</p>
+          <p style="color:var(--text-muted);font-size:.82rem;margin:0 0 .5rem">Anyone with this code can join the club.</p>
+          <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+            <span class="club-code">${esc(club.inviteCode || '')}</span>
+            <button class="btn-update" id="code-copy" type="button" style="background:none;border:1px solid var(--border);color:var(--text-muted)">Copy</button>
+          </div>`;
+        codeCard.querySelector('#code-copy').addEventListener('click', async () => {
+          const btn = codeCard.querySelector('#code-copy');
+          try {
+            await navigator.clipboard.writeText(club.inviteCode || '');
+            btn.textContent = 'Copied';
+            setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+          } catch {
+            // Clipboard access is refused in plenty of ordinary situations, and
+            // the code is already on screen to be read.
+            btn.textContent = 'Copy failed';
+            setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+          }
+        });
+        panels.settings.appendChild(codeCard);
+      }
+
+      // -- club icon --
+      // The same crop-and-store path as a profile avatar: a 256px square kept as
+      // a data URL on the club document. Without one the club shows its initial.
+      function iconCard() {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.marginBottom = '.75rem';
+
+        const title = document.createElement('p');
+        title.className = 'section-title';
+        title.style.marginTop = '0';
+        title.textContent = 'Club icon';
+        card.appendChild(title);
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.9rem';
+
+        const preview = document.createElement('div');
+        preview.className = 'profile-avatar-sm';
+        preview.style.cssText = 'width:56px;height:56px;font-size:1.3rem;flex-shrink:0';
+        function showPreview(url) {
+          if (url) preview.innerHTML = `<img src="${esc(url)}" alt="">`;
+          else preview.textContent = (club.name[0] || '?').toUpperCase();
+        }
+        showPreview(club.iconUrl);
+
+        const status = document.createElement('div');
+        status.style.cssText = 'display:none;font-size:.82rem;margin-top:.5rem';
+        function say(msg, colour) {
+          status.textContent = msg;
+          status.style.color = colour;
+          status.style.display = '';
+        }
+
+        const file = document.createElement('input');
+        file.type = 'file';
+        file.accept = 'image/*';
+        file.style.display = 'none';
+
+        const buttons = document.createElement('div');
+        buttons.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap';
+
+        const chooseBtn = document.createElement('button');
+        chooseBtn.className = 'btn-update';
+        chooseBtn.type = 'button';
+        chooseBtn.textContent = club.iconUrl ? 'Change' : 'Choose an image';
+        chooseBtn.addEventListener('click', () => file.click());
+        buttons.appendChild(chooseBtn);
+
+        if (club.iconUrl) {
+          const removeBtn = document.createElement('button');
+          removeBtn.className = 'btn-update';
+          removeBtn.type = 'button';
+          removeBtn.style.cssText = 'background:none;border:1px solid var(--border);color:var(--text-muted)';
+          removeBtn.textContent = 'Remove';
+          removeBtn.addEventListener('click', async () => {
+            removeBtn.disabled = true;
+            try { await setClubIcon(clubId, null); }
+            catch (err) { console.error(err); say('Could not remove that.', '#c84f4f'); removeBtn.disabled = false; }
+          });
+          buttons.appendChild(removeBtn);
+        }
+
+        file.addEventListener('change', async () => {
+          const chosen = file.files?.[0];
+          if (!chosen) return;
+          say('Loading...', 'var(--text-muted)');
+          // Revoked in the finally, not on load. openCropModal builds its own
+          // <img> from img.src, so revoking as soon as the image decodes leaves
+          // the modal pointing at a dead blob URL and showing nothing.
+          const blobUrl = URL.createObjectURL(chosen);
+          try {
+            const img = await new Promise((resolve, reject) => {
+              const el = new Image();
+              el.onload = () => resolve(el);
+              el.onerror = () => reject(new Error('not an image'));
+              el.src = blobUrl;
+            });
+            const cropped = await openCropModal(img);
+            if (!cropped) { status.style.display = 'none'; return; }
+            showPreview(cropped);
+            say('Saving...', 'var(--text-muted)');
+            await setClubIcon(clubId, cropped);
+            // The snapshot listener redraws the header and this card.
+          } catch (err) {
+            console.error('Club icon failed', err);
+            say('Could not use that image.', '#c84f4f');
+            showPreview(club.iconUrl);
+          } finally {
+            URL.revokeObjectURL(blobUrl);
+            // Cleared last, so choosing the same file twice still fires change.
+            file.value = '';
+          }
+        });
+
+        row.append(preview, buttons);
+        card.append(row, file, status);
+        return card;
+      }
+
+      // -- selection method --
+      // How the wheel decides. The dials only appear once weighting is on:
+      // offering them under Default would be offering settings that do nothing.
+      function selectionCard() {
+        const current = { ...SELECTION_DEFAULTS, ...(club.selection || {}) };
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.marginBottom = '.75rem';
+
+        const title = document.createElement('p');
+        title.className = 'section-title';
+        title.style.marginTop = '0';
+        title.textContent = 'Selection method';
+        card.appendChild(title);
+
+        const status = document.createElement('div');
+        status.style.cssText = 'display:none;font-size:.82rem;margin-top:.5rem';
+
+        async function save(patch) {
+          const next = { ...current, ...patch };
+          status.textContent = 'Saving...';
+          status.style.color = 'var(--text-muted)';
+          status.style.display = '';
+          try {
+            await updateClub(clubId, { selection: next });
+            status.style.display = 'none';
+          } catch (err) {
+            console.error('Saving selection method failed', err);
+            status.textContent = 'Could not save that.';
+            status.style.color = '#c84f4f';
+          }
+        }
+
+        const select = document.createElement('select');
+        select.className = 'join-club-input';
+        select.style.cssText = 'width:100%;box-sizing:border-box';
+        select.appendChild(new Option('Wheel (Default)', 'uniform'));
+        select.appendChild(new Option('Wheel (Weighted)', 'weighted'));
+        select.value = current.method;
+        card.appendChild(select);
+
+        // Outside the dials block: this is a rule about who may win, not a
+        // weighting, so it applies to the even wheel too and stays visible
+        // whichever method is chosen.
+        const repeatRow = document.createElement('label');
+        repeatRow.style.cssText = 'display:flex;align-items:center;gap:.5rem;margin-top:.75rem;font-size:.85rem;cursor:pointer';
+        const repeatBox = document.createElement('input');
+        repeatBox.type = 'checkbox';
+        repeatBox.checked = !!current.allowRepeat;
+        repeatBox.addEventListener('change', () => {
+          current.allowRepeat = repeatBox.checked;
+          save({ allowRepeat: current.allowRepeat });
+        });
+        const repeatText = document.createElement('span');
+        repeatText.textContent = 'Let the same person be picked twice in a row';
+        repeatRow.append(repeatBox, repeatText);
+        card.appendChild(repeatRow);
+
+        const dials = document.createElement('div');
+        dials.style.cssText = 'margin-top:.75rem';
+
+        // Inside the dials block: there are no weights to hide on an even wheel.
+        const hideRow = document.createElement('label');
+        hideRow.style.cssText = 'display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;font-size:.85rem;cursor:pointer';
+        const hideBox = document.createElement('input');
+        hideBox.type = 'checkbox';
+        hideBox.checked = !!current.hideWeights;
+        hideBox.addEventListener('change', () => {
+          current.hideWeights = hideBox.checked;
+          save({ hideWeights: current.hideWeights });
+        });
+        const hideText = document.createElement('span');
+        hideText.textContent = 'Hide the odds from everyone but admins';
+        hideRow.append(hideBox, hideText);
+        dials.appendChild(hideRow);
+
+        const hideNote = document.createElement('p');
+        hideNote.style.cssText = 'color:var(--text-muted);font-size:.78rem;margin:-.5rem 0 .75rem;line-height:1.45';
+        hideNote.textContent = 'Members see an even wheel and no percentages. The spin still uses the real weighting.';
+        dials.appendChild(hideNote);
+        dials.style.display = current.method === 'weighted' ? '' : 'none';
+
+        // Each dial explains itself. One paragraph covering both left the reader
+        // to work out which half applied to which slider.
+        function dial(label, key, note) {
+          const wrap = document.createElement('div');
+          wrap.style.cssText = 'margin-bottom:.6rem';
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;justify-content:space-between;font-size:.8rem;color:var(--text-muted)';
+          const name = document.createElement('span');
+          name.textContent = label;
+          const value = document.createElement('span');
+          value.textContent = Number(current[key]).toFixed(2);
+          row.append(name, value);
+
+          const input = document.createElement('input');
+          input.type = 'range';
+          input.min = '0';
+          input.max = '1';
+          input.step = '0.05';
+          input.value = String(current[key]);
+          input.style.cssText = 'width:100%;accent-color:var(--ring-color,var(--accent))';
+          // Label follows the thumb while dragging; the write waits for the
+          // release, so one drag is one save rather than twenty.
+          input.addEventListener('input', () => { value.textContent = Number(input.value).toFixed(2); });
+          input.addEventListener('change', () => {
+            current[key] = Number(input.value);
+            save({ [key]: current[key] });
+          });
+
+          const explain = document.createElement('p');
+          explain.style.cssText = 'color:var(--text-muted);font-size:.78rem;margin:.15rem 0 0;line-height:1.45';
+          explain.textContent = note;
+
+          wrap.append(row, input, explain);
+          return wrap;
+        }
+
+        dials.append(
+          dial('Recently chosen count less', 'pickWeight',
+               'Lowers the odds for anyone whose book was chosen recently, so the same few people do not keep getting picked. Recent meetings count for more than older ones. At 0 it makes no difference.'),
+          dial('Regular attenders count more', 'attendWeight',
+               'Raises the odds for anyone who has been coming to meetings, so the people who turn up have more say in what is read. Recent meetings count for more than older ones. At 0 it makes no difference.'),
+        );
+        card.append(dials, status);
+
+        select.addEventListener('change', () => {
+          current.method = select.value;
+          dials.style.display = current.method === 'weighted' ? '' : 'none';
+          save({ method: current.method });
+        });
+
+        return card;
+      }
+
+      // -- members --
+      const membersCard = document.createElement('div');
+      membersCard.className = 'card';
+      membersCard.style.marginBottom = '.75rem';
+      const mTitle = document.createElement('p');
+      mTitle.className = 'section-title';
+      mTitle.style.marginTop = '0';
+      const members = memberList(club);
+      mTitle.textContent = `Members (${members.length})`;
+      membersCard.appendChild(mTitle);
+
+      for (const member of members) {
+        const row = document.createElement('div');
+        row.className = 'member-row';
+        row.appendChild(avatarEl(member));
+
+        const name = document.createElement('div');
+        name.style.cssText = 'flex:1;min-width:0';
+        name.innerHTML = `<div style="font-size:.88rem">${esc(member.username || '(no name)')}</div>
+          <div style="font-size:.75rem;color:var(--text-muted)">${isClubOwner(club, member.uid) ? 'Owner' : member.role === 'admin' ? 'Admin' : 'Member'}</div>`;
+        row.appendChild(name);
+
+        if (admin && member.uid !== user.uid) {
+          const btnCss = 'padding:.2rem .5rem;font-size:.75rem;font-family:inherit;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;color:var(--text-muted);flex-shrink:0';
+          const actions = document.createElement('div');
+          actions.style.cssText = 'display:flex;gap:.3rem;flex-shrink:0';
+
+          if (member.role === 'admin') {
+            if (canDemote(club, member.uid)) {
+              const demote = document.createElement('button');
+              demote.textContent = 'Make member';
+              demote.style.cssText = btnCss;
+              demote.addEventListener('click', () => setClubMemberRole(clubId, member.uid, 'member').catch(console.error));
+              actions.appendChild(demote);
+            }
+          } else {
+            const promote = document.createElement('button');
+            promote.textContent = 'Make admin';
+            promote.style.cssText = btnCss;
+            promote.addEventListener('click', () => setClubMemberRole(clubId, member.uid, 'admin').catch(console.error));
+            actions.appendChild(promote);
+          }
+
+          if (!isClubOwner(club, member.uid)) {
+            const remove = document.createElement('button');
+            remove.textContent = 'Remove';
+            remove.style.cssText = btnCss;
+            remove.addEventListener('click', async () => {
+              if (!confirm(`Remove ${member.username || 'this member'} from the club?`)) return;
+              try { await removeClubMember(clubId, member.uid); }
+              catch (err) { console.error(err); }
+            });
+            actions.appendChild(remove);
+          }
+          row.appendChild(actions);
+        }
+        membersCard.appendChild(row);
+      }
+      panels.settings.appendChild(membersCard);
+
+      // -- leaving and deleting --
+      const dangerCard = document.createElement('div');
+      dangerCard.className = 'card';
+      const dTitle = document.createElement('p');
+      dTitle.className = 'section-title';
+      dTitle.style.marginTop = '0';
+      dTitle.textContent = 'Leaving';
+      dangerCard.appendChild(dTitle);
+
+      if (owner) {
+        const note = document.createElement('p');
+        note.style.cssText = 'color:var(--text-muted);font-size:.82rem;margin:0 0 .5rem';
+        note.textContent = 'You founded this club, so you cannot leave it. You can delete it instead.';
+        dangerCard.appendChild(note);
+
+        const del = document.createElement('button');
+        del.className = 'btn-danger';
+        del.textContent = 'Delete club';
+        del.addEventListener('click', async () => {
+          if (!confirm(`Delete "${club.name}"? Every meeting and its history goes with it. This cannot be undone.`)) return;
+          try {
+            await deleteClub(clubId);
+            location.href = '../clubs/';
+          } catch (err) {
+            console.error('Delete failed', err);
+          }
+        });
+        dangerCard.appendChild(del);
+      } else {
+        const leave = document.createElement('button');
+        leave.className = 'btn-danger';
+        leave.textContent = 'Leave club';
+        leave.addEventListener('click', async () => {
+          if (!confirm(`Leave "${club.name}"? You will need the invite code to come back.`)) return;
+          try {
+            await leaveClub(clubId, user.uid);
+            location.href = '../clubs/';
+          } catch (err) {
+            console.error('Leave failed', err);
+          }
+        });
+        dangerCard.appendChild(leave);
+      }
+      panels.settings.appendChild(dangerCard);
+    }
+
+    function renderAll() {
+      renderHeader();
+      renderMeetings();
+      // Skipped mid-spin: this rebuilds the wheel's canvas, and the animation is
+      // drawing into the one already on screen. The other watchers guard this
+      // the same way.
+      if (!spinning) renderRecs();
+      renderSettings();
+    }
+
+    // ── live ──────────────────────────────────────────────────────────────────
+    watchClub(clubId, next => {
+      if (!next) {
+        // Either the club was deleted, or this reader was removed from it and
+        // the rules stopped allowing the read. Both mean there is nothing here.
+        headerEl.innerHTML = '<div class="card"><p style="color:var(--text-muted);margin:0">This club is not available. You may have been removed, or it may have been deleted.</p></div>';
+        tabBar.style.display = 'none';
+        for (const key of Object.keys(panels)) panels[key].innerHTML = '';
+        return;
+      }
+      club = next;
+      if (!isClubMember(club, user.uid)) {
+        headerEl.innerHTML = '<div class="card"><p style="color:var(--text-muted);margin:0">You are not a member of this club.</p></div>';
+        tabBar.style.display = 'none';
+        return;
+      }
+      tabBar.style.display = '';
+
+      // The club stores a copy of each member's name and avatar so a roster can
+      // be drawn without a read per person. It catches up here, on the visit
+      // after a rename, rather than fanning out across every club at rename time.
+      const mine = club.members[user.uid];
+      if (!profileSynced && mine && (mine.username !== profile.username || mine.avatarUrl !== (profile.avatarUrl || ''))) {
+        profileSynced = true;
+        refreshClubMemberProfile(clubId, user.uid, profile).catch(() => {});
+      }
+
+      renderAll();
+      switchTab(activeTab);
+      if (!memberFaces.size) loadMemberFaces();
+    });
+
+    watchClubMeetings(clubId, next => {
+      meetings = next;
+      if (!club) return;
+      renderMeetings();
+      // The wheel is weighted from this history - who was picked last, who has
+      // been turning up - so it has to be redrawn when the history arrives or
+      // changes. The club snapshot usually lands first, which meant the wheel
+      // was built from no history at all and never corrected: no exclusion, no
+      // weighting, every slice equal.
+      if (!spinning) renderRecs();
+    });
+
+    watchClubRecommendations(clubId, next => {
+      recommendations = next;
+      // Never mid-spin: rebuilding the panel would replace the canvas the
+      // animation is drawing into, and the wheel would vanish as it turned.
+      if (club && !spinning) renderRecs();
+    });
+  </script>
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
+</body>
+</html>

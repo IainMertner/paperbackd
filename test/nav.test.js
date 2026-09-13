@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 
 const mainSrc = readFileSync(fileURLToPath(new URL('../js/main.js', import.meta.url)), 'utf8');
 
-const NAV_IDS = ['home', 'feed', 'search', 'stats', 'settings', 'library', 'profile', 'network', 'lists'];
+const NAV_IDS = ['home', 'search', 'clubs', 'stats', 'settings', 'library', 'profile', 'network', 'lists'];
 
 function loadNav({ pathname = '/', search = '', stored = null, navIds = NAV_IDS } = {}) {
   const store = new Map();
@@ -66,7 +66,6 @@ function activeFor(opts) {
 describe('setActiveNav — direct path matches', () => {
   const CASES = [
     ['/home/', 'home'], ['/home', 'home'],
-    ['/feed/', 'feed'], ['/feed', 'feed'],
     ['/search/', 'search'], ['/search', 'search'],
     ['/stats/', 'stats'], ['/stats', 'stats'],
     ['/settings/', 'settings'], ['/settings', 'settings'],
@@ -74,6 +73,7 @@ describe('setActiveNav — direct path matches', () => {
     ['/profile/', 'profile'], ['/profile', 'profile'],
     ['/network/', 'network'], ['/network', 'network'],
     ['/lists/', 'lists'], ['/lists', 'lists'],
+    ['/clubs/', 'clubs'], ['/clubs', 'clubs'],
   ];
 
   it.each(CASES)('%s activates %s', (pathname, expected) => {
@@ -84,12 +84,35 @@ describe('setActiveNav — direct path matches', () => {
     expect(activeFor({ pathname })).toHaveLength(1);
   });
 
-  it('treats the site root as the feed', () => {
-    expect(activeFor({ pathname: '/' })).toEqual(['feed']);
+  // The root redirects straight to /home/, so nothing should claim it.
+  it('claims nothing for the site root', () => {
+    expect(activeFor({ pathname: '/' })).toEqual([]);
+  });
+
+  // The feed has a page but no nav item: home leads with it, and it is not a
+  // section of its own. Like a book or an author page, it leaves whichever
+  // section you came from lit.
+  it('leaves the previous section lit on the feed page', () => {
+    expect(activeFor({ pathname: '/feed/', stored: 'library' })).toEqual(['library']);
+    expect(activeFor({ pathname: '/feed/' })).toEqual([]);
   });
 
   it('treats the singular /list/ detail page as the lists section', () => {
     expect(activeFor({ pathname: '/list/' })).toEqual(['lists']);
+  });
+
+  // One club's page belongs to the Clubs section, the same way one list belongs
+  // to Lists. Without this the nav went dark on a club page and fell back to
+  // whatever was last visited.
+  it('treats the singular /club/ detail page as the clubs section', () => {
+    expect(activeFor({ pathname: '/club/' })).toEqual(['clubs']);
+    expect(activeFor({ pathname: '/club' })).toEqual(['clubs']);
+  });
+
+  // A club page carries ?id=, never ?u=, so the friend-page guard must not
+  // apply to it: an id in the query is not somebody else's club.
+  it('stays lit on a club page with a query string', () => {
+    expect(activeFor({ pathname: '/club/', search: '?id=abc123' })).toEqual(['clubs']);
   });
 
   it('activates nothing recognisable for an unknown path and falls back', () => {
@@ -103,7 +126,7 @@ describe('setActiveNav — friend pages with ?u=', () => {
   const SCOPED = ['stats', 'library', 'profile', 'network', 'lists'];
 
   it.each(SCOPED)('/%s/?u=someone does not activate %s', page => {
-    const active = activeFor({ pathname: `/${page}/`, search: '?u=someone', stored: 'feed' });
+    const active = activeFor({ pathname: `/${page}/`, search: '?u=someone', stored: 'search' });
     expect(active).not.toContain(page);
   });
 
@@ -131,8 +154,8 @@ describe('setActiveNav — friend pages with ?u=', () => {
 
   it('treats an empty ?u= as still being a friend page', () => {
     // URLSearchParams.has() is true for a valueless key.
-    const active = activeFor({ pathname: '/library/', search: '?u=', stored: 'feed' });
-    expect(active).toEqual(['feed']);
+    const active = activeFor({ pathname: '/library/', search: '?u=', stored: 'search' });
+    expect(active).toEqual(['search']);
   });
 
   it('ignores unrelated query parameters', () => {
@@ -144,7 +167,7 @@ describe('setActiveNav — friend pages with ?u=', () => {
   });
 
   it('detects u when it is not the first parameter', () => {
-    expect(activeFor({ pathname: '/library/', search: '?sort=title&u=bob', stored: 'feed' })).toEqual(['feed']);
+    expect(activeFor({ pathname: '/library/', search: '?sort=title&u=bob', stored: 'search' })).toEqual(['search']);
   });
 });
 
@@ -163,8 +186,10 @@ describe('setActiveNav — persistence', () => {
     expect(nav.store.get('nav-active')).toBe('search');
   });
 
-  it('defaults to feed when nothing is stored and the path is unknown', () => {
-    expect(activeFor({ pathname: '/book/' })).toEqual(['feed']);
+  // Nothing stored and nothing matched: light nothing rather than guess a
+  // section the reader has never opened.
+  it('lights nothing when nothing is stored and the path is unknown', () => {
+    expect(activeFor({ pathname: '/book/' })).toEqual([]);
   });
 
   it('does not write to storage on an unknown path', () => {
@@ -182,7 +207,7 @@ describe('setActiveNav — persistence', () => {
   });
 
   it('restores the stored tab on the activity page', () => {
-    expect(activeFor({ pathname: '/activity/', stored: 'feed' })).toEqual(['feed']);
+    expect(activeFor({ pathname: '/activity/', stored: 'lists' })).toEqual(['lists']);
   });
 
   it('activates nothing when the stored tab has no matching element', () => {
@@ -197,7 +222,7 @@ describe('setActiveNav — exclusivity', () => {
     const nav = loadNav({ pathname: '/library/' });
     nav.setActiveNav();
     expect(nav.activeIds()).toEqual(['library']);
-    nav.els.find(e => e.dataset.nav === 'feed').classes.add('active');
+    nav.els.find(e => e.dataset.nav === 'lists').classes.add('active');
     nav.setActiveNav();
     expect(nav.activeIds()).toEqual(['library']);
   });
@@ -223,9 +248,9 @@ describe('setActiveNav — exclusivity', () => {
   });
 
   it('handles duplicate nav elements for the same page', () => {
-    const nav = loadNav({ pathname: '/feed/', navIds: ['feed', 'feed', 'home'] });
+    const nav = loadNav({ pathname: '/lists/', navIds: ['lists', 'lists', 'home'] });
     nav.setActiveNav();
-    expect(nav.activeIds()).toEqual(['feed', 'feed']);
+    expect(nav.activeIds()).toEqual(['lists', 'lists']);
   });
 });
 

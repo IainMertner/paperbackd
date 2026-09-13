@@ -16,20 +16,60 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>clubs - paperbackd</title>
   <link rel="stylesheet" href="../css/main.css">
+  <style>
+    /* The Create club card reuses the library's add-book classes, which are all
+       global except .add-book-card - and that one only exists there to carry the
+       ink edge and a z-index for its search suggestions. Here the rule below
+       inks every card already, and nothing overflows, so it needs no rule of
+       its own. */
+
+    /* Inked edge on every card on the page. isolation:isolate because these sit
+       in normal page flow: with no stacking context of their own, the z-index:-1
+       layer falls behind the opaque page background and disappears. */
+    .card {
+      position: relative;
+      isolation: isolate;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: var(--radius);
+      background: var(--bg-card);
+      box-shadow: var(--shadow);
+      filter: url(#ink-edge);
+      z-index: -1;
+    }
+  </style>
 </head>
 <body>
+
+  <!-- The card edges below are drawn through this. filter: url() pointing at a
+       missing id stops the element rendering entirely, so a card would lose its
+       whole background rather than just its roughness. -->
+  <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <defs>
+      <filter id="ink-edge" x="-25%" y="-25%" width="150%" height="150%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" seed="5" result="noise"/>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
 
   <header class="site-header">
     <div class="header-inner">
       <a class="logo" href="/home/">paperbackd<span class="title-dot">.</span></a>
       <nav class="desktop-nav">
-        <a href="../feed/" data-nav="feed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>feed</a>
-        <a href="../clubs/"    data-nav="clubs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Clubs</a>
-        <a href="../network/"  data-nav="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><line x1="8.7" y1="10.7" x2="15.3" y2="7.3"/><line x1="8.7" y1="13.3" x2="15.3" y2="16.7"/></svg>network</a>
-        <a href="../library/"  data-nav="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>library</a>
-        <a href="../lists/"    data-nav="lists"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg>lists</a>
-        <a href="../stats/"    data-nav="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="13" width="4" height="7" rx="0.5"/><rect x="10" y="3" width="4" height="17" rx="0.5"/><rect x="17" y="9" width="4" height="11" rx="0.5"/></svg>stats</a>
-        <a href="../profile/"  data-nav="profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>profile</a>
+        <a href="../search/" data-nav="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>search</a>
+        <a href="../clubs/" data-nav="clubs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>clubs</a>
+        <a href="../network/" data-nav="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><line x1="8.7" y1="10.7" x2="15.3" y2="7.3"/><line x1="8.7" y1="13.3" x2="15.3" y2="16.7"/></svg>network</a>
+        <a href="../library/" data-nav="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>library</a>
+        <a href="../lists/" data-nav="lists"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg>lists</a>
+        <a href="../stats/" data-nav="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="13" width="4" height="7" rx="0.5"/><rect x="10" y="3" width="4" height="17" rx="0.5"/><rect x="17" y="9" width="4" height="11" rx="0.5"/></svg>stats</a>
+        <a href="../profile/" data-nav="profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>profile</a>
         <a href="../settings/" data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>settings</a>
       </nav>
     </div>
@@ -37,13 +77,36 @@
 
   <main class="page-content">
 
+    <div class="add-book-card card" id="create-card">
+      <button class="add-book-toggle" id="create-toggle" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        Create club
+      </button>
+      <div class="add-book-form" id="create-form" hidden>
+        <div class="add-book-fields">
+          <input class="add-book-input" type="text" id="create-name" placeholder="Club name" maxlength="80" autocomplete="off" spellcheck="false">
+          <textarea class="add-book-input" id="create-desc" rows="2" maxlength="500" placeholder="Description" style="resize:vertical;font-family:inherit"></textarea>
+        </div>
+        <div class="add-book-actions">
+          <button class="btn-update" id="create-cancel" type="button">Cancel</button>
+          <button class="join-club-btn" id="create-submit" type="button">Create</button>
+        </div>
+        <div id="create-status" style="display:none;font-size:.85rem;margin-top:.5rem"></div>
+      </div>
+    </div>
+
+    <p class="section-title">Your clubs</p>
+    <div id="club-list"><p style="color:var(--text-muted);font-size:.85rem">Loading...</p></div>
 
     <div class="join-club card">
       <div class="join-club-label">Join a club</div>
       <div class="join-club-row">
-        <input class="join-club-input" type="text" placeholder="Enter invite code" maxlength="12" autocomplete="off" spellcheck="false">
-        <button class="join-club-btn">Join</button>
+        <input class="join-club-input" id="join-code" type="text" placeholder="Enter invite code" maxlength="12" autocomplete="off" spellcheck="false">
+        <button class="join-club-btn" id="join-btn">Join</button>
       </div>
+      <div id="join-status" style="display:none;font-size:.85rem;margin-top:.5rem"></div>
     </div>
 
   </main>
@@ -56,13 +119,12 @@
       </svg>
       home
     </a>
-    <a class="mobile-nav-item" href="../clubs/" data-nav="clubs">
+    <a class="mobile-nav-item" href="../search/" data-nav="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-        <circle cx="9" cy="7" r="4"/>
-        <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
-      Clubs
+      search
     </a>
     <a class="mobile-nav-item" href="../library/" data-nav="library">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -92,7 +154,125 @@
   <script>document.body.classList.add('auth-loading');</script>
   <script type="module">
     import { requireAuth } from '../js/auth.js';
-    try { await requireAuth(); } finally { document.body.classList.remove('auth-loading'); }
+    import { getMyClubs, createClub, joinClubByCode } from '../js/firebase.js';
+    import { generateInviteCode, isValidInviteCode, normaliseInviteCode, memberList } from '../js/club-utils.js';
+    import { esc } from '../js/utils.js';
+    import { clubIconEl } from '../js/club-icon.js';
+
+    let user, profile;
+    try { ({ user, profile } = await requireAuth()); }
+    finally { document.body.classList.remove('auth-loading'); }
+
+    const listEl = document.getElementById('club-list');
+
+    function say(el, msg, ok) {
+      el.textContent = msg;
+      el.style.color = ok ? 'var(--accent)' : '#c84f4f';
+      el.style.display = '';
+    }
+
+    function clubCard(club) {
+      const a = document.createElement('a');
+      a.href = `../club/?id=${encodeURIComponent(club.id)}`;
+      a.className = 'card club-card';
+      a.style.cssText = 'text-decoration:none;color:inherit;margin-bottom:.6rem';
+      const count = memberList(club).length;
+      a.innerHTML = `<div style="flex:1;min-width:0">
+          <div class="club-name">${esc(club.name)}</div>
+          <div class="club-meta">${count} member${count === 1 ? '' : 's'}</div>
+          ${club.description ? `<div class="club-current">${esc(club.description)}</div>` : ''}
+        </div>`;
+      // Prepended as an element rather than markup: the ring is an SVG the
+      // shared helper builds, so every surface shows the same shape. It also
+      // vets the club's colour, so a hand-edited document cannot put arbitrary
+      // CSS into a style attribute here.
+      a.prepend(clubIconEl(club, 48));
+      return a;
+    }
+
+    async function render() {
+      let clubs;
+      try {
+        clubs = await getMyClubs(user.uid);
+      } catch (err) {
+        console.error('Could not load clubs', err);
+        listEl.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">Could not load your clubs.</p>';
+        return;
+      }
+      clubs.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+      listEl.innerHTML = '';
+      if (!clubs.length) {
+        listEl.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">You are not in any clubs yet. Create one, or join with an invite code.</p>';
+        return;
+      }
+      for (const club of clubs) listEl.appendChild(clubCard(club));
+    }
+
+    // -- create --
+    const createToggle = document.getElementById('create-toggle');
+    const createForm   = document.getElementById('create-form');
+    const createName   = document.getElementById('create-name');
+    const createDesc   = document.getElementById('create-desc');
+    const createStatus = document.getElementById('create-status');
+    const createSubmit = document.getElementById('create-submit');
+
+    createToggle.addEventListener('click', () => {
+      createForm.hidden = false;
+      createToggle.hidden = true;
+      createName.focus();
+    });
+    document.getElementById('create-cancel').addEventListener('click', () => {
+      createForm.hidden = true;
+      createToggle.hidden = false;
+      createStatus.style.display = 'none';
+      createName.value = '';
+      createDesc.value = '';
+    });
+
+    createSubmit.addEventListener('click', async () => {
+      const name = createName.value.trim();
+      if (!name) { say(createStatus, 'Give the club a name.'); createName.focus(); return; }
+      createSubmit.disabled = true;
+      say(createStatus, 'Creating...', true);
+      try {
+        // The code is generated here rather than server side so the club
+        // document is complete on its first write, and a club is never briefly
+        // unjoinable.
+        const id = await createClub({ name, description: createDesc.value }, user, profile, generateInviteCode());
+        location.href = `../club/?id=${encodeURIComponent(id)}`;
+      } catch (err) {
+        console.error('Create club failed', err);
+        say(createStatus, 'Could not create that club.');
+        createSubmit.disabled = false;
+      }
+    });
+
+    // -- join --
+    const joinInput  = document.getElementById('join-code');
+    const joinBtn    = document.getElementById('join-btn');
+    const joinStatus = document.getElementById('join-status');
+
+    async function doJoin() {
+      const code = normaliseInviteCode(joinInput.value);
+      if (!isValidInviteCode(code)) { say(joinStatus, 'That is not a valid invite code.'); return; }
+      joinBtn.disabled = true;
+      say(joinStatus, 'Joining...', true);
+      try {
+        const { clubId } = await joinClubByCode(code);
+        location.href = `../club/?id=${encodeURIComponent(clubId)}`;
+      } catch (err) {
+        console.error('Join failed', err);
+        // The callable answers "no club with that code" for both a wrong code
+        // and a missing one, on purpose.
+        say(joinStatus, err?.message || 'Could not join that club.');
+        joinBtn.disabled = false;
+      }
+    }
+
+    joinBtn.addEventListener('click', doJoin);
+    joinInput.addEventListener('keydown', e => { if (e.key === 'Enter') doJoin(); });
+
+    render();
   </script>
   <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
 </body>

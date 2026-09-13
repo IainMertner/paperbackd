@@ -33,7 +33,8 @@ import {
   where,
   limit,
   startAfter,
-  writeBatch
+  writeBatch,
+  onSnapshot
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { compareLists, normalisePronouns } from './utils.js';
 import { viewerSeesOnlyPublic, planWorkMerge, dupeGroupsForSlug, sameBook, resolveBookLanguage, retitleListBooks } from './book-utils.js';
@@ -201,7 +202,7 @@ export async function repairProfile(user) {
   return { uid, ...snap.data() };
 }
 
-async function getProfilesByUids(uids) {
+export async function getProfilesByUids(uids) {
   if (!uids.length) return [];
   const snaps = await Promise.all(uids.map(id => getDoc(doc(db, 'users', id))));
   return snaps.filter(s => s.exists()).map(s => ({ uid: s.id, ...s.data() }));
@@ -1771,6 +1772,263 @@ export async function setBookReportResolved(id, resolved) {
 
 export async function deleteBookReport(id) {
   await deleteDoc(doc(db, 'bookReports', id));
+}
+
+// ── Book clubs ────────────────────────────────────────────────────────────────
+//
+// A club is one document with its members in a map, plus a `meetings`
+// subcollection. See js/club-utils.js for why membership lives in a map.
+//
+// Clubs are private: rules allow a read only to someone already in the members
+// map, so joining cannot go through the client at all — it needs a lookup by
+// invite code across clubs nobody is allowed to read yet. That is what the
+// joinClubByCode callable is for.
+
+const CLUB_NAME_MAX = 80;
+const CLUB_DESC_MAX = 500;
+
+// The member entry a club stores for someone. Denormalised on purpose: a club
+// page draws its whole roster, and doing that from the map costs nothing where
+// a profile read per member would be a query per face.
+// Deliberately no avatarUrl. An avatar is a base64 data URL held in the user
+// document, around 30KB each, so a members map carrying them would put a
+// twenty-person club at 600KB and a thirty-five-person one past Firestore's 1MB
+// document limit - at which point every write to the club starts failing, not
+// just the one that crossed the line. The club page reads avatars from the user
+// documents instead. Username and border colour are a few bytes and stay, so a
+// roster and an old attendance list still have names to show.
+function memberEntry(profile, uid, role) {
+  return {
+    role,
+    username:          profile?.username || '',
+    avatarBorderColor: profile?.avatarBorderColor || '',
+    joinedAt:          Date.now(),   // serverTimestamp() is not allowed inside a map
+  };
+}
+
+export async function createClub({ name, description }, user, profile, inviteCode) {
+  const clean = String(name || '').trim();
+  if (!clean) throw new Error('A club needs a name.');
+  const ref = await addDoc(collection(db, 'clubs'), {
+    name:        clean.slice(0, CLUB_NAME_MAX),
+    description: String(description || '').trim().slice(0, CLUB_DESC_MAX),
+    ownerUid:    user.uid,
+    inviteCode,
+    members:     { [user.uid]: memberEntry(profile, user.uid, 'admin') },
+    createdAt:   serverTimestamp(),
+  });
+  return ref.id;
+}
+
+// Every club the signed-in user belongs to. `members.<uid>` is a map key, so
+// this is an equality filter on a nested field rather than an array-contains —
+// no index beyond the single-field one Firestore makes on its own.
+export async function getMyClubs(uid) {
+  const snap = await getDocs(query(collection(db, 'clubs'), where(`members.${uid}.role`, 'in', ['admin', 'member'])));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function getClub(clubId) {
+  const snap = await getDoc(doc(db, 'clubs', clubId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+// Live, because a club page is the one screen where someone else acting — a new
+// member, a meeting recorded — should appear without a refresh.
+export function watchClub(clubId, onChange) {
+  return onSnapshot(doc(db, 'clubs', clubId),
+    snap => onChange(snap.exists() ? { id: snap.id, ...snap.data() } : null),
+    err => console.warn('Club watch failed', err));
+}
+
+export async function updateClub(clubId, updates) {
+  await updateDoc(doc(db, 'clubs', clubId), updates);
+}
+
+export async function deleteClub(clubId) {
+  // The meetings go first: deleting the parent leaves a subcollection orphaned
+  // and unreachable, still costing storage and still readable by anyone who
+  // kept a path to it.
+  const meetings = await getDocs(collection(db, 'clubs', clubId, 'meetings'));
+  for (const d of meetings.docs) await deleteDoc(d.ref);
+  await deleteDoc(doc(db, 'clubs', clubId));
+}
+
+// The club's icon, as a base64 data URL on the club document itself - the same
+// way an avatar sits on a user document. One icon per club is fine there; it was
+// a members map holding one per *member* that would have broken the size limit.
+export async function setClubIcon(clubId, dataUrl) {
+  await updateDoc(doc(db, 'clubs', clubId), { iconUrl: dataUrl || deleteField() });
+}
+
+export async function setClubMemberRole(clubId, uid, role) {
+  await updateDoc(doc(db, 'clubs', clubId), { [`members.${uid}.role`]: role });
+}
+
+export async function removeClubMember(clubId, uid) {
+  await updateDoc(doc(db, 'clubs', clubId), { [`members.${uid}`]: deleteField() });
+}
+
+// Keeps a member's denormalised name and avatar in step with their profile.
+// Called when someone opens a club, so a rename catches up on next visit rather
+// than needing a fan-out write across every club at rename time.
+export async function refreshClubMemberProfile(clubId, uid, profile) {
+  await updateDoc(doc(db, 'clubs', clubId), {
+    [`members.${uid}.username`]:          profile?.username || '',
+    [`members.${uid}.avatarBorderColor`]: profile?.avatarBorderColor || '',
+    // Clears the field on any club written before avatars were kept out of the
+    // members map. Left in place it would keep a 30KB data URL per member.
+    [`members.${uid}.avatarUrl`]:         deleteField(),
+  });
+}
+
+// ── Meetings ──────────────────────────────────────────────────────────────────
+
+export async function getClubMeetings(clubId) {
+  const snap = await getDocs(collection(db, 'clubs', clubId, 'meetings'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// The book a club is about to read, for the card on home.
+//
+// A query rather than a field mirrored onto the club document: the book changes
+// from four places - a spin, a change of book, a meeting being recorded, and the
+// next book being cleared - and a copy kept in step across all four would drift
+// the first time one of them was missed. One small query per club, and a reader
+// has a handful of clubs at most.
+export async function getClubNextBook(clubId) {
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'clubs', clubId, 'meetings'),
+      where('held', '==', false),
+      limit(1),
+    ));
+    if (snap.empty) return null;
+    const meeting = snap.docs[0].data();
+    return meeting.title ? { title: meeting.title, author: meeting.author || '', gbid: meeting.gbid || '' } : null;
+  } catch (err) {
+    // The card is decoration on a page that is complete without it.
+    console.warn('Could not read the next book for club', clubId, err);
+    return null;
+  }
+}
+
+export function watchClubMeetings(clubId, onChange) {
+  return onSnapshot(collection(db, 'clubs', clubId, 'meetings'),
+    snap => onChange(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    err => console.warn('Meetings watch failed', err));
+}
+
+export async function createClubMeeting(clubId, { date, gbid, title, author, coverUrl, notes, attendees, held, suggestedBy }) {
+  const ref = await addDoc(collection(db, 'clubs', clubId, 'meetings'), {
+    date:      date || null,
+    gbid:      gbid || '',
+    title:     title || '',
+    author:    author || '',
+    coverUrl:  coverUrl || '',
+    notes:     String(notes || '').trim(),
+    // Who put the book forward. Weighted selection reads this back, so a
+    // meeting saved without it counts against nobody.
+    suggestedBy: suggestedBy || '',
+    attendees: Array.isArray(attendees) ? attendees : [],
+    // A meeting recorded after the fact is created already held: it never had a
+    // "next" phase to pass through.
+    held:      !!held,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function updateClubMeeting(clubId, meetingId, updates) {
+  await updateDoc(doc(db, 'clubs', clubId, 'meetings', meetingId), updates);
+}
+
+export async function deleteClubMeeting(clubId, meetingId) {
+  await deleteDoc(doc(db, 'clubs', clubId, 'meetings', meetingId));
+}
+
+// ── Recommendations ───────────────────────────────────────────────────────────
+//
+// One per member, keyed by uid, so "one each" needs no enforcing anywhere: a
+// second recommendation from the same person is the same document.
+
+export function watchClubRecommendations(clubId, onChange) {
+  return onSnapshot(collection(db, 'clubs', clubId, 'recommendations'),
+    snap => onChange(snap.docs.map(d => ({ uid: d.id, ...d.data() }))),
+    err => console.warn('Recommendations watch failed', err));
+}
+
+export async function setClubRecommendation(clubId, uid, { gbid, title, author, coverUrl }, profile) {
+  await setDoc(doc(db, 'clubs', clubId, 'recommendations', uid), {
+    gbid:      gbid || '',
+    title:     title || '',
+    author:    author || '',
+    coverUrl:  coverUrl || '',
+    username:  profile?.username || '',
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function clearClubRecommendation(clubId, uid) {
+  await deleteDoc(doc(db, 'clubs', clubId, 'recommendations', uid));
+}
+
+// What a spin does, once the wheel has stopped: the chosen book becomes the
+// next meeting's book. That is the whole of it.
+//
+// The recommendation is deliberately left where it is. Taking it off the wheel
+// would decide on the member's behalf that they are done with it, when the
+// person who put it forward is the one who should say so - and they can, with
+// Remove. The no-repeat rule already stops the same person being picked twice
+// running, so nothing is needed here to prevent that.
+//
+// Every other member sees the result as the next meeting's book, which is the
+// thing that actually matters to them.
+export async function applySpinResult(clubId, winner, nextMeetingId) {
+  const book = {
+    gbid:     winner.gbid || '',
+    title:    winner.title || '',
+    author:   winner.author || '',
+    coverUrl: winner.coverUrl || '',
+    // Who put it forward, kept on the meeting itself. Weighted selection reads
+    // this back to work out who has been winning lately, so a spin that did not
+    // record it would be invisible to the weighting forever after.
+    suggestedBy: winner.uid || '',
+  };
+
+  if (nextMeetingId) {
+    await updateDoc(doc(db, 'clubs', clubId, 'meetings', nextMeetingId), book);
+  } else {
+    // No meeting scheduled yet, so the spin creates one. Dateless: the wheel
+    // decides what, an admin still decides when.
+    await addDoc(collection(db, 'clubs', clubId, 'meetings'), {
+      ...book,
+      date:      null,
+      notes:     '',
+      attendees: [],
+      held:      false,
+      createdAt: serverTimestamp(),
+    });
+  }
+}
+
+// ── Joining ───────────────────────────────────────────────────────────────────
+
+// Server side because finding a club by its code means reading clubs the caller
+// is not yet in, which rules forbid — and should, since a client that could run
+// the query could enumerate every club on the site.
+export async function joinClubByCode(code) {
+  // Imported here rather than at the top of the module: this is the only
+  // callable the site has, and joining a club is rare. A static import would put
+  // the functions SDK on the critical path of every page that touches Firebase.
+  const { getFunctions, httpsCallable } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+  const call = httpsCallable(getFunctions(app, 'europe-west2'), 'joinClubByCode');
+  const { data } = await call({ code });
+  return data;   // { clubId, name }
+}
+
+export async function leaveClub(clubId, uid) {
+  await updateDoc(doc(db, 'clubs', clubId), { [`members.${uid}`]: deleteField() });
 }
 
 export async function toggleReaction(activityId, emoji, uid, add) {
